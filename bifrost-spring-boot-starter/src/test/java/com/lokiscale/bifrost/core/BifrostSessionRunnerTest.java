@@ -47,6 +47,36 @@ class BifrostSessionRunnerTest {
         }
     }
 
+    @Test
+    void isolatesJournalMutationAcrossConcurrentVirtualThreads() throws InterruptedException, ExecutionException {
+        BifrostSessionRunner sessionRunner = new BifrostSessionRunner(4);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<String> first = executor.submit(() -> sessionRunner.callWithNewSession(session -> {
+                session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "first");
+                session.logToolExecution(Instant.parse("2026-03-15T12:00:01Z"), Map.of("route", "tool.one"));
+                return session.getSessionId()
+                        + ":"
+                        + session.getJournalSnapshot().size()
+                        + ":"
+                        + session.getJournalSnapshot().get(0).payload().textValue();
+            }));
+            Future<String> second = executor.submit(() -> sessionRunner.callWithNewSession(session -> {
+                session.logThought(Instant.parse("2026-03-15T12:00:02Z"), "second");
+                session.logError(Instant.parse("2026-03-15T12:00:03Z"), Map.of("message", "boom"));
+                return session.getSessionId()
+                        + ":"
+                        + session.getJournalSnapshot().size()
+                        + ":"
+                        + session.getJournalSnapshot().get(0).payload().textValue();
+            }));
+
+            assertThat(first.get()).contains(":2:first");
+            assertThat(second.get()).contains(":2:second");
+            assertThat(first.get()).isNotEqualTo(second.get());
+        }
+    }
+
     private static ExecutionFrame frame(String frameId, String route) {
         return new ExecutionFrame(
                 frameId,

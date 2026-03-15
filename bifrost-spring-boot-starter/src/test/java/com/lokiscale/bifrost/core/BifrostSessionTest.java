@@ -73,6 +73,43 @@ class BifrostSessionTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    @Test
+    void appendsJournalEntriesInSequentialOrder() {
+        BifrostSession session = new BifrostSession("session-1", 4);
+
+        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
+        session.logToolExecution(
+                Instant.parse("2026-03-15T12:00:01Z"),
+                Map.of("route", "tool.run", "arguments", Map.of("id", 42)));
+        session.logError(Instant.parse("2026-03-15T12:00:02Z"), "boom");
+
+        assertThat(session.getJournalSnapshot())
+                .extracting(JournalEntry::type)
+                .containsExactly(JournalEntryType.THOUGHT, JournalEntryType.TOOL_CALL, JournalEntryType.ERROR);
+        assertThat(session.getJournalSnapshot())
+                .extracting(JournalEntry::level)
+                .containsExactly(JournalLevel.INFO, JournalLevel.INFO, JournalLevel.ERROR);
+        assertThat(session.getJournalSnapshot().get(0).payload().textValue()).isEqualTo("plan");
+        assertThat(session.getJournalSnapshot().get(1).payload().get("route").textValue()).isEqualTo("tool.run");
+        assertThat(session.getJournalSnapshot().get(1).payload().get("arguments").get("id").intValue()).isEqualTo(42);
+        assertThat(session.getJournalSnapshot().get(2).payload().textValue()).isEqualTo("boom");
+    }
+
+    @Test
+    void exposesImmutableJournalSnapshots() {
+        BifrostSession session = new BifrostSession(2);
+        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
+
+        List<JournalEntry> snapshot = session.getJournalSnapshot();
+
+        assertThatThrownBy(() -> snapshot.add(new JournalEntry(
+                Instant.parse("2026-03-15T12:00:01Z"),
+                JournalLevel.INFO,
+                JournalEntryType.THOUGHT,
+                new com.fasterxml.jackson.databind.ObjectMapper().valueToTree("extra"))))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
     private static ExecutionFrame frame(String frameId, String route) {
         return new ExecutionFrame(
                 frameId,

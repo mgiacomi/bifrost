@@ -10,7 +10,8 @@
     {
       "name": "bifrost.session.max-depth",
       "type": "java.lang.Integer",
-      "sourceType": "com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties"
+      "sourceType": "com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties",
+      "defaultValue": 32
     }
   ],
   "hints": [],
