@@ -1,4 +1,5 @@
 com\lokiscale\bifrost\core\CapabilityCollisionException.class
+com\lokiscale\bifrost\core\SkillMethodBeanPostProcessor.class
 com\lokiscale\bifrost\core\CapabilityInvoker.class
 com\lokiscale\bifrost\core\CapabilityMetadata.class
 com\lokiscale\bifrost\core\CapabilityRegistry.class

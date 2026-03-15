@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.lokiscale.bifrost.annotation.SkillMethodTest" time="0.17" tests="2" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.lokiscale.bifrost.core.SkillMethodBeanPostProcessorTest" time="0.64" tests="3" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="21"/>
     <property name="sun.cpu.isalist" value="amd64"/>
@@ -60,6 +60,7 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="65.0"/>
   </properties>
-  <testcase name="isRuntimeMethodAnnotation" classname="com.lokiscale.bifrost.annotation.SkillMethodTest" time="0.131"/>
-  <testcase name="exposesDefaultsAndConfiguredValues" classname="com.lokiscale.bifrost.annotation.SkillMethodTest" time="0.01"/>
+  <testcase name="invokesCapabilityUsingEnvelopeMap" classname="com.lokiscale.bifrost.core.SkillMethodBeanPostProcessorTest" time="0.41"/>
+  <testcase name="handlesMissingOptionalParameterWithoutCrashing" classname="com.lokiscale.bifrost.core.SkillMethodBeanPostProcessorTest" time="0.011"/>
+  <testcase name="registersAnnotatedMethodAsCapability" classname="com.lokiscale.bifrost.core.SkillMethodBeanPostProcessorTest" time="0.001"/>
 </testsuite>

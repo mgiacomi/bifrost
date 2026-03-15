@@ -11,7 +11,7 @@ Phase 2 requires dynamically routing native Java methods via Spring AI's native 
 2. **Capability Metadata Extraction & Function Wrapping:**
    - For each matching method, extract its `name`, `description`, parameters, and response type.
    - Build a `java.util.function.Function<InputType, OutputType>` bridging the LLM's payload execution to the bean method via Reflection.
-   - We must provide JSON Schema generation or compatible descriptions of the method signature that Spring AI expects for Tool Definitions.
+   - We must provide JSON Schema generation or compatible descriptions of the method signature that Spring AI expects for Tool Definitions. Use `org.springframework.ai.util.json.schema.JsonSchemaGenerator` for this.
 3. **Registration:**
    - Inject the `CapabilityRegistry` into this BeanPostProcessor and call `register` on it for each auto-discovered capability.
 
