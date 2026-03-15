@@ -1,6 +1,0 @@
-spring:
-  application:
-    name: bifrost-sample
-
-server:
-  port: 8081
