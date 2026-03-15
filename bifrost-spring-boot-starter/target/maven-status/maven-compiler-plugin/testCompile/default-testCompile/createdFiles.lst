@@ -1,1 +1,4 @@
+com\lokiscale\bifrost\annotation\SkillMethodTest$SampleSkills.class
+com\lokiscale\bifrost\core\InMemoryCapabilityRegistryTest.class
 com\lokiscale\bifrost\autoconfigure\BifrostAutoConfigurationTests.class
+com\lokiscale\bifrost\annotation\SkillMethodTest.class

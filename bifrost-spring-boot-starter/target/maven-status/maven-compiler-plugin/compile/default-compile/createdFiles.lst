@@ -1,1 +1,8 @@
+com\lokiscale\bifrost\core\CapabilityCollisionException.class
+com\lokiscale\bifrost\core\CapabilityInvoker.class
+com\lokiscale\bifrost\core\CapabilityMetadata.class
+com\lokiscale\bifrost\core\CapabilityRegistry.class
+com\lokiscale\bifrost\annotation\SkillMethod.class
+com\lokiscale\bifrost\core\InMemoryCapabilityRegistry.class
 com\lokiscale\bifrost\autoconfigure\BifrostAutoConfiguration.class
+com\lokiscale\bifrost\core\ModelPreference.class
