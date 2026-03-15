@@ -1,0 +1,59 @@
+package com.lokiscale.bifrost.core;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class BifrostSessionRunnerTest {
+
+    @Test
+    void createsDistinctSessionsAcrossConcurrentVirtualThreads() throws Exception {
+        BifrostSessionRunner sessionRunner = new BifrostSessionRunner(4);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<String> first = executor.submit(() ->
+                    sessionRunner.callWithNewSession(session -> BifrostSession.getCurrentSession().getSessionId()));
+            Future<String> second = executor.submit(() ->
+                    sessionRunner.callWithNewSession(session -> BifrostSession.getCurrentSession().getSessionId()));
+
+            assertThat(Set.of(first.get(), second.get())).hasSize(2);
+        }
+    }
+
+    @Test
+    void isolatesFrameMutationAcrossConcurrentVirtualThreads() throws InterruptedException, ExecutionException {
+        BifrostSessionRunner sessionRunner = new BifrostSessionRunner(4);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<String> first = executor.submit(() -> sessionRunner.callWithNewSession(session -> {
+                session.pushFrame(frame("frame-1", "route.one"));
+                return session.getSessionId() + ":" + session.getFramesSnapshot().size() + ":" + session.peekFrame().route();
+            }));
+            Future<String> second = executor.submit(() -> sessionRunner.callWithNewSession(session -> {
+                session.pushFrame(frame("frame-2", "route.two"));
+                return session.getSessionId() + ":" + session.getFramesSnapshot().size() + ":" + session.peekFrame().route();
+            }));
+
+            assertThat(first.get()).contains(":1:route.one");
+            assertThat(second.get()).contains(":1:route.two");
+            assertThat(first.get()).isNotEqualTo(second.get());
+        }
+    }
+
+    private static ExecutionFrame frame(String frameId, String route) {
+        return new ExecutionFrame(
+                frameId,
+                null,
+                OperationType.CAPABILITY,
+                route,
+                Map.of("route", route),
+                Instant.parse("2026-03-15T12:00:00Z"));
+    }
+}

@@ -1,6 +1,11 @@
 com\lokiscale\bifrost\annotation\SkillMethodTest$SampleSkills.class
+com\lokiscale\bifrost\core\BifrostSessionTest.class
 com\lokiscale\bifrost\autoconfigure\BifrostAutoConfigurationTests.class
+com\lokiscale\bifrost\core\BifrostSessionRunnerTest.class
 com\lokiscale\bifrost\core\SkillMethodBeanPostProcessorTest.class
+com\lokiscale\bifrost\core\ExecutionFrameTest.class
+com\lokiscale\bifrost\core\BifrostSessionHolderTest.class
+com\lokiscale\bifrost\core\BifrostSessionPropertiesTest.class
 com\lokiscale\bifrost\core\SkillMethodBeanPostProcessorTest$InvocationBean.class
 com\lokiscale\bifrost\core\InMemoryCapabilityRegistryTest.class
 com\lokiscale\bifrost\core\SkillMethodBeanPostProcessorTest$OptionalInvocationBean.class

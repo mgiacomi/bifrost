@@ -1,15 +1,18 @@
 package com.lokiscale.bifrost.autoconfigure;
 
 import com.lokiscale.bifrost.core.CapabilityRegistry;
+import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Role;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 
 @AutoConfiguration
+@EnableConfigurationProperties(BifrostSessionProperties.class)
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 public class BifrostAutoConfiguration {
 
@@ -25,5 +28,12 @@ public class BifrostAutoConfiguration {
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry) {
         return new SkillMethodBeanPostProcessor(capabilityRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public BifrostSessionRunner bifrostSessionRunner(BifrostSessionProperties sessionProperties) {
+        return new BifrostSessionRunner(sessionProperties.getMaxDepth());
     }
 }
