@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.lokiscale.bifrost</groupId>
+  <artifactId>bifrost-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>Bifrost Parent</name>
+  <description>Aggregator parent POM for the Bifrost project.</description>
+  <url>https://github.com/mgiacomi/bifrost</url>
+
+  <licenses>
+    <license>
+      <name>Mozilla Public License Version 2.0</name>
+      <url>https://www.mozilla.org/en-US/MPL/2.0/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>mgiacomi</id>
+      <name>mgiacomi</name>
+      <url>https://github.com/mgiacomi</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/mgiacomi/bifrost.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/mgiacomi/bifrost.git</developerConnection>
+    <url>https://github.com/mgiacomi/bifrost</url>
+    <tag>HEAD</tag>
+  </scm>
+
+  <modules>
+    <module>bifrost-spring-boot-starter</module>
+    <module>bifrost-sample</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <spring-boot.version>3.5.11</spring-boot.version>
+    <spring-ai.version>1.1.2</spring-ai.version>
+
+    <maven.compiler-plugin.version>3.13.0</maven.compiler-plugin.version>
+    <maven.surefire-plugin.version>3.5.2</maven.surefire-plugin.version>
+    <maven.enforcer-plugin.version>3.5.0</maven.enforcer-plugin.version>
+    <minimum.maven.version>3.9.0</minimum.maven.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven.compiler-plugin.version}</version>
+          <configuration>
+            <release>${maven.compiler.release}</release>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${maven.surefire-plugin.version}</version>
+          <configuration>
+            <useModulePath>false</useModulePath>
+            <properties>
+              <configurationParameters>junit.jupiter.extensions.autodetection.enabled=true</configurationParameters>
+            </properties>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>${maven.enforcer-plugin.version}</version>
+          <executions>
+            <execution>
+              <id>enforce-java-and-maven</id>
+              <phase>validate</phase>
+              <goals>
+                <goal>enforce</goal>
+              </goals>
+              <configuration>
+                <fail>true</fail>
+                <rules>
+                  <requireJavaVersion>
+                    <version>[21,)</version>
+                    <message>Java 21 or newer is required to build Bifrost.</message>
+                  </requireJavaVersion>
+                  <requireMavenVersion>
+                    <version>[${minimum.maven.version},)</version>
+                    <message>Maven ${minimum.maven.version}+ is required to build Bifrost.</message>
+                  </requireMavenVersion>
+                </rules>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
