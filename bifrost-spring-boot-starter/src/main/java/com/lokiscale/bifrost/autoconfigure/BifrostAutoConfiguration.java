@@ -3,8 +3,10 @@ package com.lokiscale.bifrost.autoconfigure;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.chat.SkillChatOptionsAdapter;
 import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
+import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
+import com.lokiscale.bifrost.core.DefaultBifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
 import com.lokiscale.bifrost.skill.YamlSkillCapabilityRegistrar;
@@ -39,8 +41,17 @@ public class BifrostAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry) {
-        return new SkillMethodBeanPostProcessor(capabilityRegistry);
+    public BifrostExceptionTransformer bifrostExceptionTransformer() {
+        return new DefaultBifrostExceptionTransformer();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(
+            CapabilityRegistry capabilityRegistry,
+            BifrostExceptionTransformer bifrostExceptionTransformer) {
+        return SkillMethodBeanPostProcessor.create(capabilityRegistry, bifrostExceptionTransformer);
     }
 
     @Bean

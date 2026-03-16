@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.autoconfigure;
 
 import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
@@ -64,6 +65,7 @@ class BifrostAutoConfigurationTests {
                         "bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
                 .run(context -> {
                     assertThat(context).hasSingleBean(BifrostSessionRunner.class);
+                    assertThat(context).hasSingleBean(BifrostExceptionTransformer.class);
                     assertThat(context).hasSingleBean(BifrostSessionProperties.class);
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
                     assertThat(context).hasSingleBean(BifrostModelsProperties.class);

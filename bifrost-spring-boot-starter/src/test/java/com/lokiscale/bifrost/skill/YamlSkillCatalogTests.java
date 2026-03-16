@@ -120,6 +120,38 @@ class YamlSkillCatalogTests {
                 });
     }
 
+    @Test
+    void mappedDeterministicYamlSkillReturnsTransformedErrorWhenTargetThrows() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        ConfigurationPropertiesAutoConfiguration.class,
+                        BifrostAutoConfiguration.class))
+                .withInitializer(context -> {
+                    try {
+                        YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
+                        for (PropertySource<?> propertySource
+                                : loader.load("application-test", new ClassPathResource("application-test.yml"))) {
+                            context.getEnvironment().getPropertySources().addLast(propertySource);
+                        }
+                    }
+                    catch (java.io.IOException ex) {
+                        throw new IllegalStateException("Failed to load application-test.yml", ex);
+                    }
+                })
+                .withUserConfiguration(ThrowingTargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
+                .run(context -> {
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class)
+                            .getCapability("mapped.method.skill");
+                    String parameterName = getDeclaredMethod(ThrowingTargetBean.class, "deterministicTarget", String.class)
+                            .getParameters()[0]
+                            .getName();
+
+                    assertThat(metadata.invoker().invoke(java.util.Map.of(parameterName, "alpha")))
+                            .isEqualTo("ERROR: IllegalArgumentException. HINT: mapped boom");
+                });
+    }
+
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
         try {
             return type.getDeclaredMethod(name, parameterTypes);
@@ -143,6 +175,23 @@ class YamlSkillCatalogTests {
         @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
         String deterministicTarget(String input) {
             return "mapped:" + input;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ThrowingTargetBeanConfiguration {
+
+        @Bean
+        ThrowingTargetBean targetBean() {
+            return new ThrowingTargetBean();
+        }
+    }
+
+    static class ThrowingTargetBean {
+
+        @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
+        String deterministicTarget(String input) {
+            throw new IllegalStateException("wrapper", new IllegalArgumentException("mapped boom"));
         }
     }
 }

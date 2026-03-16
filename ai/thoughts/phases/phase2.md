@@ -24,6 +24,8 @@ Implement the core execution kernel directly into the Spring Boot Starter, lever
 - **Internal MCP-Like Routing:** Connect the LLM responses to the internal capabilities without fully standing up an external MCP Server. The coordinator acts as the bridge.
 - **Planning Mode & Task Tracking:** Implement a "Task List" generation step to anchor the LLM's cognitive process. This mode is enabled globally by default, but can be overridden on a per-skill basis. Store this list in the `BifrostSession`. The coordinator tracks progress sequentially without preemptive static analysis of the plan, relying on standard RBAC checks at the exact moment a tool is called.
 - **BifrostExceptionTransformer:** When a `@SkillMethod` throws an exception, intercept it and translate it into a clean, "AI-Readable" string (e.g. `ERROR: DatabaseDownException. HINT: ...`) to enable meaningful model-driven error recovery instead of confusing the LLM with Java stack traces.
+- **Current Iteration Hook Point:** Until `ExecutionCoordinator` exists in code, implement exception transformation at the current `SkillMethodBeanPostProcessor.invokeToolCallback(...)` boundary, which is the shared path for direct `@SkillMethod` invocation and deterministic YAML-to-`@SkillMethod` execution.
+- **Dependency Boundary:** Keep this exception handling defined at the Bifrost boundary rather than relying on undocumented Spring AI internal exception wrappers, so the behavior remains stable across Spring AI upgrades.
 - The coordinator resolves `ref://` pointers injected into inputs, pulling bytes from Spring's `ResourceLoader` into memory, preventing manual VFS management within normal domain logic beans.
 
 ### 3. Session Lifecycle Management
@@ -49,3 +51,4 @@ Implement the core execution kernel directly into the Spring Boot Starter, lever
 ## Exit Criteria
 - Methods annotated with `@SkillMethod` are auto-configured into the tool registry as implementation targets.
 - YAML-defined deterministic skills can execute through discovered `@SkillMethod` targets, and documentation clearly marks YAML-only sub-agent execution via Spring AI as a remaining implementation step.
+- `@SkillMethod` failures are transformed at the existing Bifrost invocation boundary and returned as AI-readable tool results without exposing raw stack traces to the LLM payload.

@@ -3,6 +3,8 @@ package com.lokiscale.bifrost.core;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lokiscale.bifrost.annotation.SkillMethod;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.method.MethodToolCallback;
 import org.springframework.ai.util.json.schema.JsonSchemaGenerator;
@@ -12,20 +14,34 @@ import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
 
+    private static final Logger log = LoggerFactory.getLogger(SkillMethodBeanPostProcessor.class);
+
     private final CapabilityRegistry capabilityRegistry;
     private final ObjectMapper objectMapper;
+    private final BifrostExceptionTransformer bifrostExceptionTransformer;
 
     public SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry) {
-        this(capabilityRegistry, new ObjectMapper());
+        this(capabilityRegistry, new ObjectMapper(), new DefaultBifrostExceptionTransformer());
     }
 
-    SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry, ObjectMapper objectMapper) {
-        this.capabilityRegistry = capabilityRegistry;
-        this.objectMapper = objectMapper;
+    public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
+                                                      BifrostExceptionTransformer bifrostExceptionTransformer) {
+        return new SkillMethodBeanPostProcessor(capabilityRegistry, new ObjectMapper(), bifrostExceptionTransformer);
+    }
+
+    SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry,
+                                 ObjectMapper objectMapper,
+                                 BifrostExceptionTransformer bifrostExceptionTransformer) {
+        this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.bifrostExceptionTransformer = Objects.requireNonNull(
+                bifrostExceptionTransformer,
+                "bifrostExceptionTransformer must not be null");
     }
 
     @Override
@@ -76,7 +92,8 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
             throw new IllegalStateException("Failed to serialize capability arguments for " + capabilityName, ex);
         }
         catch (RuntimeException ex) {
-            throw new IllegalStateException("Failed to invoke capability " + capabilityName, ex);
+            log.warn("Capability '{}' failed during deterministic execution", capabilityName, ex);
+            return bifrostExceptionTransformer.transform(ex);
         }
     }
 }
