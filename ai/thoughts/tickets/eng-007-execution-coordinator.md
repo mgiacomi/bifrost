@@ -6,8 +6,9 @@ This is the core loop engine. The `ExecutionCoordinator` ties the Session, the R
 
 ### Requirements
 1. **`ExecutionCoordinator` component:**
-   - Create the central service bean. It depends on `CapabilityRegistry`, `BifrostSession`, the Transformers, and `ChatClient` models.
+   - Create the central service bean. It depends on `CapabilityRegistry`, `BifrostSession`, the Transformers, validated YAML skill execution metadata, the shared `SkillChatClientFactory`, and `ChatClient` models.
 2. **Internal Routing Loop (`callSkill` loop):**
+   - Consume the validated `EffectiveSkillExecutionConfiguration` produced during ENG-005 rather than re-resolving model or thinking settings at execution time.
    - The coordinator formats the system prompt, attaches available tools (mapping them via Spring AI tools API directly to the generated `Function`s from the `CapabilityRegistry`).
    - Loop triggers `ChatClient.call()`.
 3. **Planning Mode (Cognitive Anchor):**

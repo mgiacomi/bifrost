@@ -15,5 +15,7 @@ public @interface SkillMethod {
 
     String description();
 
+    // ENG-005 keeps modelPreference as legacy Java-target metadata only.
+    // YAML manifests remain the source of truth for LLM model execution settings.
     ModelPreference modelPreference() default ModelPreference.LIGHT;
 }

@@ -59,6 +59,7 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
                 capabilityName,
                 capabilityDescription,
                 annotation.modelPreference(),
+                SkillExecutionDescriptor.none(),
                 Set.of(),
                 capabilityInvoker);
 

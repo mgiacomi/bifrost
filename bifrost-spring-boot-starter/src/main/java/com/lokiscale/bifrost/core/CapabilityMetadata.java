@@ -8,6 +8,7 @@ public record CapabilityMetadata(
         String name,
         String description,
         ModelPreference modelPreference,
+        SkillExecutionDescriptor skillExecution,
         Set<String> rbacRoles,
         CapabilityInvoker invoker) {
 
@@ -16,6 +17,7 @@ public record CapabilityMetadata(
         name = requireNonBlank(name, "name");
         description = requireNonBlank(description, "description");
         modelPreference = modelPreference == null ? ModelPreference.LIGHT : modelPreference;
+        skillExecution = skillExecution == null ? SkillExecutionDescriptor.none() : skillExecution;
         rbacRoles = rbacRoles == null ? Set.of() : Set.copyOf(rbacRoles);
         invoker = Objects.requireNonNull(invoker, "invoker must not be null");
     }

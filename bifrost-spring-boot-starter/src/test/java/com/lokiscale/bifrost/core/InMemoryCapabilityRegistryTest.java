@@ -52,6 +52,7 @@ class InMemoryCapabilityRegistryTest {
                 "calculator.add",
                 "Duplicate add operation.",
                 ModelPreference.HEAVY,
+                SkillExecutionDescriptor.none(),
                 Set.of("math-admin"),
                 args -> 2);
 
@@ -79,6 +80,7 @@ class InMemoryCapabilityRegistryTest {
                         "capability." + index,
                         "Capability number " + index,
                         ModelPreference.LIGHT,
+                        SkillExecutionDescriptor.none(),
                         Set.of("role-" + index),
                         args -> index);
                 registry.register(metadata.name(), metadata);
@@ -116,6 +118,7 @@ class InMemoryCapabilityRegistryTest {
                 "calculatorBean#add",
                 name,
                 "Adds two integers.",
+                null,
                 null,
                 Set.of("math-user"),
                 invoker);

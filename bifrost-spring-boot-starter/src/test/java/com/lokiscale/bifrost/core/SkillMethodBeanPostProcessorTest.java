@@ -28,6 +28,7 @@ class SkillMethodBeanPostProcessorTest {
         assertThat(metadata.name()).isEqualTo("testOperation");
         assertThat(metadata.description()).isEqualTo("Test desc");
         assertThat(metadata.modelPreference()).isEqualTo(ModelPreference.HEAVY);
+        assertThat(metadata.skillExecution().configured()).isFalse();
         assertThat(registry.getCapability("nonSkillOperation")).isNull();
         assertThat(registry.getAllCapabilities()).hasSize(1);
     }
