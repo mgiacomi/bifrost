@@ -20,7 +20,7 @@ Bifrost is a modern Java project designed as a Spring Boot Starter. By leaning f
 Bifrost natively exposes four primary operations to the LLM:
 
 - **callMethod:** Fast, deterministic execution of a YAML skill whose `mapping.target_id` resolves to a Spring bean method flagged with `@SkillMethod`.
-- **callSkill:** Logic-heavy delegation of a YAML skill whose mapping resolves to an LLM-backed sub-agent utilizing Spring AI's `ChatClient`.
+- **callSkill:** Logic-heavy delegation of a YAML skill whose mapping resolves to an LLM-backed sub-agent utilizing Spring AI's `ChatClient`. This is the intended architecture for YAML-defined sub-agents; the current codebase has the YAML metadata path in place but does not yet execute this branch end to end.
 - **readData / writeData:** `Resource`-backed Spring interfaces that let the LLM store data and pass `ref://...` pointers between skills to prevent context rot.
 
 ### 4. The Skill Architecture (YAML Manifest)
@@ -34,7 +34,7 @@ Skills are defined in pure YAML: the YAML is the LLM-facing skill contract and c
 **Zone B: Private Manifest (visible only to kernel)**
 - `rbac`: Required Spring Security roles for access
 - `tags`: For contextual filtering
-- `mapping`: `target_id` linking the skill to either a Spring bean implementation discovered through `@SkillMethod` or an LLM-backed sub-agent implementation
+- `mapping`: `target_id` linking the skill to either a Spring bean implementation discovered through `@SkillMethod` or an LLM-backed sub-agent implementation. When `target_id` is present, the YAML-defined skill still remains the registry-facing capability while delegating invocation to the discovered Java target. If `target_id` is omitted, the manifest still describes the LLM-backed branch, but the runtime execution path is not fully implemented yet.
 - `model`: Required exact model name, matching a configured framework model entry in `application.yml`
 - `thinking_level`: Optional execution hint, validated against the selected model's supported thinking levels
 - `linter`: Optional verification gate that auto-validates output and provides "Success/Fail + Hint" feedback

@@ -6,7 +6,7 @@ Implement the core execution kernel directly into the Spring Boot Starter, lever
 ## Primary Outcomes
 - The Spring application context defines the core domain model and execution rules.
 - `CapabilityRegistry` is populated by scanning `@SkillMethod` annotations on Spring beans as implementation targets.
-- A session-aware execution context can route YAML-defined `callMethod` skills to discovered bean targets and `callSkill` skills to Spring AI.
+- A session-aware execution context is designed to route YAML-defined `callMethod` skills to discovered bean targets and `callSkill` skills to Spring AI; in the current implementation, the deterministic YAML-to-`@SkillMethod` route is working while the YAML-backed `callSkill` branch remains planned but not fully implemented.
 
 ## Scope
 - `BifrostSession` and `ExecutionFrame` lifecycle management.
@@ -38,6 +38,8 @@ Implement the core execution kernel directly into the Spring Boot Starter, lever
 - Validate YAML skill execution settings at boot so that each LLM-backed skill references a known configured model and an allowed thinking level.
 - Resolve skill-specific `ChatClient` instances through a shared resolver/factory based on validated skill configuration, rather than fixed `heavy` and `light` bindings.
 - Keep YAML as the source of the LLM-facing skill contract while `@SkillMethod` remains discoverability and implementation-linking metadata.
+- Preserve the YAML-defined capability registration when `mapping.target_id` delegates execution to a discovered `@SkillMethod` target.
+- Document the LLM-backed YAML branch as intended architecture until the runtime invoker is implemented, rather than implying that YAML-only `callSkill` execution is already complete.
 
 ## Deliverables
 - Functional `CapabilityRegistry` with `@SkillMethod` scanner for implementation targets.
@@ -46,4 +48,4 @@ Implement the core execution kernel directly into the Spring Boot Starter, lever
 
 ## Exit Criteria
 - Methods annotated with `@SkillMethod` are auto-configured into the tool registry as implementation targets.
-- A YAML-defined sub-agent skill can execute using Spring AI `ChatClient` through the Bifrost API.
+- YAML-defined deterministic skills can execute through discovered `@SkillMethod` targets, and documentation clearly marks YAML-only sub-agent execution via Spring AI as a remaining implementation step.
