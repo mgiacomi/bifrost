@@ -54,7 +54,10 @@ class InMemoryCapabilityRegistryTest {
                 ModelPreference.HEAVY,
                 SkillExecutionDescriptor.none(),
                 Set.of("math-admin"),
-                args -> 2);
+                args -> 2,
+                CapabilityKind.JAVA_METHOD,
+                CapabilityToolDescriptor.generic("calculator.add", "Duplicate add operation."),
+                null);
 
         registry.register(first.name(), first);
 
@@ -82,7 +85,10 @@ class InMemoryCapabilityRegistryTest {
                         ModelPreference.LIGHT,
                         SkillExecutionDescriptor.none(),
                         Set.of("role-" + index),
-                        args -> index);
+                        args -> index,
+                        CapabilityKind.JAVA_METHOD,
+                        CapabilityToolDescriptor.generic("capability." + index, "Capability number " + index),
+                        null);
                 registry.register(metadata.name(), metadata);
                 assertThat(registry.getCapability(metadata.name())).isNotNull();
                 return null;
@@ -121,6 +127,9 @@ class InMemoryCapabilityRegistryTest {
                 null,
                 null,
                 Set.of("math-user"),
-                invoker);
+                invoker,
+                CapabilityKind.JAVA_METHOD,
+                CapabilityToolDescriptor.generic(name, "Adds two integers."),
+                null);
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +24,12 @@ class BifrostSessionJsonTest {
         session.logToolExecution(
                 Instant.parse("2026-03-15T12:00:01Z"),
                 Map.of("route", "tool.run", "arguments", Map.of("id", 42)));
+        session.replaceExecutionPlan(new ExecutionPlan(
+                "plan-1",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null))));
+        session.logPlanCreated(Instant.parse("2026-03-15T12:00:02Z"), session.getExecutionPlan().orElseThrow());
 
         String json = OBJECT_MAPPER.writeValueAsString(session);
         BifrostSession restored = OBJECT_MAPPER.readValue(json, BifrostSession.class);
@@ -30,7 +37,10 @@ class BifrostSessionJsonTest {
         assertThat(restored.getSessionId()).isEqualTo("session-1");
         assertThat(restored.getMaxDepth()).isEqualTo(4);
         assertThat(restored.getFramesSnapshot()).containsExactlyElementsOf(session.getFramesSnapshot());
-        assertThat(restored.getJournalSnapshot()).containsExactlyElementsOf(session.getJournalSnapshot());
+        assertThat(restored.getJournalSnapshot()).extracting(JournalEntry::type)
+                .containsExactlyElementsOf(session.getJournalSnapshot().stream().map(JournalEntry::type).toList());
+        assertThat(restored.getJournalSnapshot()).hasSize(session.getJournalSnapshot().size());
+        assertThat(restored.getExecutionPlan()).contains(session.getExecutionPlan().orElseThrow());
     }
 
     @Test

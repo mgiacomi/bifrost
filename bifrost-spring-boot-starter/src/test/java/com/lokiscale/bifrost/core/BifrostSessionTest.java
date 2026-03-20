@@ -110,6 +110,29 @@ class BifrostSessionTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    @Test
+    void journalsPlanCreationAndUpdateSeparatelyFromActivePlanState() {
+        BifrostSession session = new BifrostSession("session-1", 2);
+        ExecutionPlan created = new ExecutionPlan(
+                "plan-1",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null)));
+        ExecutionPlan updated = created.updateTask("task-1",
+                task -> task.withStatus(PlanTaskStatus.COMPLETED, "done"));
+
+        session.replaceExecutionPlan(created);
+        session.logPlanCreated(Instant.parse("2026-03-15T12:00:00Z"), created);
+        session.replaceExecutionPlan(updated);
+        session.logPlanUpdated(Instant.parse("2026-03-15T12:00:01Z"), updated);
+
+        assertThat(session.getExecutionPlan()).contains(updated);
+        assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
+                .containsExactly(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED);
+        assertThat(session.getJournalSnapshot().get(1).payload().get("tasks").get(0).get("status").textValue())
+                .isEqualTo("COMPLETED");
+    }
+
     private static ExecutionFrame frame(String frameId, String route) {
         return new ExecutionFrame(
                 frameId,

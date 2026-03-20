@@ -116,7 +116,68 @@ class YamlSkillCatalogTests {
 
                     assertThat(metadata).isNotNull();
                     assertThat(metadata.skillExecution().frameworkModel()).isEqualTo("gpt-5");
+                    assertThat(metadata.kind()).isEqualTo(com.lokiscale.bifrost.core.CapabilityKind.YAML_SKILL);
+                    assertThat(metadata.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
+                    assertThat(metadata.tool().inputSchema()).contains(parameterName);
                     assertThat(metadata.invoker().invoke(java.util.Map.of(parameterName, "alpha"))).isEqualTo("\"mapped:alpha\"");
+                });
+    }
+
+    @Test
+    void parsesAllowedSkillsWhenPresent() {
+        contextRunner
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/allowed-skills-root.yaml,classpath:/skills/valid/allowed-child-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("root.visible.skill")).isNotNull();
+                    assertThat(catalog.getSkill("root.visible.skill").allowedSkills())
+                            .containsExactly("allowed.visible.skill", "internal.only.target", "disallowed.visible.skill");
+                    assertThat(catalog.getSkill("allowed.visible.skill").rbacRoles())
+                            .containsExactly("ROLE_ALLOWED");
+                });
+    }
+
+    @Test
+    void defaultsAllowedSkillsToEmptyListWhenMissing() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("thinking.default.skill").allowedSkills()).isEmpty();
+                    assertThat(catalog.getSkill("thinking.default.skill").rbacRoles()).isEmpty();
+                    assertThat(catalog.getSkill("thinking.default.skill").manifest().getPlanningMode()).isNull();
+                });
+    }
+
+    @Test
+    void parsesPlanningModeOverrideWhenPresent() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/planning-disabled-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("planning.disabled.skill")).isNotNull();
+                    assertThat(catalog.getSkill("planning.disabled.skill").manifest().getPlanningMode()).isFalse();
+                    assertThat(catalog.getSkill("planning.disabled.skill").planningModeEnabled(true)).isFalse();
+                    assertThat(catalog.getSkill("planning.disabled.skill").planningModeEnabled(false)).isFalse();
+                });
+    }
+
+    @Test
+    void registersYamlCapabilitiesWithManifestRbacRoles() {
+        contextRunner
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/allowed-skills-root.yaml,classpath:/skills/valid/allowed-child-skill.yaml,classpath:/skills/valid/disallowed-child-skill.yaml")
+                .run(context -> {
+                    CapabilityRegistry capabilityRegistry = context.getBean(CapabilityRegistry.class);
+
+                    assertThat(capabilityRegistry.getCapability("allowed.visible.skill").rbacRoles())
+                            .containsExactly("ROLE_ALLOWED");
+                    assertThat(capabilityRegistry.getCapability("disallowed.visible.skill").rbacRoles())
+                            .containsExactly("ROLE_BLOCKED");
                 });
     }
 

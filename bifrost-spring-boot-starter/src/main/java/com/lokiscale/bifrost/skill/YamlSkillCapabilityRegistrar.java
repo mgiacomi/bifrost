@@ -1,7 +1,9 @@
 package com.lokiscale.bifrost.skill;
 
 import com.lokiscale.bifrost.core.CapabilityInvoker;
+import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
+import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
@@ -30,8 +32,11 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton 
                     definition.manifest().getDescription(),
                     ModelPreference.LIGHT,
                     SkillExecutionDescriptor.from(definition.executionConfiguration()),
-                    java.util.Set.of(),
-                    resolveInvoker(definition));
+                    java.util.Set.copyOf(definition.rbacRoles()),
+                    resolveInvoker(definition),
+                    CapabilityKind.YAML_SKILL,
+                    resolveToolDescriptor(definition),
+                    definition.mappingTargetId());
             capabilityRegistry.register(metadata.name(), metadata);
         }
     }
@@ -51,6 +56,23 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton 
             throw new UnsupportedOperationException("LLM-backed YAML execution is not implemented yet for skill '"
                     + definition.manifest().getName() + "'");
         };
+    }
+
+    private CapabilityToolDescriptor resolveToolDescriptor(YamlSkillDefinition definition) {
+        String targetId = definition.mappingTargetId();
+        if (!StringUtils.hasText(targetId)) {
+            return CapabilityToolDescriptor.generic(definition.manifest().getName(), definition.manifest().getDescription());
+        }
+
+        CapabilityMetadata target = capabilityRegistry.getAllCapabilities().stream()
+                .filter(candidate -> targetId.equals(candidate.id()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Invalid YAML skill '" + definition.resource().getDescription()
+                        + "' for field 'mapping.target_id': unknown target_id '" + targetId + "'"));
+        return new CapabilityToolDescriptor(
+                definition.manifest().getName(),
+                definition.manifest().getDescription(),
+                target.tool().inputSchema());
     }
 
     private String capabilityId(Resource resource, String skillName) {

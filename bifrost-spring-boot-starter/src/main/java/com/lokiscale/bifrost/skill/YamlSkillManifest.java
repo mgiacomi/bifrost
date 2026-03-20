@@ -3,6 +3,8 @@ package com.lokiscale.bifrost.skill;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class YamlSkillManifest {
 
@@ -12,6 +14,15 @@ public class YamlSkillManifest {
 
     @JsonProperty("thinking_level")
     private String thinkingLevel;
+
+    @JsonProperty("allowed_skills")
+    private List<String> allowedSkills = List.of();
+
+    @JsonProperty("rbac_roles")
+    private List<String> rbacRoles = List.of();
+
+    @JsonProperty("planning_mode")
+    private Boolean planningMode;
 
     private MappingManifest mapping = new MappingManifest();
 
@@ -45,6 +56,30 @@ public class YamlSkillManifest {
 
     public void setThinkingLevel(String thinkingLevel) {
         this.thinkingLevel = thinkingLevel;
+    }
+
+    public List<String> getAllowedSkills() {
+        return allowedSkills;
+    }
+
+    public void setAllowedSkills(List<String> allowedSkills) {
+        this.allowedSkills = allowedSkills == null ? List.of() : List.copyOf(allowedSkills);
+    }
+
+    public List<String> getRbacRoles() {
+        return rbacRoles;
+    }
+
+    public void setRbacRoles(List<String> rbacRoles) {
+        this.rbacRoles = rbacRoles == null ? List.of() : List.copyOf(rbacRoles);
+    }
+
+    public Boolean getPlanningMode() {
+        return planningMode;
+    }
+
+    public void setPlanningMode(Boolean planningMode) {
+        this.planningMode = planningMode;
     }
 
     public MappingManifest getMapping() {

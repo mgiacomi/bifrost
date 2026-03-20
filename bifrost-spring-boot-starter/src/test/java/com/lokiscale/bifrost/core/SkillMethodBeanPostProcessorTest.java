@@ -8,8 +8,15 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.util.StreamUtils;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -103,6 +110,102 @@ class SkillMethodBeanPostProcessorTest {
         assertThat(rawResult.toString()).doesNotContain("IllegalStateException: wrapper");
     }
 
+    @Test
+    void readsResourceBackedRefsIntoStringParameters() throws JsonProcessingException {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+
+        processor.postProcessAfterInitialization(new RefStringInvocationBean(), "refStringInvocationBean");
+
+        CapabilityMetadata metadata = registry.getCapability("readRefAsString");
+        Method method = getDeclaredMethod(RefStringInvocationBean.class, "readRefAsString", String.class);
+        Object rawResult = metadata.invoker().invoke(Map.of(
+                method.getParameters()[0].getName(),
+                new ByteArrayResource("hello text".getBytes(StandardCharsets.UTF_8))));
+
+        assertThat(objectMapper.readValue((String) rawResult, String.class)).isEqualTo("hello text");
+    }
+
+    @Test
+    void readsResourceBackedRefsIntoByteArrayParameters() throws JsonProcessingException {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+
+        processor.postProcessAfterInitialization(new RefBytesInvocationBean(), "refBytesInvocationBean");
+
+        CapabilityMetadata metadata = registry.getCapability("readRefAsBytes");
+        Method method = getDeclaredMethod(RefBytesInvocationBean.class, "readRefAsBytes", byte[].class);
+        Object rawResult = metadata.invoker().invoke(Map.of(
+                method.getParameters()[0].getName(),
+                new ByteArrayResource(new byte[]{0x01, 0x02, 0x03})));
+
+        assertThat(objectMapper.readValue((String) rawResult, String.class)).isEqualTo("010203");
+    }
+
+    @Test
+    void passesResourceBackedRefsThroughResourceAndInputStreamParameters() throws JsonProcessingException {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+
+        processor.postProcessAfterInitialization(new RefResourceInvocationBean(), "refResourceInvocationBean");
+        processor.postProcessAfterInitialization(new RefStreamInvocationBean(), "refStreamInvocationBean");
+
+        CapabilityMetadata resourceMetadata = registry.getCapability("readRefAsResource");
+        CapabilityMetadata streamMetadata = registry.getCapability("readRefAsStream");
+        Method resourceMethod = getDeclaredMethod(RefResourceInvocationBean.class, "readRefAsResource", Resource.class);
+        Method streamMethod = getDeclaredMethod(RefStreamInvocationBean.class, "readRefAsStream", InputStream.class);
+
+        Object resourceResult = resourceMetadata.invoker().invoke(Map.of(
+                resourceMethod.getParameters()[0].getName(),
+                new ByteArrayResource("hello resource".getBytes(StandardCharsets.UTF_8))));
+        Object streamResult = streamMetadata.invoker().invoke(Map.of(
+                streamMethod.getParameters()[0].getName(),
+                new ByteArrayResource("hello stream".getBytes(StandardCharsets.UTF_8))));
+
+        assertThat(objectMapper.readValue((String) resourceResult, String.class)).isEqualTo("hello resource");
+        assertThat(objectMapper.readValue((String) streamResult, String.class)).isEqualTo("hello stream");
+    }
+
+    @Test
+    void materializesNestedResourceLeavesInsideTypedRecordParameters() throws JsonProcessingException {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+
+        processor.postProcessAfterInitialization(new NestedRecordInvocationBean(), "nestedRecordInvocationBean");
+
+        CapabilityMetadata metadata = registry.getCapability("readNestedRecord");
+        Method method = getDeclaredMethod(NestedRecordInvocationBean.class, "readNestedRecord", NestedPayload.class);
+        Object rawResult = metadata.invoker().invoke(Map.of(
+                method.getParameters()[0].getName(),
+                Map.of(
+                        "document", Map.of(
+                                "title", new ByteArrayResource("hello title".getBytes(StandardCharsets.UTF_8)),
+                                "attachments", List.of(
+                                        new ByteArrayResource(new byte[]{0x01, 0x02}),
+                                        new ByteArrayResource(new byte[]{0x0A, 0x0B}))))));
+
+        assertThat(objectMapper.readValue((String) rawResult, String.class)).isEqualTo("hello title|0102,0a0b");
+    }
+
+    @Test
+    void materializesResourceLeavesInsideTypedCollectionParameters() throws JsonProcessingException {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+
+        processor.postProcessAfterInitialization(new TypedCollectionInvocationBean(), "typedCollectionInvocationBean");
+
+        CapabilityMetadata metadata = registry.getCapability("readTypedCollection");
+        Method method = getDeclaredMethod(TypedCollectionInvocationBean.class, "readTypedCollection", List.class);
+        Object rawResult = metadata.invoker().invoke(Map.of(
+                method.getParameters()[0].getName(),
+                List.of(
+                        new ByteArrayResource("alpha".getBytes(StandardCharsets.UTF_8)),
+                        new ByteArrayResource("beta".getBytes(StandardCharsets.UTF_8)),
+                        new ByteArrayResource("gamma".getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(objectMapper.readValue((String) rawResult, String.class)).isEqualTo("alpha|beta|gamma");
+    }
+
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
         try {
             return type.getDeclaredMethod(name, parameterTypes);
@@ -145,5 +248,82 @@ class SkillMethodBeanPostProcessorTest {
         String throwingOperation() {
             throw new IllegalStateException("wrapper", new IllegalArgumentException("boom"));
         }
+    }
+
+    static class RefStringInvocationBean {
+
+        @SkillMethod(name = "readRefAsString", description = "Read ref as string")
+        String readRefAsString(String payload) {
+            return payload;
+        }
+    }
+
+    static class RefBytesInvocationBean {
+
+        @SkillMethod(name = "readRefAsBytes", description = "Read ref as bytes")
+        String readRefAsBytes(byte[] payload) {
+            StringBuilder builder = new StringBuilder();
+            for (byte value : payload) {
+                builder.append(String.format("%02x", value));
+            }
+            return builder.toString();
+        }
+    }
+
+    static class RefResourceInvocationBean {
+
+        @SkillMethod(name = "readRefAsResource", description = "Read ref as resource")
+        String readRefAsResource(Resource payload) {
+            try {
+                return StreamUtils.copyToString(payload.getInputStream(), StandardCharsets.UTF_8);
+            }
+            catch (IOException ex) {
+                throw new IllegalStateException(ex);
+            }
+        }
+    }
+
+    static class RefStreamInvocationBean {
+
+        @SkillMethod(name = "readRefAsStream", description = "Read ref as stream")
+        String readRefAsStream(InputStream payload) {
+            try {
+                return StreamUtils.copyToString(payload, StandardCharsets.UTF_8);
+            }
+            catch (IOException ex) {
+                throw new IllegalStateException(ex);
+            }
+        }
+    }
+
+    static class NestedRecordInvocationBean {
+
+        @SkillMethod(name = "readNestedRecord", description = "Read nested record")
+        String readNestedRecord(NestedPayload payload) {
+            return payload.document().title() + "|" + payload.document().attachments().stream()
+                    .map(bytes -> {
+                        StringBuilder builder = new StringBuilder();
+                        for (byte value : bytes) {
+                            builder.append(String.format("%02x", value));
+                        }
+                        return builder.toString();
+                    })
+                    .reduce((left, right) -> left + "," + right)
+                    .orElse("");
+        }
+    }
+
+    static class TypedCollectionInvocationBean {
+
+        @SkillMethod(name = "readTypedCollection", description = "Read typed collection")
+        String readTypedCollection(List<String> payload) {
+            return String.join("|", payload);
+        }
+    }
+
+    record NestedPayload(NestedDocument document) {
+    }
+
+    record NestedDocument(String title, List<byte[]> attachments) {
     }
 }

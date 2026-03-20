@@ -9,8 +9,10 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.UnaryOperator;
 
 public final class BifrostSession {
 
@@ -21,13 +23,14 @@ public final class BifrostSession {
     @JsonIgnore
     private final Deque<ExecutionFrame> frames;
     private final ExecutionJournal executionJournal;
+    private ExecutionPlan executionPlan;
 
     public BifrostSession(int maxDepth) {
         this(UUID.randomUUID().toString(), maxDepth);
     }
 
     public BifrostSession(String sessionId, int maxDepth) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal());
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null);
     }
 
     @JsonCreator
@@ -35,7 +38,8 @@ public final class BifrostSession {
             @JsonProperty("sessionId") String sessionId,
             @JsonProperty("maxDepth") int maxDepth,
             @JsonProperty("frames") List<ExecutionFrame> frames,
-            @JsonProperty("executionJournal") ExecutionJournal executionJournal) {
+            @JsonProperty("executionJournal") ExecutionJournal executionJournal,
+            @JsonProperty("executionPlan") ExecutionPlan executionPlan) {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         if (maxDepth <= 0) {
             throw new IllegalArgumentException("maxDepth must be greater than zero");
@@ -44,6 +48,7 @@ public final class BifrostSession {
         this.lock = new ReentrantLock();
         this.frames = new ArrayDeque<>(frames == null ? List.of() : List.copyOf(frames));
         this.executionJournal = executionJournal == null ? new ExecutionJournal() : executionJournal;
+        this.executionPlan = executionPlan;
     }
 
     public String getSessionId() {
@@ -62,8 +67,69 @@ public final class BifrostSession {
         appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.TOOL_CALL, payload);
     }
 
+    public void logUnplannedToolExecution(Instant timestamp, TaskExecutionEvent event) {
+        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.UNPLANNED_TOOL_EXECUTION, event);
+    }
+
+    public void logToolResult(Instant timestamp, Object payload) {
+        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.TOOL_RESULT, payload);
+    }
+
+    public void logPlanCreated(Instant timestamp, ExecutionPlan plan) {
+        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.PLAN_CREATED, plan);
+    }
+
+    public void logPlanUpdated(Instant timestamp, ExecutionPlan plan) {
+        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.PLAN_UPDATED, plan);
+    }
+
     public void logError(Instant timestamp, Object payload) {
         appendJournalEntry(timestamp, JournalLevel.ERROR, JournalEntryType.ERROR, payload);
+    }
+
+    public Optional<ExecutionPlan> getExecutionPlan() {
+        lock.lock();
+        try {
+            return Optional.ofNullable(executionPlan);
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
+    public void replaceExecutionPlan(ExecutionPlan plan) {
+        lock.lock();
+        try {
+            executionPlan = Objects.requireNonNull(plan, "plan must not be null");
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
+    public void clearExecutionPlan() {
+        lock.lock();
+        try {
+            executionPlan = null;
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
+    public Optional<ExecutionPlan> updateExecutionPlan(UnaryOperator<ExecutionPlan> updater) {
+        Objects.requireNonNull(updater, "updater must not be null");
+        lock.lock();
+        try {
+            if (executionPlan == null) {
+                return Optional.empty();
+            }
+            executionPlan = Objects.requireNonNull(updater.apply(executionPlan), "updated plan must not be null");
+            return Optional.of(executionPlan);
+        }
+        finally {
+            lock.unlock();
+        }
     }
 
     public void pushFrame(ExecutionFrame frame) {
@@ -133,6 +199,17 @@ public final class BifrostSession {
         lock.lock();
         try {
             return new ExecutionJournal(executionJournal.getEntriesSnapshot());
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
+    @JsonProperty("executionPlan")
+    public ExecutionPlan getExecutionPlanSnapshot() {
+        lock.lock();
+        try {
+            return executionPlan;
         }
         finally {
             lock.unlock();

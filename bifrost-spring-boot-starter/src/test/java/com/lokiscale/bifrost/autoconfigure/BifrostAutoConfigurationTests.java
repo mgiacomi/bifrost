@@ -5,8 +5,13 @@ import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
+import com.lokiscale.bifrost.core.ExecutionCoordinator;
+import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
+import com.lokiscale.bifrost.vfs.RefResolver;
+import com.lokiscale.bifrost.vfs.VirtualFileSystem;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -20,6 +25,7 @@ import org.springframework.core.io.ClassPathResource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -70,8 +76,21 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
                     assertThat(context).hasSingleBean(BifrostModelsProperties.class);
                     assertThat(context).hasSingleBean(YamlSkillCatalog.class);
+                    assertThat(context).hasSingleBean(SkillVisibilityResolver.class);
+                    assertThat(context).hasSingleBean(VirtualFileSystem.class);
+                    assertThat(context).hasSingleBean(RefResolver.class);
+                    assertThat(context).hasSingleBean(Clock.class);
                     assertThat(context.getBean(BifrostSessionProperties.class).getMaxDepth()).isEqualTo(5);
                 });
+    }
+
+    @Test
+    void autoConfiguresExecutionCoordinatorWhenSkillChatClientFactoryIsAvailable() {
+        contextRunner
+                .withBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class,
+                        () -> executionConfiguration -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.class))
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> assertThat(context).hasSingleBean(ExecutionCoordinator.class));
     }
 
     @Test
