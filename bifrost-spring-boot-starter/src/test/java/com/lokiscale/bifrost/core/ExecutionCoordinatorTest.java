@@ -2,6 +2,7 @@ package com.lokiscale.bifrost.core;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
@@ -21,6 +22,7 @@ import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.execution.ToolExecutionException;
@@ -30,10 +32,16 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.AuthorityUtils;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -586,7 +594,7 @@ class ExecutionCoordinatorTest {
                 ? "resolved-content"
                 : value;
 
-        ExecutionCoordinator coordinator = coordinator(
+        ExecutionCoordinator rootCoordinator = coordinator(
                 catalog,
                 registry,
                 visibilityResolver,
@@ -594,13 +602,13 @@ class ExecutionCoordinatorTest {
                 refResolver,
                 null,
                 true);
-        coordinator = coordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 visibilityResolver,
                 factory,
                 refResolver,
-                coordinator,
+                rootCoordinator,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 4);
@@ -768,24 +776,30 @@ class ExecutionCoordinatorTest {
         SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
                 "root.visible.skill".equals(currentSkillName) ? List.of(childMetadata) : List.of();
 
-        ExecutionCoordinator coordinator = coordinator(
+        ExecutionStateService stateService = fixedStateService();
+        PlanningService planningService = fixedPlanningService(stateService);
+        ToolSurfaceService toolSurfaceService = new DefaultToolSurfaceService(visibilityResolver);
+        ExecutionCoordinator[] coordinatorHolder = new ExecutionCoordinator[1];
+        ToolCallbackFactory toolCallbackFactory = new DefaultToolCallbackFactory(
+                new CapabilityExecutionRouter(
+                        (value, session) -> value,
+                        coordinatorProvider(() -> coordinatorHolder[0]),
+                        stateService,
+                        new DefaultAccessGuard()),
+                planningService,
+                stateService);
+        MissionExecutionEngine missionExecutionEngine = missionExecutionEngine(planningService, stateService);
+        coordinatorHolder[0] = new ExecutionCoordinator(
                 catalog,
                 registry,
-                visibilityResolver,
                 factory,
-                (value, session) -> value,
-                null,
-                true,
+                toolSurfaceService,
+                toolCallbackFactory,
+                missionExecutionEngine,
+                stateService,
+                new DefaultAccessGuard(),
                 true);
-        coordinator = coordinator(
-                catalog,
-                registry,
-                visibilityResolver,
-                factory,
-                (value, session) -> value,
-                coordinator,
-                true,
-                true);
+        ExecutionCoordinator coordinator = coordinatorHolder[0];
 
         BifrostSession session = new BifrostSession("session-1", 4);
         String response = coordinator.execute(
@@ -803,6 +817,67 @@ class ExecutionCoordinatorTest {
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
                 .containsExactly(PlanTaskStatus.COMPLETED);
         assertThat(session.getAuthentication()).isPresent();
+    }
+
+    @Test
+    void closesMissionFramesWhenMissionExecutionTimesOut() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        manifest.setPlanningMode(false);
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest,
+                executionConfiguration));
+
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            ExecutionStateService stateService = fixedStateService();
+            PlanningService planningService = fixedPlanningService(stateService);
+            MissionExecutionEngine missionExecutionEngine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofMillis(25),
+                    missionExecutor);
+            ExecutionCoordinator coordinator = coordinator(
+                    catalog,
+                    registry,
+                    (currentSkillName, sessionState, authentication) -> List.of(),
+                    ignored -> new BlockingCoordinatorChatClient(),
+                    (value, session) -> value,
+                    null,
+                    stateService,
+                    planningService,
+                    missionExecutionEngine,
+                    true,
+                    null);
+
+            BifrostSession session = new BifrostSession("session-timeout", 3);
+
+            assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Wait forever", session, null))
+                    .isInstanceOf(BifrostMissionTimeoutException.class)
+                    .hasMessageContaining("session-timeout")
+                    .hasMessageContaining("root.visible.skill");
+            assertThat(session.getFramesSnapshot()).isEmpty();
+            assertThat(session.getExecutionPlan()).isEmpty();
+        }
     }
 
     @Test
@@ -936,6 +1011,56 @@ class ExecutionCoordinatorTest {
                                                     @Nullable Boolean dropInvocationAuthenticationForCallbacks) {
         ExecutionStateService stateService = fixedStateService();
         PlanningService planningService = fixedPlanningService(stateService);
+        MissionExecutionEngine missionExecutionEngine = missionExecutionEngine(planningService, stateService);
+        return coordinator(
+                catalog,
+                registry,
+                visibilityResolver,
+                factory,
+                refResolver,
+                routedCoordinator,
+                stateService,
+                planningService,
+                missionExecutionEngine,
+                planningModeEnabled,
+                dropInvocationAuthenticationForCallbacks);
+    }
+
+    private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
+                                                    InMemoryCapabilityRegistry registry,
+                                                    SkillVisibilityResolver visibilityResolver,
+                                                    SkillChatClientFactory factory,
+                                                    RefResolver refResolver,
+                                                    ExecutionCoordinator routedCoordinator,
+                                                    MissionExecutionEngine missionExecutionEngine,
+                                                    boolean planningModeEnabled) {
+        ExecutionStateService stateService = fixedStateService();
+        PlanningService planningService = fixedPlanningService(stateService);
+        return coordinator(
+                catalog,
+                registry,
+                visibilityResolver,
+                factory,
+                refResolver,
+                routedCoordinator,
+                stateService,
+                planningService,
+                missionExecutionEngine,
+                planningModeEnabled,
+                null);
+    }
+
+    private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
+                                                    InMemoryCapabilityRegistry registry,
+                                                    SkillVisibilityResolver visibilityResolver,
+                                                    SkillChatClientFactory factory,
+                                                    RefResolver refResolver,
+                                                    ExecutionCoordinator routedCoordinator,
+                                                    ExecutionStateService stateService,
+                                                    PlanningService planningService,
+                                                    MissionExecutionEngine missionExecutionEngine,
+                                                    boolean planningModeEnabled,
+                                                    @Nullable Boolean dropInvocationAuthenticationForCallbacks) {
         ToolSurfaceService toolSurfaceService = new DefaultToolSurfaceService(visibilityResolver);
         ToolCallbackFactory toolCallbackFactory = toolCallbackFactory(
                 refResolver,
@@ -943,7 +1068,6 @@ class ExecutionCoordinatorTest {
                 stateService,
                 planningService,
                 Boolean.TRUE.equals(dropInvocationAuthenticationForCallbacks));
-        MissionExecutionEngine missionExecutionEngine = missionExecutionEngine(planningService, stateService);
         AccessGuard accessGuard = new DefaultAccessGuard();
         return new ExecutionCoordinator(
                 catalog,
@@ -997,7 +1121,51 @@ class ExecutionCoordinatorTest {
 
     private static MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
                                                                  ExecutionStateService stateService) {
-        return new DefaultMissionExecutionEngine(planningService, stateService);
+        return missionExecutionEngine(planningService, stateService, Duration.ofSeconds(5));
+    }
+
+    private static MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
+                                                                 ExecutionStateService stateService,
+                                                                 Duration timeout) {
+        return new DefaultMissionExecutionEngine(
+                planningService,
+                stateService,
+                timeout,
+                ForkJoinPool.commonPool());
+    }
+
+    private static ObjectProvider<ExecutionCoordinator> coordinatorProvider(java.util.function.Supplier<ExecutionCoordinator> supplier) {
+        return new ObjectProvider<>() {
+            @Override
+            public ExecutionCoordinator getObject(Object... args) {
+                return supplier.get();
+            }
+
+            @Override
+            public ExecutionCoordinator getObject() {
+                return supplier.get();
+            }
+
+            @Override
+            public ExecutionCoordinator getIfAvailable() {
+                return supplier.get();
+            }
+
+            @Override
+            public ExecutionCoordinator getIfUnique() {
+                return supplier.get();
+            }
+
+            @Override
+            public Stream<ExecutionCoordinator> stream() {
+                return Stream.of(supplier.get());
+            }
+
+            @Override
+            public Stream<ExecutionCoordinator> orderedStream() {
+                return stream();
+            }
+        };
     }
 
     private static PlanTask toolTask(String taskId, String title, String capabilityName, boolean autoCompletable) {
@@ -1064,6 +1232,198 @@ class ExecutionCoordinatorTest {
                 throw new IllegalStateException("No chat client configured for " + executionConfiguration.frameworkModel());
             }
             return chatClient;
+        }
+    }
+
+    private static final class BlockingCoordinatorChatClient extends com.lokiscale.bifrost.runtime.SimpleChatClient {
+
+        private BlockingCoordinatorChatClient() {
+            super(null, "unused");
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt() {
+            return new BlockingRequestSpec();
+        }
+
+        private final class BlockingRequestSpec implements ChatClientRequestSpec {
+
+            @Override
+            public Builder mutate() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(java.util.function.Consumer<AdvisorSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(org.springframework.ai.chat.client.advisor.api.Advisor... advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(List<org.springframework.ai.chat.client.advisor.api.Advisor> advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(org.springframework.ai.chat.messages.Message... messages) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(List<org.springframework.ai.chat.messages.Message> messages) {
+                return this;
+            }
+
+            @Override
+            public <T extends org.springframework.ai.chat.prompt.ChatOptions> ChatClientRequestSpec options(T options) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolNames(String... toolNames) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec tools(Object... tools) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(ToolCallback... toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(List<ToolCallback> toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallbackProvider... providers) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolContext(Map<String, Object> toolContext) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(java.util.function.Consumer<PromptSystemSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec templateRenderer(org.springframework.ai.template.TemplateRenderer renderer) {
+                return this;
+            }
+
+            @Override
+            public CallResponseSpec call() {
+                return new BlockingCallResponseSpec();
+            }
+
+            @Override
+            public StreamResponseSpec stream() {
+                throw new UnsupportedOperationException();
+            }
+        }
+
+        private static final class BlockingCallResponseSpec implements CallResponseSpec {
+
+            @Override
+            public <T> T entity(org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.client.ChatClientResponse chatClientResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.model.ChatResponse chatResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String content() {
+                try {
+                    new CountDownLatch(1).await();
+                    throw new AssertionError("Latch await returned unexpectedly");
+                }
+                catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    return "interrupted";
+                }
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
         }
     }
 }

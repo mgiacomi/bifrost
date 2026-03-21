@@ -7,8 +7,11 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.context.properties.bind.validation.BindValidationException;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.NestedExceptionUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Duration;
 
 class BifrostSessionPropertiesTest {
 
@@ -22,15 +25,19 @@ class BifrostSessionPropertiesTest {
         contextRunner.run(context -> {
             BifrostSessionProperties properties = context.getBean(BifrostSessionProperties.class);
             assertThat(properties.getMaxDepth()).isEqualTo(32);
+            assertThat(properties.getMissionTimeout()).isEqualTo(Duration.ofSeconds(60));
         });
 
         contextRunner
-                .withPropertyValues("bifrost.session.max-depth=3")
+                .withPropertyValues(
+                        "bifrost.session.max-depth=3",
+                        "bifrost.session.mission-timeout=5s")
                 .run(context -> {
                     BifrostSessionProperties properties = context.getBean(BifrostSessionProperties.class);
                     BifrostSessionRunner runner = context.getBean(BifrostSessionRunner.class);
 
                     assertThat(properties.getMaxDepth()).isEqualTo(3);
+                    assertThat(properties.getMissionTimeout()).isEqualTo(Duration.ofSeconds(5));
                     assertThat(runner.callWithNewSession(BifrostSession::getMaxDepth)).isEqualTo(3);
                 });
     }
@@ -43,6 +50,16 @@ class BifrostSessionPropertiesTest {
                     assertThat(context.getStartupFailure())
                             .isNotNull()
                             .hasRootCauseInstanceOf(BindValidationException.class);
+                });
+
+        contextRunner
+                .withPropertyValues("bifrost.session.mission-timeout=0s")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasRootCauseInstanceOf(IllegalArgumentException.class);
+                    assertThat(NestedExceptionUtils.getMostSpecificCause(context.getStartupFailure()))
+                            .hasMessageContaining("missionTimeout must be greater than zero");
                 });
     }
 }

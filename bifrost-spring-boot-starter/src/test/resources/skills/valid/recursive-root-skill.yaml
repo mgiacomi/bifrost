@@ -1,0 +1,5 @@
+name: root.recursive.skill
+description: Root recursive integration test skill.
+model: gpt-5
+allowed_skills:
+  - child.recursive.skill

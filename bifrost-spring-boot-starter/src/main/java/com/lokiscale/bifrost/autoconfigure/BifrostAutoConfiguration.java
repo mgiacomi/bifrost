@@ -38,6 +38,7 @@ import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import com.lokiscale.bifrost.vfs.VirtualFileSystem;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -48,6 +49,8 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import java.nio.file.Paths;
 import java.time.Clock;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @AutoConfiguration
 @EnableConfigurationProperties({
@@ -190,12 +193,25 @@ public class BifrostAutoConfiguration {
         return new DefaultToolCallbackFactory(capabilityExecutionRouter, planningService, executionStateService);
     }
 
+    @Bean(name = "bifrostMissionExecutor", destroyMethod = "close")
+    @ConditionalOnMissingBean(name = "bifrostMissionExecutor")
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public ExecutorService bifrostMissionExecutor() {
+        return Executors.newVirtualThreadPerTaskExecutor();
+    }
+
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
-                                                         ExecutionStateService executionStateService) {
-        return new DefaultMissionExecutionEngine(planningService, executionStateService);
+                                                         ExecutionStateService executionStateService,
+                                                         BifrostSessionProperties sessionProperties,
+                                                         @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor) {
+        return new DefaultMissionExecutionEngine(
+                planningService,
+                executionStateService,
+                sessionProperties.getMissionTimeout(),
+                bifrostMissionExecutor);
     }
 
     @Bean

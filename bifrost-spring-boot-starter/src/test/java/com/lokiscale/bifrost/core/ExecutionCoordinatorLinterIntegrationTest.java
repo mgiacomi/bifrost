@@ -40,11 +40,13 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ForkJoinPool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -135,7 +137,11 @@ class ExecutionCoordinatorLinterIntegrationTest {
                         new com.lokiscale.bifrost.security.DefaultAccessGuard()),
                 planningService,
                 stateService);
-        MissionExecutionEngine missionExecutionEngine = new DefaultMissionExecutionEngine(planningService, stateService);
+        MissionExecutionEngine missionExecutionEngine = new DefaultMissionExecutionEngine(
+                planningService,
+                stateService,
+                Duration.ofSeconds(5),
+                ForkJoinPool.commonPool());
         return new ExecutionCoordinator(
                 catalog,
                 registry,

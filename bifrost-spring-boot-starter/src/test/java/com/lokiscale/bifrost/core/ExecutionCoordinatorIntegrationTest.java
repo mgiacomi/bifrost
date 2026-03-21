@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.core;
 
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
+import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.annotation.SkillMethod;
@@ -25,8 +26,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ExecutionCoordinatorIntegrationTest {
 
@@ -52,7 +55,8 @@ class ExecutionCoordinatorIntegrationTest {
                 })
                 .withPropertyValues(
                         "bifrost.skills.locations=classpath:/skills/valid/allowed-skills-root.yaml,classpath:/skills/valid/allowed-child-skill.yaml,classpath:/skills/valid/disallowed-child-skill.yaml",
-                        "bifrost.session.max-depth=3")
+                        "bifrost.session.max-depth=3",
+                        "bifrost.session.mission-timeout=5s")
                 .withUserConfiguration(IntegrationConfiguration.class)
                 .withBean(SessionLocalVirtualFileSystem.class, () -> new SessionLocalVirtualFileSystem(tempDir));
 
@@ -103,6 +107,80 @@ class ExecutionCoordinatorIntegrationTest {
             assertThat(loggedArguments.properties())
                     .anySatisfy(property -> assertThat(property.getValue().textValue()).isEqualTo("ref://artifacts/message.txt"));
             assertThat(session.getFramesSnapshot()).isEmpty();
+        });
+    }
+
+    @Test
+    void honorsMissionTimeoutPropertyThroughStarterWiring() {
+        ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        ConfigurationPropertiesAutoConfiguration.class,
+                        BifrostAutoConfiguration.class))
+                .withInitializer(context -> {
+                    try {
+                        YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
+                        for (PropertySource<?> propertySource : loader.load("application-test", new ClassPathResource("application-test.yml"))) {
+                            context.getEnvironment().getPropertySources().addLast(propertySource);
+                        }
+                    }
+                    catch (IOException ex) {
+                        throw new IllegalStateException(ex);
+                    }
+                })
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/planning-disabled-skill.yaml",
+                        "bifrost.session.max-depth=3",
+                        "bifrost.session.mission-timeout=25ms")
+                .withUserConfiguration(BlockingIntegrationConfiguration.class)
+                .withBean(SessionLocalVirtualFileSystem.class, () -> new SessionLocalVirtualFileSystem(tempDir));
+
+        contextRunner.run(context -> {
+            ExecutionCoordinator coordinator = context.getBean(ExecutionCoordinator.class);
+            BifrostSession session = new BifrostSession("session-timeout", 3);
+
+            assertThatThrownBy(() -> coordinator.execute("planning.disabled.skill", "hello world", session, null))
+                    .isInstanceOf(BifrostMissionTimeoutException.class)
+                    .hasMessageContaining("session-timeout")
+                    .hasMessageContaining("planning.disabled.skill");
+            assertThat(session.getFramesSnapshot()).isEmpty();
+        });
+    }
+
+    @Test
+    void failsRecursiveYamlLoopAtConfiguredMaxDepthThroughStarterWiring() {
+        ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        ConfigurationPropertiesAutoConfiguration.class,
+                        BifrostAutoConfiguration.class))
+                .withInitializer(context -> {
+                    try {
+                        YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
+                        for (PropertySource<?> propertySource : loader.load("application-test", new ClassPathResource("application-test.yml"))) {
+                            context.getEnvironment().getPropertySources().addLast(propertySource);
+                        }
+                    }
+                    catch (IOException ex) {
+                        throw new IllegalStateException(ex);
+                    }
+                })
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/recursive-root-skill.yaml,classpath:/skills/valid/recursive-child-skill.yaml",
+                        "bifrost.session.max-depth=3",
+                        "bifrost.session.mission-timeout=5s")
+                .withUserConfiguration(RecursiveIntegrationConfiguration.class)
+                .withBean(SessionLocalVirtualFileSystem.class, () -> new SessionLocalVirtualFileSystem(tempDir));
+
+        contextRunner.run(context -> {
+            ExecutionCoordinator coordinator = context.getBean(ExecutionCoordinator.class);
+            BifrostSession session = new BifrostSession("session-overflow", 3);
+
+            assertThatThrownBy(() -> coordinator.execute("root.recursive.skill", "hello world", session, null))
+                    .isInstanceOf(BifrostStackOverflowException.class)
+                    .hasMessageContaining("session-overflow")
+                    .hasMessageContaining("child.recursive.skill");
+            assertThat(session.getFramesSnapshot()).isEmpty();
+            assertThat(session.getExecutionPlan()).isPresent();
+            assertThat(session.getExecutionPlan().orElseThrow().capabilityName()).isEqualTo("root.recursive.skill");
         });
     }
 
@@ -192,6 +270,24 @@ class ExecutionCoordinatorIntegrationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
+    static class BlockingIntegrationConfiguration {
+
+        @Bean
+        BlockingSkillChatClientFactory blockingSkillChatClientFactory() {
+            return new BlockingSkillChatClientFactory();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class RecursiveIntegrationConfiguration {
+
+        @Bean
+        RecursiveSkillChatClientFactory recursiveSkillChatClientFactory() {
+            return new RecursiveSkillChatClientFactory();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
     static class BinaryIntegrationConfiguration {
 
         @Bean
@@ -266,6 +362,246 @@ class ExecutionCoordinatorIntegrationTest {
         @Override
         public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             return chatClient;
+        }
+    }
+
+    static final class BlockingSkillChatClientFactory implements SkillChatClientFactory {
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
+            return new BlockingIntegrationChatClient();
+        }
+    }
+
+    static final class RecursiveSkillChatClientFactory implements SkillChatClientFactory {
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
+            if ("root.recursive.skill".equals(definition.manifest().getName())) {
+                return new FakeCoordinatorChatClient(
+                        new ExecutionPlan(
+                                "plan-root",
+                                "root.recursive.skill",
+                                Instant.parse("2026-03-15T12:00:00Z"),
+                                List.of(
+                                        new PlanTask("task-1", "Use child.recursive.skill", PlanTaskStatus.PENDING,
+                                                "child.recursive.skill", "Use child.recursive.skill", List.of(), List.of(), false, null))),
+                        "root mission complete",
+                        "{\"topic\":\"mars\"}");
+            }
+            return new FakeCoordinatorChatClient(
+                    new ExecutionPlan(
+                            "plan-child",
+                            "child.recursive.skill",
+                            Instant.parse("2026-03-15T12:01:00Z"),
+                            List.of(
+                                    new PlanTask("task-1", "Use root.recursive.skill", PlanTaskStatus.PENDING,
+                                            "root.recursive.skill", "Use root.recursive.skill", List.of(), List.of(), false, null))),
+                    "child mission complete",
+                    "{\"topic\":\"mars\"}");
+        }
+    }
+
+    static final class BlockingIntegrationChatClient implements org.springframework.ai.chat.client.ChatClient {
+
+        @Override
+        public ChatClientRequestSpec prompt() {
+            return new RequestSpec();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(String content) {
+            return new RequestSpec();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(org.springframework.ai.chat.prompt.Prompt prompt) {
+            return new RequestSpec();
+        }
+
+        @Override
+        public Builder mutate() {
+            throw new UnsupportedOperationException();
+        }
+
+        private static final class RequestSpec implements ChatClientRequestSpec {
+
+            @Override
+            public Builder mutate() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(java.util.function.Consumer<AdvisorSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(org.springframework.ai.chat.client.advisor.api.Advisor... advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(List<org.springframework.ai.chat.client.advisor.api.Advisor> advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(org.springframework.ai.chat.messages.Message... messages) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(List<org.springframework.ai.chat.messages.Message> messages) {
+                return this;
+            }
+
+            @Override
+            public <T extends org.springframework.ai.chat.prompt.ChatOptions> ChatClientRequestSpec options(T options) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolNames(String... toolNames) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec tools(Object... tools) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallback... toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(List<org.springframework.ai.tool.ToolCallback> toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallbackProvider... providers) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolContext(java.util.Map<String, Object> toolContext) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(java.util.function.Consumer<PromptSystemSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec templateRenderer(org.springframework.ai.template.TemplateRenderer renderer) {
+                return this;
+            }
+
+            @Override
+            public CallResponseSpec call() {
+                return new ResponseSpec();
+            }
+
+            @Override
+            public StreamResponseSpec stream() {
+                throw new UnsupportedOperationException();
+            }
+        }
+
+        private static final class ResponseSpec implements CallResponseSpec {
+
+            @Override
+            public <T> T entity(org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.client.ChatClientResponse chatClientResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.model.ChatResponse chatResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String content() {
+                try {
+                    new CountDownLatch(1).await();
+                    throw new AssertionError("Latch await returned unexpectedly");
+                }
+                catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    return "interrupted";
+                }
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
         }
     }
 
