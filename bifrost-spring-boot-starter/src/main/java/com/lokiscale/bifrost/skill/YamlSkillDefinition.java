@@ -4,6 +4,9 @@ import org.springframework.core.io.Resource;
 
 import java.util.List;
 
+/**
+ * Stable typed catalog entry for a YAML skill manifest and its resolved execution configuration.
+ */
 public record YamlSkillDefinition(
         Resource resource,
         YamlSkillManifest manifest,

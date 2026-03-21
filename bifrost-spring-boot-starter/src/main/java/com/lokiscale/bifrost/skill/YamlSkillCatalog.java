@@ -59,10 +59,16 @@ public class YamlSkillCatalog implements InitializingBean {
         }
     }
 
+    /**
+     * Returns the typed YAML skill definitions discovered during startup in deterministic resource order.
+     */
     public List<YamlSkillDefinition> getSkills() {
         return List.copyOf(skillsByName.values());
     }
 
+    /**
+     * Catalog lookups are the supported access pattern for loaded YAML skills after initialization.
+     */
     public YamlSkillDefinition getSkill(String name) {
         return skillsByName.get(name);
     }

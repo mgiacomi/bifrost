@@ -88,6 +88,7 @@ public class BifrostAutoConfiguration {
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public YamlSkillCatalog yamlSkillCatalog(BifrostModelsProperties modelsProperties,
                                              BifrostSkillProperties skillProperties) {
+        // The catalog is the YAML discovery/loading boundary that downstream runtime beans build on.
         return new YamlSkillCatalog(modelsProperties, skillProperties);
     }
 
