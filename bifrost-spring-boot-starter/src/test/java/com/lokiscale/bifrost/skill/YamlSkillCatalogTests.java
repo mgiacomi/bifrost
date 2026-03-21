@@ -181,6 +181,191 @@ class YamlSkillCatalogTests {
                 });
     }
 
+    @Test
+    void loadsTypedRegexLinterConfigurationWhenPresent() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/regex-linter-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("linted.skill")).isNotNull();
+                    assertThat(catalog.getSkill("linted.skill").linter()).isNotNull();
+                    assertThat(catalog.getSkill("linted.skill").linter().getType()).isEqualTo("regex");
+                    assertThat(catalog.getSkill("linted.skill").linter().getMaxRetries()).isEqualTo(2);
+                    assertThat(catalog.getSkill("linted.skill").linter().getRegex()).isNotNull();
+                    assertThat(catalog.getSkill("linted.skill").linter().getRegex().getPattern()).isEqualTo("^```yaml[\\s\\S]*```$");
+                    assertThat(catalog.getSkill("linted.skill").linter().getRegex().getMessage()).isEqualTo("Return fenced YAML only.");
+                });
+    }
+
+    @Test
+    void defaultsLinterToAbsentWhenManifestDoesNotDeclareOne() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("thinking.default.skill")).isNotNull();
+                    assertThat(catalog.getSkill("thinking.default.skill").linter()).isNull();
+                });
+    }
+
+    @Test
+    void failsStartupWhenLinterTypeIsMissing() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/missing-linter-type-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("missing-linter-type-skill.yaml")
+                            .hasMessageContaining("field 'linter.type'")
+                            .hasMessageContaining("required field is missing or blank");
+                });
+    }
+
+    @Test
+    void failsStartupWhenLinterTypeIsUnsupported() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unsupported-linter-type-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("unsupported-linter-type-skill.yaml")
+                            .hasMessageContaining("field 'linter.type'")
+                            .hasMessageContaining("unsupported linter type 'external'");
+                });
+    }
+
+    @Test
+    void failsStartupWhenRegexBlockIsMissingForRegexType() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/missing-regex-block-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("missing-regex-block-skill.yaml")
+                            .hasMessageContaining("field 'linter.regex'")
+                            .hasMessageContaining("required block is missing");
+                });
+    }
+
+    @Test
+    void failsStartupWhenRegexPatternIsMissingOrBlank() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/missing-regex-pattern-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("missing-regex-pattern-skill.yaml")
+                        .hasMessageContaining("field 'linter.regex.pattern'")
+                        .hasMessageContaining("required field is missing or blank"));
+
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/blank-regex-pattern-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("blank-regex-pattern-skill.yaml")
+                        .hasMessageContaining("field 'linter.regex.pattern'")
+                        .hasMessageContaining("required field is missing or blank"));
+    }
+
+    @Test
+    void failsStartupWhenRegexPatternIsInvalid() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/invalid-regex-linter-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("invalid-regex-linter-skill.yaml")
+                            .hasMessageContaining("field 'linter.regex.pattern'")
+                            .hasMessageContaining("invalid regex pattern");
+                });
+    }
+
+    @Test
+    void failsStartupWhenLinterMaxRetriesIsMissing() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/missing-linter-max-retries-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("missing-linter-max-retries-skill.yaml")
+                            .hasMessageContaining("field 'linter.max_retries'")
+                            .hasMessageContaining("required field is missing");
+                });
+    }
+
+    @Test
+    void failsStartupWhenLinterMaxRetriesIsOutOfRange() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/negative-linter-max-retries-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("negative-linter-max-retries-skill.yaml")
+                        .hasMessageContaining("field 'linter.max_retries'")
+                        .hasMessageContaining("must be between 0 and 3"));
+
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/excessive-linter-max-retries-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("excessive-linter-max-retries-skill.yaml")
+                        .hasMessageContaining("field 'linter.max_retries'")
+                        .hasMessageContaining("must be between 0 and 3"));
+    }
+
+    @Test
+    void failsStartupWhenLinterMaxRetriesHasWrongType() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/wrong-type-linter-max-retries-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("wrong-type-linter-max-retries-skill.yaml")
+                            .hasMessageContaining("field 'linter.max_retries'")
+                            .hasMessageContaining("Cannot deserialize value of type `java.lang.Integer`");
+                });
+    }
+
+    @Test
+    void failsStartupWhenLinterContainsUnknownFields() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-linter-field-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("unknown-linter-field-skill.yaml")
+                            .hasMessageContaining("field 'linter.regex.patterns'")
+                            .hasMessageContaining("unknown field");
+                });
+    }
+
+    @Test
+    void failsStartupWhenManifestContainsUnknownRootFields() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-root-field-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("unknown-root-field-skill.yaml")
+                            .hasMessageContaining("field 'lintr'")
+                            .hasMessageContaining("unknown field");
+                });
+    }
+
+    @Test
+    void failsStartupWhenMappingContainsUnknownFields() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-mapping-field-skill.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("unknown-mapping-field-skill.yaml")
+                            .hasMessageContaining("field 'mapping.target_ids'")
+                            .hasMessageContaining("unknown field");
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class TargetBeanConfiguration {
 

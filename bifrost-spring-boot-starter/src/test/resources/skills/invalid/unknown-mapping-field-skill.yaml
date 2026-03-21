@@ -1,0 +1,6 @@
+name: unknown.mapping.field.skill
+description: YAML skill with an unexpected mapping field.
+model: gpt-5
+mapping:
+  target_id: targetBean#deterministicTarget
+  target_ids: targetBean#extraTarget

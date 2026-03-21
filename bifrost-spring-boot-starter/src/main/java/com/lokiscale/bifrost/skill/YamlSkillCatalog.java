@@ -1,7 +1,9 @@
 package com.lokiscale.bifrost.skill;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
 import com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties;
@@ -19,10 +21,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public class YamlSkillCatalog implements InitializingBean {
 
     private static final String DEFAULT_THINKING_LEVEL = "medium";
+    private static final int MAX_LINTER_RETRIES = 3;
 
     private final BifrostModelsProperties modelsProperties;
     private final BifrostSkillProperties skillProperties;
@@ -100,6 +105,7 @@ public class YamlSkillCatalog implements InitializingBean {
         validateRequiredField(resource, "name", manifest.getName());
         validateRequiredField(resource, "description", manifest.getDescription());
         validateRequiredField(resource, "model", manifest.getModel());
+        validateLinter(resource, manifest);
 
         BifrostModelsProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
         String effectiveThinkingLevel = resolveEffectiveThinkingLevel(manifest, catalogEntry);
@@ -138,6 +144,12 @@ public class YamlSkillCatalog implements InitializingBean {
         try (InputStream inputStream = resource.getInputStream()) {
             return yamlObjectMapper.readValue(inputStream, YamlSkillManifest.class);
         }
+        catch (UnrecognizedPropertyException ex) {
+            throw invalidSkill(resource, toFieldPath(ex), "unknown field");
+        }
+        catch (JsonMappingException ex) {
+            throw invalidSkill(resource, toFieldPath(ex), describeMappingFailure(ex));
+        }
         catch (IOException ex) {
             throw new IllegalStateException("Failed to read YAML skill from " + describe(resource), ex);
         }
@@ -149,8 +161,80 @@ public class YamlSkillCatalog implements InitializingBean {
         }
     }
 
+    private void validateLinter(Resource resource, YamlSkillManifest manifest) {
+        YamlSkillManifest.LinterManifest linter = manifest.getLinter();
+        if (linter == null) {
+            return;
+        }
+
+        validateRequiredField(resource, "linter.type", linter.getType());
+
+        Integer maxRetries = linter.getMaxRetries();
+        if (maxRetries == null) {
+            throw invalidSkill(resource, "linter.max_retries", "required field is missing");
+        }
+        if (maxRetries < 0 || maxRetries > MAX_LINTER_RETRIES) {
+            throw invalidSkill(resource, "linter.max_retries",
+                    "must be between 0 and " + MAX_LINTER_RETRIES);
+        }
+
+        if (!"regex".equals(linter.getType())) {
+            throw invalidSkill(resource, "linter.type", "unsupported linter type '" + linter.getType() + "'");
+        }
+
+        validateRegexLinter(resource, linter.getRegex());
+    }
+
+    private void validateRegexLinter(Resource resource, YamlSkillManifest.RegexManifest regex) {
+        if (regex == null) {
+            throw invalidSkill(resource, "linter.regex", "required block is missing for linter type 'regex'");
+        }
+
+        validateRequiredField(resource, "linter.regex.pattern", regex.getPattern());
+
+        try {
+            Pattern.compile(regex.getPattern());
+        }
+        catch (PatternSyntaxException ex) {
+            throw invalidSkill(resource, "linter.regex.pattern", "invalid regex pattern: " + ex.getDescription());
+        }
+    }
+
     private IllegalStateException invalidSkill(Resource resource, String fieldName, String detail) {
         return new IllegalStateException("Invalid YAML skill '" + describe(resource) + "' for field '" + fieldName + "': " + detail);
+    }
+
+    private String toFieldPath(UnrecognizedPropertyException ex) {
+        return toFieldPath((JsonMappingException) ex, ex.getPropertyName());
+    }
+
+    private String toFieldPath(JsonMappingException ex) {
+        return toFieldPath(ex, "manifest");
+    }
+
+    private String toFieldPath(JsonMappingException ex, String fallbackField) {
+        StringBuilder fieldPath = new StringBuilder();
+        for (JsonMappingException.Reference reference : ex.getPath()) {
+            if (reference.getFieldName() == null) {
+                continue;
+            }
+            if (!fieldPath.isEmpty()) {
+                fieldPath.append('.');
+            }
+            fieldPath.append(reference.getFieldName());
+        }
+        if (fieldPath.isEmpty()) {
+            return fallbackField;
+        }
+        return fieldPath.toString();
+    }
+
+    private String describeMappingFailure(JsonMappingException ex) {
+        String originalMessage = ex.getOriginalMessage();
+        if (!StringUtils.hasText(originalMessage)) {
+            return "invalid value";
+        }
+        return originalMessage;
     }
 
     private String describe(Resource resource) {
@@ -164,7 +248,7 @@ public class YamlSkillCatalog implements InitializingBean {
 
     private static ObjectMapper defaultYamlObjectMapper() {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
         return mapper;
     }
 }

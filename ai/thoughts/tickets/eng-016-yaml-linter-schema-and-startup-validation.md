@@ -42,6 +42,7 @@ This ticket should **not** introduce:
 - Linter config is represented in typed Java objects rather than ad hoc maps.
 - Validation happens during catalog/build time, not inside the runtime execution loop.
 - `YamlSkillDefinition` exposes resolved linter settings in a way later runtime tickets can consume directly.
+- YAML manifest loading now fails on unknown properties so linter-field typos are rejected during startup instead of being silently ignored.
 
 ### Testing
 - Tests prove valid linter manifests load successfully.
@@ -71,3 +72,6 @@ This ticket should **not** introduce:
 
 ## Definition of Done
 This ticket is done when linter configuration is a validated first-class part of YAML skill loading and invalid definitions fail fast before any mission execution begins.
+
+## Review Note
+As implemented, ENG-016 also tightens YAML manifest parsing to reject unknown properties during startup. This is intentional so misspelled `linter` fields fail fast, and reviewers should treat that stricter manifest contract as part of the accepted scope for this ticket.

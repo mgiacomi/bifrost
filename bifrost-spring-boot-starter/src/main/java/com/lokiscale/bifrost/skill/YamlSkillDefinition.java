@@ -20,6 +20,10 @@ public record YamlSkillDefinition(
         return manifest.getRbacRoles();
     }
 
+    public YamlSkillManifest.LinterManifest linter() {
+        return manifest.getLinter();
+    }
+
     public String mappingTargetId() {
         return manifest.getMapping().getTargetId();
     }

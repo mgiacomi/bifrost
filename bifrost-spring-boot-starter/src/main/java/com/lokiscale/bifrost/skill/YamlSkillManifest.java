@@ -2,10 +2,12 @@ package com.lokiscale.bifrost.skill;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Locale;
 
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 public class YamlSkillManifest {
 
     private String name;
@@ -23,6 +25,8 @@ public class YamlSkillManifest {
 
     @JsonProperty("planning_mode")
     private Boolean planningMode;
+
+    private LinterManifest linter;
 
     private MappingManifest mapping = new MappingManifest();
 
@@ -82,6 +86,14 @@ public class YamlSkillManifest {
         this.planningMode = planningMode;
     }
 
+    public LinterManifest getLinter() {
+        return linter;
+    }
+
+    public void setLinter(LinterManifest linter) {
+        this.linter = linter;
+    }
+
     public MappingManifest getMapping() {
         return mapping;
     }
@@ -90,7 +102,66 @@ public class YamlSkillManifest {
         this.mapping = mapping == null ? new MappingManifest() : mapping;
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class LinterManifest {
+
+        // ENG-016 supports regex linting only; future modes can be added here as siblings.
+        private String type;
+
+        @JsonProperty("max_retries")
+        private Integer maxRetries;
+
+        private RegexManifest regex;
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = StringUtils.hasText(type) ? type.trim().toLowerCase(Locale.ROOT) : type;
+        }
+
+        public Integer getMaxRetries() {
+            return maxRetries;
+        }
+
+        public void setMaxRetries(Integer maxRetries) {
+            this.maxRetries = maxRetries;
+        }
+
+        public RegexManifest getRegex() {
+            return regex;
+        }
+
+        public void setRegex(RegexManifest regex) {
+            this.regex = regex;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class RegexManifest {
+
+        private String pattern;
+        private String message;
+
+        public String getPattern() {
+            return pattern;
+        }
+
+        public void setPattern(String pattern) {
+            this.pattern = StringUtils.hasText(pattern) ? pattern.trim() : pattern;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String message) {
+            this.message = StringUtils.hasText(message) ? message : null;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
     public static class MappingManifest {
 
         @JsonProperty("target_id")
