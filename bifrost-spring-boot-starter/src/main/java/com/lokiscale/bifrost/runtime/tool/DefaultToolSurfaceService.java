@@ -1,5 +1,6 @@
 package com.lokiscale.bifrost.runtime.tool;
 
+import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import org.springframework.lang.Nullable;
@@ -17,7 +18,9 @@ public class DefaultToolSurfaceService implements ToolSurfaceService {
     }
 
     @Override
-    public List<CapabilityMetadata> visibleToolsFor(String rootSkillName, @Nullable Authentication authentication) {
-        return skillVisibilityResolver.visibleSkillsFor(rootSkillName, authentication);
+    public List<CapabilityMetadata> visibleToolsFor(String rootSkillName,
+                                                    BifrostSession session,
+                                                    @Nullable Authentication authentication) {
+        return skillVisibilityResolver.visibleSkillsFor(rootSkillName, session, authentication);
     }
 }

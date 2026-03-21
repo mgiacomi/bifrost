@@ -3,6 +3,8 @@ package com.lokiscale.bifrost.core;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.springframework.lang.Nullable;
+import org.springframework.security.core.Authentication;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -24,13 +26,23 @@ public final class BifrostSession {
     private final Deque<ExecutionFrame> frames;
     private final ExecutionJournal executionJournal;
     private ExecutionPlan executionPlan;
+    @JsonIgnore
+    private Authentication authentication;
 
     public BifrostSession(int maxDepth) {
         this(UUID.randomUUID().toString(), maxDepth);
     }
 
     public BifrostSession(String sessionId, int maxDepth) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null);
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null);
+    }
+
+    public BifrostSession(int maxDepth, @Nullable Authentication authentication) {
+        this(UUID.randomUUID().toString(), maxDepth, List.of(), new ExecutionJournal(), null, authentication);
+    }
+
+    public BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication) {
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, authentication);
     }
 
     @JsonCreator
@@ -40,6 +52,16 @@ public final class BifrostSession {
             @JsonProperty("frames") List<ExecutionFrame> frames,
             @JsonProperty("executionJournal") ExecutionJournal executionJournal,
             @JsonProperty("executionPlan") ExecutionPlan executionPlan) {
+        this(sessionId, maxDepth, frames, executionJournal, executionPlan, null);
+    }
+
+    public BifrostSession(
+            String sessionId,
+            int maxDepth,
+            List<ExecutionFrame> frames,
+            ExecutionJournal executionJournal,
+            ExecutionPlan executionPlan,
+            @Nullable Authentication authentication) {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         if (maxDepth <= 0) {
             throw new IllegalArgumentException("maxDepth must be greater than zero");
@@ -49,6 +71,7 @@ public final class BifrostSession {
         this.frames = new ArrayDeque<>(frames == null ? List.of() : List.copyOf(frames));
         this.executionJournal = executionJournal == null ? new ExecutionJournal() : executionJournal;
         this.executionPlan = executionPlan;
+        this.authentication = authentication;
     }
 
     public String getSessionId() {
@@ -126,6 +149,26 @@ public final class BifrostSession {
             }
             executionPlan = Objects.requireNonNull(updater.apply(executionPlan), "updated plan must not be null");
             return Optional.of(executionPlan);
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
+    public Optional<Authentication> getAuthentication() {
+        lock.lock();
+        try {
+            return Optional.ofNullable(authentication);
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
+    public void setAuthentication(@Nullable Authentication authentication) {
+        lock.lock();
+        try {
+            this.authentication = authentication;
         }
         finally {
             lock.unlock();

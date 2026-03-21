@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
 import com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
@@ -12,6 +13,7 @@ import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
+import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -34,10 +36,11 @@ class SkillVisibilityResolverTest {
         new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
         registry.register("internal.only.target", metadata("internal.only.target", Set.of()));
 
-        DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry);
+        DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
         List<CapabilityMetadata> visible = resolver.visibleSkillsFor(
                 "root.visible.skill",
+                new BifrostSession("session-1", 2),
                 UsernamePasswordAuthenticationToken.authenticated(
                         "user",
                         "pw",
@@ -55,14 +58,53 @@ class SkillVisibilityResolverTest {
         new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
         registry.register("internal.only.target", metadata("internal.only.target", Set.of()));
 
-        DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry);
+        DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
         List<CapabilityMetadata> visible = resolver.visibleSkillsFor(
                 "root.visible.skill",
+                new BifrostSession("session-1", 2),
                 UsernamePasswordAuthenticationToken.authenticated(
                         "user",
                         "pw",
                         AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
+
+        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowed.visible.skill");
+    }
+
+    @Test
+    void hidesProtectedSkillsWhenAuthenticationIsMissing() {
+        YamlSkillCatalog catalog = catalog("classpath:/skills/valid/allowed-*.yaml");
+        catalog.afterPropertiesSet();
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registerTargetCapabilities(registry);
+        new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
+
+        DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
+
+        List<CapabilityMetadata> visible = resolver.visibleSkillsFor(
+                "root.visible.skill",
+                new BifrostSession("session-1", 2),
+                null);
+
+        assertThat(visible).isEmpty();
+    }
+
+    @Test
+    void usesSessionFallbackForProtectedSkillVisibility() {
+        YamlSkillCatalog catalog = catalog("classpath:/skills/valid/allowed-*.yaml");
+        catalog.afterPropertiesSet();
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registerTargetCapabilities(registry);
+        new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
+
+        DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
+        BifrostSession session = new BifrostSession("session-1", 2);
+        session.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                "user",
+                "pw",
+                AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
+
+        List<CapabilityMetadata> visible = resolver.visibleSkillsFor("root.visible.skill", session, null);
 
         assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowed.visible.skill");
     }

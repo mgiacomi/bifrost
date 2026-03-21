@@ -3,6 +3,8 @@ package com.lokiscale.bifrost.core;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
 
 import java.time.Instant;
 import java.util.List;
@@ -47,6 +49,10 @@ class BifrostSessionJsonTest {
     void rehydratesFreshLockAfterSessionDeserialization() throws Exception {
         BifrostSession session = new BifrostSession("session-1", 4);
         session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
+        session.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                "user",
+                "pw",
+                AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
 
         String json = OBJECT_MAPPER.writeValueAsString(session);
         BifrostSession restored = OBJECT_MAPPER.readValue(json, BifrostSession.class);
@@ -56,6 +62,7 @@ class BifrostSessionJsonTest {
 
         assertThat(restored.getJournalSnapshot()).hasSize(2);
         assertThat(restored.peekFrame().route()).isEqualTo("route.one");
+        assertThat(restored.getAuthentication()).isEmpty();
     }
 
     private static ExecutionFrame frame(String frameId, String route) {

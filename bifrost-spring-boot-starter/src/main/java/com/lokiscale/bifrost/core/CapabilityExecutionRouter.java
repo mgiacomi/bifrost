@@ -4,16 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.state.PlanSnapshot;
+import com.lokiscale.bifrost.security.AccessGuard;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.lang.Nullable;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public class CapabilityExecutionRouter {
 
@@ -21,23 +19,27 @@ public class CapabilityExecutionRouter {
     private final ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider;
     private final ObjectMapper objectMapper;
     private final ExecutionStateService executionStateService;
+    private final AccessGuard accessGuard;
 
     public CapabilityExecutionRouter(RefResolver refResolver,
                                      ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
-                                     ExecutionStateService executionStateService) {
-        this(refResolver, executionCoordinatorProvider, new ObjectMapper(), executionStateService);
+                                     ExecutionStateService executionStateService,
+                                     AccessGuard accessGuard) {
+        this(refResolver, executionCoordinatorProvider, new ObjectMapper(), executionStateService, accessGuard);
     }
 
     CapabilityExecutionRouter(RefResolver refResolver,
                               ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
                               ObjectMapper objectMapper,
-                              ExecutionStateService executionStateService) {
+                              ExecutionStateService executionStateService,
+                              AccessGuard accessGuard) {
         this.refResolver = Objects.requireNonNull(refResolver, "refResolver must not be null");
         this.executionCoordinatorProvider = Objects.requireNonNull(
                 executionCoordinatorProvider,
                 "executionCoordinatorProvider must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
+        this.accessGuard = Objects.requireNonNull(accessGuard, "accessGuard must not be null");
     }
 
     public Object execute(CapabilityMetadata capability,
@@ -47,7 +49,7 @@ public class CapabilityExecutionRouter {
         Objects.requireNonNull(capability, "capability must not be null");
         Objects.requireNonNull(session, "session must not be null");
 
-        ensureAuthorized(capability, authentication);
+        accessGuard.checkAccess(capability, session, authentication);
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
 
         if (capability.kind() == CapabilityKind.YAML_SKILL && capability.mappedTargetId() == null) {
@@ -73,21 +75,6 @@ public class CapabilityExecutionRouter {
         }
         catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to serialize tool arguments for YAML skill '" + capability.name() + "'", ex);
-        }
-    }
-
-    private void ensureAuthorized(CapabilityMetadata capability, @Nullable Authentication authentication) {
-        if (capability.rbacRoles().isEmpty()) {
-            return;
-        }
-        Set<String> authorities = authentication == null
-                ? Set.of()
-                : authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(java.util.stream.Collectors.toSet());
-        boolean authorized = capability.rbacRoles().stream().anyMatch(authorities::contains);
-        if (!authorized) {
-            throw new AccessDeniedException("Access denied for capability '" + capability.name() + "'");
         }
     }
 }

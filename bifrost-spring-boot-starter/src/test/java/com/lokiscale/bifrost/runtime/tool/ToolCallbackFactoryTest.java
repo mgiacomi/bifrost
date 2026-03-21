@@ -13,6 +13,7 @@ import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -94,7 +95,8 @@ class ToolCallbackFactoryTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 new StaticListableBeanFactory().getBeanProvider(com.lokiscale.bifrost.core.ExecutionCoordinator.class),
-                stateService);
+                stateService,
+                new DefaultAccessGuard());
         DefaultToolCallbackFactory factory = new DefaultToolCallbackFactory(router, planningService, stateService);
         BifrostSession session = new BifrostSession("session-1", 2);
 

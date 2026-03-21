@@ -5,14 +5,13 @@ import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
+import com.lokiscale.bifrost.security.AccessGuard;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 
 import java.util.List;
 import java.util.Map;
@@ -27,6 +26,7 @@ public class ExecutionCoordinator {
     private final ToolCallbackFactory toolCallbackFactory;
     private final MissionExecutionEngine missionExecutionEngine;
     private final ExecutionStateService executionStateService;
+    private final AccessGuard accessGuard;
     private final boolean planningModeEnabled;
 
     public ExecutionCoordinator(YamlSkillCatalog yamlSkillCatalog,
@@ -36,6 +36,7 @@ public class ExecutionCoordinator {
                                 ToolCallbackFactory toolCallbackFactory,
                                 MissionExecutionEngine missionExecutionEngine,
                                 ExecutionStateService executionStateService,
+                                AccessGuard accessGuard,
                                 boolean planningModeEnabled) {
         this.yamlSkillCatalog = Objects.requireNonNull(yamlSkillCatalog, "yamlSkillCatalog must not be null");
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
@@ -44,6 +45,7 @@ public class ExecutionCoordinator {
         this.toolCallbackFactory = Objects.requireNonNull(toolCallbackFactory, "toolCallbackFactory must not be null");
         this.missionExecutionEngine = Objects.requireNonNull(missionExecutionEngine, "missionExecutionEngine must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
+        this.accessGuard = Objects.requireNonNull(accessGuard, "accessGuard must not be null");
         this.planningModeEnabled = planningModeEnabled;
     }
 
@@ -52,14 +54,17 @@ public class ExecutionCoordinator {
         requireNonBlank(objective, "objective");
         YamlSkillDefinition definition = requireYamlSkill(skillName);
         CapabilityMetadata rootCapability = requireCapability(skillName);
-        ensureAuthorized(rootCapability, authentication);
+        if (authentication != null || session.getFramesSnapshot().isEmpty()) {
+            session.setAuthentication(authentication);
+        }
+        accessGuard.checkAccess(rootCapability, session, authentication);
         executionStateService.clearPlan(session);
         ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.of("objective", objective));
         try {
             ChatClient chatClient = skillChatClientFactory.create(definition.executionConfiguration());
             List<ToolCallback> visibleTools = toolCallbackFactory.createToolCallbacks(
                     session,
-                    toolSurfaceService.visibleToolsFor(skillName, authentication),
+                    toolSurfaceService.visibleToolsFor(skillName, session, authentication),
                     authentication);
             return missionExecutionEngine.executeMission(
                     session,
@@ -89,21 +94,6 @@ public class ExecutionCoordinator {
             throw new IllegalArgumentException("Unknown capability '" + skillName + "'");
         }
         return capability;
-    }
-
-    private void ensureAuthorized(CapabilityMetadata capability, @Nullable Authentication authentication) {
-        if (capability.rbacRoles().isEmpty()) {
-            return;
-        }
-        java.util.Set<String> authorities = authentication == null
-                ? java.util.Set.of()
-                : authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(java.util.stream.Collectors.toSet());
-        boolean authorized = capability.rbacRoles().stream().anyMatch(authorities::contains);
-        if (!authorized) {
-            throw new AccessDeniedException("Access denied for capability '" + capability.name() + "'");
-        }
     }
 
     private static String requireNonBlank(String value, String fieldName) {

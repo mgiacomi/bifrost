@@ -12,6 +12,8 @@ import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.DefaultToolSurfaceService;
 import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
+import com.lokiscale.bifrost.security.AccessGuard;
+import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
@@ -22,6 +24,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.execution.ToolExecutionException;
+import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -90,7 +93,7 @@ class ExecutionCoordinatorTest {
         ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
-                (currentSkillName, authentication) -> List.of(childMetadata),
+                (currentSkillName, sessionState, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
                 (value, session) -> value,
                 null,
@@ -101,6 +104,79 @@ class ExecutionCoordinatorTest {
         assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("root.visible.skill");
+        assertThat(session.getExecutionPlan()).isEmpty();
+        assertThat(session.getJournalSnapshot()).isEmpty();
+        assertThat(chatClient.systemMessagesSeen).isEmpty();
+        assertThat(session.getFramesSnapshot()).isEmpty();
+    }
+
+    @Test
+    void clearsStaleSessionAuthenticationBeforeUnauthenticatedRootExecution() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                executionConfiguration));
+
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of("ROLE_ROOT"),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        CapabilityMetadata childMetadata = new CapabilityMetadata(
+                "yaml:child",
+                "allowed.visible.skill",
+                "child",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "child",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                "targetBean#deterministicTarget");
+
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+        registry.register(childMetadata.name(), childMetadata);
+
+        FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
+                new ExecutionPlan(
+                        "plan-root-rbac",
+                        "root.visible.skill",
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", true))),
+                "unused",
+                "{\"value\":\"hello\"}");
+
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                (currentSkillName, sessionState, authentication) -> List.of(childMetadata),
+                new RecordingSkillChatClientFactory(chatClient),
+                (value, session) -> value,
+                null,
+                true);
+
+        BifrostSession session = new BifrostSession("session-1", 3);
+        session.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                "user",
+                "pw",
+                AuthorityUtils.createAuthorityList("ROLE_ROOT")));
+
+        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("root.visible.skill");
+        assertThat(session.getAuthentication()).isEmpty();
         assertThat(session.getExecutionPlan()).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
         assertThat(chatClient.systemMessagesSeen).isEmpty();
@@ -157,7 +233,7 @@ class ExecutionCoordinatorTest {
                 "mission complete",
                 "{\"value\":\"ref://artifacts/input.txt\"}");
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
-        SkillVisibilityResolver visibilityResolver = (currentSkillName, authentication) -> List.of(childMetadata);
+        SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) -> List.of(childMetadata);
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
                 ? "resolved-content"
                 : value;
@@ -264,7 +340,7 @@ class ExecutionCoordinatorTest {
         ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
-                (currentSkillName, authentication) -> List.of(childMetadata),
+                (currentSkillName, sessionState, authentication) -> List.of(childMetadata),
                 factory,
                 (value, session) -> value,
                 null,
@@ -335,7 +411,7 @@ class ExecutionCoordinatorTest {
         ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
-                (currentSkillName, authentication) -> List.of(childMetadata),
+                (currentSkillName, sessionState, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
                 (value, session) -> value,
                 null,
@@ -408,7 +484,7 @@ class ExecutionCoordinatorTest {
                 "unused",
                 "{\"value\":\"ref://artifacts/input.txt\"}");
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
-        SkillVisibilityResolver visibilityResolver = (currentSkillName, authentication) -> List.of(childMetadata);
+        SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) -> List.of(childMetadata);
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
                 ? "resolved-content"
                 : value;
@@ -503,7 +579,7 @@ class ExecutionCoordinatorTest {
                 java.util.Map.of(
                         rootExecutionConfiguration.frameworkModel(), rootChatClient,
                         childExecutionConfiguration.frameworkModel(), childChatClient));
-        SkillVisibilityResolver visibilityResolver = (currentSkillName, authentication) ->
+        SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
                 "root.visible.skill".equals(currentSkillName) ? List.of(childMetadata) : List.of();
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
                 ? "resolved-content"
@@ -600,7 +676,7 @@ class ExecutionCoordinatorTest {
         ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
-                (currentSkillName, authentication) -> List.of(childMetadata),
+                (currentSkillName, sessionState, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
                 (value, session) -> value,
                 null,
@@ -615,6 +691,113 @@ class ExecutionCoordinatorTest {
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
                 .containsExactly(PlanTaskStatus.BLOCKED);
         assertThat(session.getExecutionPlan().orElseThrow().status()).isEqualTo(PlanStatus.STALE);
+    }
+
+    @Test
+    void authorizesProtectedChildYamlSkillFromSessionFallback() {
+        EffectiveSkillExecutionConfiguration rootExecutionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        EffectiveSkillExecutionConfiguration childExecutionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5-mini",
+                AiProvider.OPENAI,
+                "openai/gpt-5-mini",
+                "low");
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(
+                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("root.visible.skill", List.of("child.llm.skill")),
+                        rootExecutionConfiguration),
+                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("child.llm.skill", List.of()),
+                        childExecutionConfiguration));
+
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(rootExecutionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        CapabilityMetadata childMetadata = new CapabilityMetadata(
+                "yaml:child-llm",
+                "child.llm.skill",
+                "child llm",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(childExecutionConfiguration),
+                java.util.Set.of("ROLE_ALLOWED"),
+                arguments -> {
+                    throw new UnsupportedOperationException("should route through coordinator");
+                },
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("child.llm.skill", "child llm"),
+                null);
+
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+        registry.register(childMetadata.name(), childMetadata);
+
+        FakeCoordinatorChatClient rootChatClient = new FakeCoordinatorChatClient(
+                new ExecutionPlan(
+                        "plan-root",
+                        "root.visible.skill",
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        List.of(toolTask("task-1", "Use child.llm.skill", "child.llm.skill", false))),
+                "root mission complete",
+                "{\"topic\":\"mars\"}");
+        FakeCoordinatorChatClient childChatClient = new FakeCoordinatorChatClient(
+                new ExecutionPlan(
+                        "plan-child",
+                        "child.llm.skill",
+                        Instant.parse("2026-03-15T12:01:00Z"),
+                        List.of(new PlanTask("child-task-1", "Analyze mars topic", PlanTaskStatus.PENDING, null))),
+                "child mission complete",
+                null);
+        MultiClientSkillChatClientFactory factory = new MultiClientSkillChatClientFactory(
+                java.util.Map.of(
+                        rootExecutionConfiguration.frameworkModel(), rootChatClient,
+                        childExecutionConfiguration.frameworkModel(), childChatClient));
+        SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
+                "root.visible.skill".equals(currentSkillName) ? List.of(childMetadata) : List.of();
+
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                visibilityResolver,
+                factory,
+                (value, session) -> value,
+                null,
+                true,
+                true);
+        coordinator = coordinator(
+                catalog,
+                registry,
+                visibilityResolver,
+                factory,
+                (value, session) -> value,
+                coordinator,
+                true,
+                true);
+
+        BifrostSession session = new BifrostSession("session-1", 4);
+        String response = coordinator.execute(
+                "root.visible.skill",
+                "Say hello",
+                session,
+                UsernamePasswordAuthenticationToken.authenticated(
+                        "user",
+                        "pw",
+                        AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
+
+        assertThat(response).isEqualTo("root mission complete");
+        assertThat(rootChatClient.lastToolResult).isEqualTo("\"child mission complete\"");
+        assertThat(session.getExecutionPlan()).isPresent();
+        assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
+                .containsExactly(PlanTaskStatus.COMPLETED);
+        assertThat(session.getAuthentication()).isPresent();
     }
 
     @Test
@@ -699,7 +882,7 @@ class ExecutionCoordinatorTest {
         ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
-                (currentSkillName, authentication) -> List.of(childMetadata),
+                (currentSkillName, sessionState, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
                 (value, session) -> value,
                 null,
@@ -735,11 +918,28 @@ class ExecutionCoordinatorTest {
                                                    RefResolver refResolver,
                                                    ExecutionCoordinator routedCoordinator,
                                                    boolean planningModeEnabled) {
+        return coordinator(catalog, registry, visibilityResolver, factory, refResolver, routedCoordinator, planningModeEnabled, null);
+    }
+
+    private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
+                                                    InMemoryCapabilityRegistry registry,
+                                                    SkillVisibilityResolver visibilityResolver,
+                                                    SkillChatClientFactory factory,
+                                                    RefResolver refResolver,
+                                                    ExecutionCoordinator routedCoordinator,
+                                                    boolean planningModeEnabled,
+                                                    @Nullable Boolean dropInvocationAuthenticationForCallbacks) {
         ExecutionStateService stateService = fixedStateService();
         PlanningService planningService = fixedPlanningService(stateService);
         ToolSurfaceService toolSurfaceService = new DefaultToolSurfaceService(visibilityResolver);
-        ToolCallbackFactory toolCallbackFactory = toolCallbackFactory(refResolver, routedCoordinator, stateService, planningService);
+        ToolCallbackFactory toolCallbackFactory = toolCallbackFactory(
+                refResolver,
+                routedCoordinator,
+                stateService,
+                planningService,
+                Boolean.TRUE.equals(dropInvocationAuthenticationForCallbacks));
         MissionExecutionEngine missionExecutionEngine = missionExecutionEngine(planningService, stateService);
+        AccessGuard accessGuard = new DefaultAccessGuard();
         return new ExecutionCoordinator(
                 catalog,
                 registry,
@@ -748,6 +948,7 @@ class ExecutionCoordinatorTest {
                 toolCallbackFactory,
                 missionExecutionEngine,
                 stateService,
+                accessGuard,
                 planningModeEnabled);
     }
 
@@ -755,13 +956,30 @@ class ExecutionCoordinatorTest {
                                                            ExecutionCoordinator coordinator,
                                                            ExecutionStateService stateService,
                                                            PlanningService planningService) {
+        return toolCallbackFactory(refResolver, coordinator, stateService, planningService, false);
+    }
+
+    private static ToolCallbackFactory toolCallbackFactory(RefResolver refResolver,
+                                                           ExecutionCoordinator coordinator,
+                                                           ExecutionStateService stateService,
+                                                           PlanningService planningService,
+                                                           boolean dropInvocationAuthenticationForCallbacks) {
         StaticListableBeanFactory beanFactory = coordinator == null
                 ? new StaticListableBeanFactory()
                 : new StaticListableBeanFactory(java.util.Map.of("executionCoordinator", coordinator));
-        return new DefaultToolCallbackFactory(
-                new CapabilityExecutionRouter(refResolver, beanFactory.getBeanProvider(ExecutionCoordinator.class), stateService),
+        DefaultToolCallbackFactory delegate = new DefaultToolCallbackFactory(
+                new CapabilityExecutionRouter(
+                        refResolver,
+                        beanFactory.getBeanProvider(ExecutionCoordinator.class),
+                        stateService,
+                        new DefaultAccessGuard()),
                 planningService,
                 stateService);
+        if (!dropInvocationAuthenticationForCallbacks) {
+            return delegate;
+        }
+        return (session, capabilities, authentication) ->
+                delegate.createToolCallbacks(session, capabilities, null);
     }
 
     private static ExecutionStateService fixedStateService() {

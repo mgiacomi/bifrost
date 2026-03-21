@@ -1,6 +1,8 @@
 package com.lokiscale.bifrost.core;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
 
 import java.time.Instant;
 import java.util.List;
@@ -131,6 +133,19 @@ class BifrostSessionTest {
                 .containsExactly(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED);
         assertThat(session.getJournalSnapshot().get(1).payload().get("tasks").get(0).get("status").textValue())
                 .isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void storesAuthenticationAsRuntimeOnlySessionState() {
+        BifrostSession session = new BifrostSession("session-1", 2);
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                "user",
+                "pw",
+                AuthorityUtils.createAuthorityList("ROLE_ALLOWED"));
+
+        session.setAuthentication(authentication);
+
+        assertThat(session.getAuthentication()).contains(authentication);
     }
 
     private static ExecutionFrame frame(String frameId, String route) {

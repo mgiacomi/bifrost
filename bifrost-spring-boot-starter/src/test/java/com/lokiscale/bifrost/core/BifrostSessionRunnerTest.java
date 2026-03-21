@@ -1,6 +1,8 @@
 package com.lokiscale.bifrost.core;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
 
 import java.time.Instant;
 import java.util.Map;
@@ -75,6 +77,25 @@ class BifrostSessionRunnerTest {
             assertThat(second.get()).contains(":2:second");
             assertThat(first.get()).isNotEqualTo(second.get());
         }
+    }
+
+    @Test
+    void seedsAuthenticationIntoNewSessionWhenProvided() {
+        BifrostSessionRunner sessionRunner = new BifrostSessionRunner(4);
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                "user",
+                "pw",
+                AuthorityUtils.createAuthorityList("ROLE_ALLOWED"));
+
+        String authority = sessionRunner.callWithNewSession(authentication, session ->
+                session.getAuthentication()
+                        .orElseThrow()
+                        .getAuthorities()
+                        .iterator()
+                        .next()
+                        .getAuthority());
+
+        assertThat(authority).isEqualTo("ROLE_ALLOWED");
     }
 
     private static ExecutionFrame frame(String frameId, String route) {

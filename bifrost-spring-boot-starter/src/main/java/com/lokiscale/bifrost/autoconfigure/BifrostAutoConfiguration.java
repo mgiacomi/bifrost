@@ -23,6 +23,8 @@ import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.DefaultToolSurfaceService;
 import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
+import com.lokiscale.bifrost.security.AccessGuard;
+import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import com.lokiscale.bifrost.skill.DefaultSkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillCapabilityRegistrar;
@@ -103,9 +105,17 @@ public class BifrostAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public AccessGuard accessGuard() {
+        return new DefaultAccessGuard();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public SkillVisibilityResolver skillVisibilityResolver(YamlSkillCatalog yamlSkillCatalog,
-                                                           CapabilityRegistry capabilityRegistry) {
-        return new DefaultSkillVisibilityResolver(yamlSkillCatalog, capabilityRegistry);
+                                                           CapabilityRegistry capabilityRegistry,
+                                                           AccessGuard accessGuard) {
+        return new DefaultSkillVisibilityResolver(yamlSkillCatalog, capabilityRegistry, accessGuard);
     }
 
     @Bean
@@ -127,8 +137,9 @@ public class BifrostAutoConfiguration {
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public CapabilityExecutionRouter capabilityExecutionRouter(RefResolver refResolver,
                                                                org.springframework.beans.factory.ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
-                                                               ExecutionStateService executionStateService) {
-        return new CapabilityExecutionRouter(refResolver, executionCoordinatorProvider, executionStateService);
+                                                               ExecutionStateService executionStateService,
+                                                               AccessGuard accessGuard) {
+        return new CapabilityExecutionRouter(refResolver, executionCoordinatorProvider, executionStateService, accessGuard);
     }
 
     @Bean
@@ -231,7 +242,8 @@ public class BifrostAutoConfiguration {
                                                      ToolSurfaceService toolSurfaceService,
                                                      ToolCallbackFactory toolCallbackFactory,
                                                      MissionExecutionEngine missionExecutionEngine,
-                                                     ExecutionStateService executionStateService) {
+                                                     ExecutionStateService executionStateService,
+                                                     AccessGuard accessGuard) {
         return new ExecutionCoordinator(
                 yamlSkillCatalog,
                 capabilityRegistry,
@@ -240,6 +252,7 @@ public class BifrostAutoConfiguration {
                 toolCallbackFactory,
                 missionExecutionEngine,
                 executionStateService,
+                accessGuard,
                 true);
     }
 }
