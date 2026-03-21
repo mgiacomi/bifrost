@@ -1,5 +1,7 @@
 package com.lokiscale.bifrost.core;
 
+import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -146,6 +148,27 @@ class BifrostSessionTest {
         session.setAuthentication(authentication);
 
         assertThat(session.getAuthentication()).contains(authentication);
+    }
+
+    @Test
+    void storesLastLinterOutcomeAndJournalsItSeparately() {
+        BifrostSession session = new BifrostSession("session-1", 2);
+        LinterOutcome outcome = new LinterOutcome(
+                "linted.skill",
+                "regex",
+                2,
+                1,
+                2,
+                LinterOutcomeStatus.PASSED,
+                "Return fenced YAML only.");
+
+        session.setLastLinterOutcome(outcome);
+        session.logLinterOutcome(Instant.parse("2026-03-15T12:00:03Z"), outcome);
+
+        assertThat(session.getLastLinterOutcome()).contains(outcome);
+        assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
+                .containsExactly(JournalEntryType.LINTER);
+        assertThat(session.getJournalSnapshot().getFirst().payload().get("status").textValue()).isEqualTo("PASSED");
     }
 
     private static ExecutionFrame frame(String frameId, String route) {

@@ -2,6 +2,8 @@ package com.lokiscale.bifrost.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -70,5 +72,23 @@ class ExecutionJournalTest {
                 .isEqualTo("IN_PROGRESS");
         assertThat(journal.getEntriesSnapshot().get(0).payload().get("tasks").get(1).get("note").textValue())
                 .isEqualTo("started");
+    }
+
+    @Test
+    void serializesLinterOutcomesWithStableStructuredFields() {
+        ExecutionJournal journal = new ExecutionJournal();
+        LinterOutcome outcome = new LinterOutcome(
+                "linted.skill",
+                "regex",
+                3,
+                2,
+                2,
+                LinterOutcomeStatus.EXHAUSTED,
+                "Return fenced YAML only.");
+
+        journal.append(Instant.parse("2026-03-15T12:00:00Z"), JournalLevel.INFO, JournalEntryType.LINTER, outcome);
+
+        assertThat(journal.getEntriesSnapshot().getFirst().payload().get("retryCount").intValue()).isEqualTo(2);
+        assertThat(journal.getEntriesSnapshot().getFirst().payload().get("status").textValue()).isEqualTo("EXHAUSTED");
     }
 }

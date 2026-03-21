@@ -1,0 +1,130 @@
+package com.lokiscale.bifrost.linter;
+
+import com.lokiscale.bifrost.core.BifrostSession;
+import org.springframework.ai.chat.client.ChatClientRequest;
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.util.StringUtils;
+
+import java.time.Clock;
+import java.util.Objects;
+import java.util.regex.Pattern;
+
+public final class LinterCallAdvisor implements CallAdvisor {
+
+    public static final String CONTEXT_KEY = "bifrost.linter.outcome";
+
+    private static final String HINT_TEMPLATE = """
+
+            Linter validation failed for the previous response.
+            Return a corrected answer that satisfies this requirement:
+            %s
+            """;
+
+    private final String skillName;
+    private final String linterType;
+    private final Pattern pattern;
+    private final String failureMessage;
+    private final int maxRetries;
+    private final Clock clock;
+
+    public LinterCallAdvisor(String skillName,
+                             String linterType,
+                             Pattern pattern,
+                             String failureMessage,
+                             int maxRetries,
+                             Clock clock) {
+        this.skillName = Objects.requireNonNull(skillName, "skillName must not be null");
+        this.linterType = Objects.requireNonNull(linterType, "linterType must not be null");
+        this.pattern = Objects.requireNonNull(pattern, "pattern must not be null");
+        this.failureMessage = Objects.requireNonNull(failureMessage, "failureMessage must not be null");
+        if (maxRetries < 0) {
+            throw new IllegalArgumentException("maxRetries must not be negative");
+        }
+        this.maxRetries = maxRetries;
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    @Override
+    public ChatClientResponse adviseCall(ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
+        Objects.requireNonNull(chatClientRequest, "chatClientRequest must not be null");
+        Objects.requireNonNull(callAdvisorChain, "callAdvisorChain must not be null");
+
+        ChatClientRequest currentRequest = chatClientRequest;
+        int attempt = 1;
+        while (true) {
+            ChatClientResponse response = callAdvisorChain.nextCall(currentRequest);
+            String candidate = extractAssistantText(response);
+            if (pattern.matcher(candidate).matches()) {
+                return record(response, outcome(attempt, LinterOutcomeStatus.PASSED, failureMessage));
+            }
+
+            if (attempt > maxRetries) {
+                return record(response, outcome(attempt, LinterOutcomeStatus.EXHAUSTED, failureMessage));
+            }
+
+            record(response, outcome(attempt, LinterOutcomeStatus.RETRYING, failureMessage));
+            currentRequest = currentRequest.mutate()
+                    .prompt(appendHint(currentRequest.prompt(), failureMessage))
+                    .build();
+            attempt++;
+        }
+    }
+
+    @Override
+    public String getName() {
+        return "LinterCallAdvisor[" + skillName + "]";
+    }
+
+    @Override
+    public int getOrder() {
+        return DEFAULT_CHAT_MEMORY_PRECEDENCE_ORDER - 100;
+    }
+
+    private LinterOutcome outcome(int attempt, LinterOutcomeStatus status, String detail) {
+        return new LinterOutcome(skillName, linterType, attempt, attempt - 1, maxRetries, status, detail);
+    }
+
+    private ChatClientResponse record(ChatClientResponse response, LinterOutcome outcome) {
+        recordOnSession(outcome);
+        return response.mutate()
+                .context(CONTEXT_KEY, outcome)
+                .build();
+    }
+
+    private void recordOnSession(LinterOutcome outcome) {
+        try {
+            BifrostSession session = BifrostSession.getCurrentSession();
+            session.setLastLinterOutcome(outcome);
+            session.logLinterOutcome(clock.instant(), outcome);
+        }
+        catch (IllegalStateException ignored) {
+            // Advisor usage outside a managed Bifrost session still exposes the outcome via response context.
+        }
+    }
+
+    private Prompt appendHint(Prompt prompt, String detail) {
+        String hint = HINT_TEMPLATE.formatted(detail).stripTrailing();
+        return prompt.augmentSystemMessage(systemMessage -> systemMessage.mutate()
+                .text(joinSystemText(systemMessage.getText(), hint))
+                .build());
+    }
+
+    private String extractAssistantText(ChatClientResponse response) {
+        if (response == null || response.chatResponse() == null || response.chatResponse().getResult() == null) {
+            return "";
+        }
+        AssistantMessage message = response.chatResponse().getResult().getOutput();
+        return message == null || message.getText() == null ? "" : message.getText();
+    }
+
+    private String joinSystemText(String original, String hint) {
+        if (!StringUtils.hasText(original)) {
+            return hint;
+        }
+        return original + "\n\n" + hint;
+    }
+}

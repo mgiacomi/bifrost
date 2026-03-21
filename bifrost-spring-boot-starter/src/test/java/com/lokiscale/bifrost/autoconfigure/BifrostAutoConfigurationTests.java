@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.autoconfigure;
 
 import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.NoOpSkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
 import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
@@ -105,7 +106,7 @@ class BifrostAutoConfigurationTests {
                 .run(context -> {
                     assertThat(context).hasSingleBean(SkillAdvisorResolver.class);
                     assertThat(context).hasSingleBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class);
-                    assertThat(context.getBean(SkillAdvisorResolver.class)).isInstanceOf(NoOpSkillAdvisorResolver.class);
+                    assertThat(context.getBean(SkillAdvisorResolver.class)).isInstanceOf(DefaultSkillAdvisorResolver.class);
                 });
     }
 

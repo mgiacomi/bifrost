@@ -61,19 +61,21 @@ public class ExecutionCoordinator {
         executionStateService.clearPlan(session);
         ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.of("objective", objective));
         try {
-            ChatClient chatClient = skillChatClientFactory.create(definition);
-            List<ToolCallback> visibleTools = toolCallbackFactory.createToolCallbacks(
-                    session,
-                    toolSurfaceService.visibleToolsFor(skillName, session, authentication),
-                    authentication);
-            return missionExecutionEngine.executeMission(
-                    session,
-                    skillName,
-                    objective,
-                    chatClient,
-                    visibleTools,
-                    definition.planningModeEnabled(planningModeEnabled),
-                    authentication);
+            return BifrostSessionHolder.callWithSession(session, () -> {
+                ChatClient chatClient = skillChatClientFactory.create(definition);
+                List<ToolCallback> visibleTools = toolCallbackFactory.createToolCallbacks(
+                        session,
+                        toolSurfaceService.visibleToolsFor(skillName, session, authentication),
+                        authentication);
+                return missionExecutionEngine.executeMission(
+                        session,
+                        skillName,
+                        objective,
+                        chatClient,
+                        visibleTools,
+                        definition.planningModeEnabled(planningModeEnabled),
+                        authentication);
+            });
         }
         finally {
             executionStateService.closeMissionFrame(session, frame);

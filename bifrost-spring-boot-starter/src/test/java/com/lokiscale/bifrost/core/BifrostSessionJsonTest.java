@@ -2,6 +2,8 @@ package com.lokiscale.bifrost.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -31,6 +33,14 @@ class BifrostSessionJsonTest {
                 "root.visible.skill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null))));
+        session.setLastLinterOutcome(new LinterOutcome(
+                "linted.skill",
+                "regex",
+                2,
+                1,
+                2,
+                LinterOutcomeStatus.PASSED,
+                "Return fenced YAML only."));
         session.logPlanCreated(Instant.parse("2026-03-15T12:00:02Z"), session.getExecutionPlan().orElseThrow());
 
         String json = OBJECT_MAPPER.writeValueAsString(session);
@@ -43,6 +53,7 @@ class BifrostSessionJsonTest {
                 .containsExactlyElementsOf(session.getJournalSnapshot().stream().map(JournalEntry::type).toList());
         assertThat(restored.getJournalSnapshot()).hasSize(session.getJournalSnapshot().size());
         assertThat(restored.getExecutionPlan()).contains(session.getExecutionPlan().orElseThrow());
+        assertThat(restored.getLastLinterOutcome()).contains(session.getLastLinterOutcome().orElseThrow());
     }
 
     @Test
