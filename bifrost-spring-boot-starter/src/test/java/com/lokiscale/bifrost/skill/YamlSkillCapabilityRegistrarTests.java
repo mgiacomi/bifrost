@@ -91,6 +91,17 @@ class YamlSkillCapabilityRegistrarTests {
                 });
     }
 
+    @Test
+    void failsStartupWhenMappedYamlSkillReferencesUnknownTargetId() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-mapped-target-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("unknown-mapped-target-skill.yaml")
+                        .hasMessageContaining("field 'mapping.target_id'")
+                        .hasMessageContaining("unknown target_id 'missingBean#missingTarget'"));
+    }
+
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
         try {
             return type.getDeclaredMethod(name, parameterTypes);

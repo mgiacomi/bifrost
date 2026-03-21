@@ -1,0 +1,5 @@
+name: unknown.mapped.target.skill
+description: YAML skill mapped to a target that does not exist.
+model: gpt-5
+mapping:
+  target_id: missingBean#missingTarget
