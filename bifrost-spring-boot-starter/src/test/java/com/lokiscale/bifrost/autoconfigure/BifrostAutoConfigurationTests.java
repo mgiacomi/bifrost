@@ -1,6 +1,8 @@
 package com.lokiscale.bifrost.autoconfigure;
 
 import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.chat.NoOpSkillAdvisorResolver;
+import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
 import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
@@ -26,6 +28,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -88,9 +91,38 @@ class BifrostAutoConfigurationTests {
     void autoConfiguresExecutionCoordinatorWhenSkillChatClientFactoryIsAvailable() {
         contextRunner
                 .withBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class,
-                        () -> executionConfiguration -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.class))
+                        () -> definition -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.class))
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> assertThat(context).hasSingleBean(ExecutionCoordinator.class));
+    }
+
+    @Test
+    void autoConfiguresDefaultSkillAdvisorResolver() {
+        contextRunner
+                .withBean(org.springframework.ai.chat.client.ChatClient.Builder.class,
+                        () -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.Builder.class))
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SkillAdvisorResolver.class);
+                    assertThat(context).hasSingleBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class);
+                    assertThat(context.getBean(SkillAdvisorResolver.class)).isInstanceOf(NoOpSkillAdvisorResolver.class);
+                });
+    }
+
+    @Test
+    void allowsCustomSkillAdvisorResolverOverride() {
+        SkillAdvisorResolver customResolver = definition -> List.of();
+
+        contextRunner
+                .withBean(org.springframework.ai.chat.client.ChatClient.Builder.class,
+                        () -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.Builder.class))
+                .withBean(SkillAdvisorResolver.class, () -> customResolver)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SkillAdvisorResolver.class);
+                    assertThat(context).hasSingleBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class);
+                    assertThat(context.getBean(SkillAdvisorResolver.class)).isSameAs(customResolver);
+                });
     }
 
     @Test

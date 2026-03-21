@@ -2,7 +2,9 @@ package com.lokiscale.bifrost.chat;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
@@ -23,10 +25,14 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
 
     private final ChatClient.Builder chatClientBuilder;
     private final Map<AiProvider, SkillChatOptionsAdapter> adaptersByProvider;
+    private final SkillAdvisorResolver skillAdvisorResolver;
 
-    public SpringAiSkillChatClientFactory(ChatClient.Builder chatClientBuilder, List<SkillChatOptionsAdapter> adapters) {
+    public SpringAiSkillChatClientFactory(ChatClient.Builder chatClientBuilder,
+                                          List<SkillChatOptionsAdapter> adapters,
+                                          SkillAdvisorResolver skillAdvisorResolver) {
         this.chatClientBuilder = Objects.requireNonNull(chatClientBuilder, "chatClientBuilder must not be null");
         Objects.requireNonNull(adapters, "adapters must not be null");
+        this.skillAdvisorResolver = Objects.requireNonNull(skillAdvisorResolver, "skillAdvisorResolver must not be null");
         this.adaptersByProvider = new EnumMap<>(AiProvider.class);
         for (SkillChatOptionsAdapter adapter : adapters) {
             this.adaptersByProvider.put(adapter.provider(), adapter);
@@ -34,15 +40,20 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
     }
 
     @Override
-    public ChatClient create(EffectiveSkillExecutionConfiguration executionConfiguration) {
-        Objects.requireNonNull(executionConfiguration, "executionConfiguration must not be null");
+    public ChatClient create(YamlSkillDefinition definition) {
+        Objects.requireNonNull(definition, "definition must not be null");
+        EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
         SkillChatOptionsAdapter adapter = adaptersByProvider.get(executionConfiguration.provider());
         if (adapter == null) {
             throw new IllegalStateException("No ChatOptions adapter configured for provider " + executionConfiguration.provider());
         }
         ChatOptions options = adapter.createOptions(executionConfiguration);
+        List<Advisor> advisors = skillAdvisorResolver.resolve(definition);
         ChatClient.Builder builder = chatClientBuilder.clone();
         builder.defaultOptions(options);
+        if (!advisors.isEmpty()) {
+            builder.defaultAdvisors(advisors);
+        }
         return builder.build();
     }
 

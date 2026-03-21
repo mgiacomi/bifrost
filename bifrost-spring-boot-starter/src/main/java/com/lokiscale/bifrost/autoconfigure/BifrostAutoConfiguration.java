@@ -1,5 +1,7 @@
 package com.lokiscale.bifrost.autoconfigure;
 
+import com.lokiscale.bifrost.chat.NoOpSkillAdvisorResolver;
+import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.chat.SkillChatOptionsAdapter;
 import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
@@ -224,12 +226,20 @@ public class BifrostAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public SkillAdvisorResolver skillAdvisorResolver() {
+        return new NoOpSkillAdvisorResolver();
+    }
+
+    @Bean
     @ConditionalOnBean(ChatClient.Builder.class)
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public SkillChatClientFactory skillChatClientFactory(ChatClient.Builder chatClientBuilder,
-                                                         List<SkillChatOptionsAdapter> adapters) {
-        return new SpringAiSkillChatClientFactory(chatClientBuilder, adapters);
+                                                         List<SkillChatOptionsAdapter> adapters,
+                                                         SkillAdvisorResolver skillAdvisorResolver) {
+        return new SpringAiSkillChatClientFactory(chatClientBuilder, adapters, skillAdvisorResolver);
     }
 
     @Bean

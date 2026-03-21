@@ -243,7 +243,7 @@ class ExecutionCoordinatorIntegrationTest {
                         + "\":\"ref://artifacts/message.txt\"}");
 
         @Override
-        public org.springframework.ai.chat.client.ChatClient create(EffectiveSkillExecutionConfiguration executionConfiguration) {
+        public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             return chatClient;
         }
     }
@@ -264,7 +264,7 @@ class ExecutionCoordinatorIntegrationTest {
                         + "\":\"ref://artifacts/payload.bin\"}");
 
         @Override
-        public org.springframework.ai.chat.client.ChatClient create(EffectiveSkillExecutionConfiguration executionConfiguration) {
+        public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             return chatClient;
         }
     }

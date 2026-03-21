@@ -257,7 +257,8 @@ class ExecutionCoordinatorTest {
                         AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
 
         assertThat(response).isEqualTo("mission complete");
-        assertThat(factory.lastConfiguration).isEqualTo(executionConfiguration);
+        assertThat(factory.lastDefinition).isEqualTo(catalog.getSkill("root.visible.skill"));
+        assertThat(factory.lastDefinition.executionConfiguration()).isEqualTo(executionConfiguration);
         assertThat(session.getExecutionPlan()).isPresent();
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
                 .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
@@ -606,7 +607,11 @@ class ExecutionCoordinatorTest {
         String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
 
         assertThat(response).isEqualTo("root mission complete");
-        assertThat(factory.seenConfigurations).containsExactly(rootExecutionConfiguration, childExecutionConfiguration);
+        assertThat(factory.seenDefinitions).containsExactly(
+                catalog.getSkill("root.visible.skill"),
+                catalog.getSkill("child.llm.skill"));
+        assertThat(factory.seenDefinitions).extracting(YamlSkillDefinition::executionConfiguration)
+                .containsExactly(rootExecutionConfiguration, childExecutionConfiguration);
         assertThat(rootChatClient.lastToolResult).isEqualTo("\"child mission complete\"");
         assertThat(session.getExecutionPlan()).isPresent();
         assertThat(session.getExecutionPlan().orElseThrow().planId()).isEqualTo("plan-root");
@@ -1028,15 +1033,15 @@ class ExecutionCoordinatorTest {
     private static final class RecordingSkillChatClientFactory implements SkillChatClientFactory {
 
         private final FakeCoordinatorChatClient chatClient;
-        private EffectiveSkillExecutionConfiguration lastConfiguration;
+        private YamlSkillDefinition lastDefinition;
 
         private RecordingSkillChatClientFactory(FakeCoordinatorChatClient chatClient) {
             this.chatClient = chatClient;
         }
 
         @Override
-        public org.springframework.ai.chat.client.ChatClient create(EffectiveSkillExecutionConfiguration executionConfiguration) {
-            this.lastConfiguration = executionConfiguration;
+        public org.springframework.ai.chat.client.ChatClient create(YamlSkillDefinition definition) {
+            this.lastDefinition = definition;
             return chatClient;
         }
     }
@@ -1044,15 +1049,16 @@ class ExecutionCoordinatorTest {
     private static final class MultiClientSkillChatClientFactory implements SkillChatClientFactory {
 
         private final java.util.Map<String, FakeCoordinatorChatClient> clientsByModel;
-        private final java.util.List<EffectiveSkillExecutionConfiguration> seenConfigurations = new java.util.ArrayList<>();
+        private final java.util.List<YamlSkillDefinition> seenDefinitions = new java.util.ArrayList<>();
 
         private MultiClientSkillChatClientFactory(java.util.Map<String, FakeCoordinatorChatClient> clientsByModel) {
             this.clientsByModel = clientsByModel;
         }
 
         @Override
-        public org.springframework.ai.chat.client.ChatClient create(EffectiveSkillExecutionConfiguration executionConfiguration) {
-            seenConfigurations.add(executionConfiguration);
+        public org.springframework.ai.chat.client.ChatClient create(YamlSkillDefinition definition) {
+            seenDefinitions.add(definition);
+            EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
             FakeCoordinatorChatClient chatClient = clientsByModel.get(executionConfiguration.frameworkModel());
             if (chatClient == null) {
                 throw new IllegalStateException("No chat client configured for " + executionConfiguration.frameworkModel());

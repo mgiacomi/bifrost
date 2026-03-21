@@ -61,7 +61,7 @@ public class ExecutionCoordinator {
         executionStateService.clearPlan(session);
         ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.of("objective", objective));
         try {
-            ChatClient chatClient = skillChatClientFactory.create(definition.executionConfiguration());
+            ChatClient chatClient = skillChatClientFactory.create(definition);
             List<ToolCallback> visibleTools = toolCallbackFactory.createToolCallbacks(
                     session,
                     toolSurfaceService.visibleToolsFor(skillName, session, authentication),
