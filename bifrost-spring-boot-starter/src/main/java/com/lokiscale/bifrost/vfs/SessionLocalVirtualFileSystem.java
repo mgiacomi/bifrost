@@ -16,30 +16,27 @@ public class SessionLocalVirtualFileSystem implements VirtualFileSystem {
     }
 
     @Override
-    public Resource resolve(BifrostSession session, String ref) {
+    public Resource resolve(BifrostSession session, VfsRef ref) {
         Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(ref, "ref must not be null");
         Path sessionRoot = sessionRoot(session);
-        String relativeRef = normalizeRef(ref);
-        Path resolved = sessionRoot.resolve(relativeRef).normalize();
+        Path resolved = sessionRoot.resolve(ref.relativePath()).normalize();
         if (!resolved.startsWith(sessionRoot)) {
-            throw new IllegalArgumentException("Ref '" + ref + "' escapes the session namespace");
+            throw new IllegalArgumentException("Ref '" + ref.raw() + "' escapes the session namespace");
         }
         Resource resource = new FileSystemResource(resolved);
         if (!resource.exists()) {
-            throw new IllegalArgumentException("Unknown ref '" + ref + "' for session '" + session.getSessionId() + "'");
+            throw new IllegalArgumentException("Unknown ref '" + ref.raw() + "' for session '" + session.getSessionId() + "'");
         }
         return resource;
     }
 
     public Path sessionRoot(BifrostSession session) {
-        return rootDirectory.resolve(session.getSessionId()).normalize();
-    }
-
-    private String normalizeRef(String ref) {
-        Objects.requireNonNull(ref, "ref must not be null");
-        if (!ref.startsWith("ref://") || ref.length() <= "ref://".length()) {
-            throw new IllegalArgumentException("Ref must use the 'ref://' scheme");
+        Objects.requireNonNull(session, "session must not be null");
+        Path sessionRoot = rootDirectory.resolve(session.getSessionId()).normalize();
+        if (!sessionRoot.startsWith(rootDirectory)) {
+            throw new IllegalArgumentException("Session '" + session.getSessionId() + "' escapes the VFS root");
         }
-        return ref.substring("ref://".length());
+        return sessionRoot;
     }
 }

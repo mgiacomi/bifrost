@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -18,6 +19,23 @@ class VirtualFileSystemTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void resolveStringBridgeDelegatesThroughTypedContract() {
+        AtomicReference<VfsRef> resolvedRef = new AtomicReference<>();
+        VirtualFileSystem vfs = new VirtualFileSystem() {
+            @Override
+            public Resource resolve(BifrostSession session, VfsRef ref) {
+                resolvedRef.set(ref);
+                return new org.springframework.core.io.ByteArrayResource(ref.raw().getBytes(StandardCharsets.UTF_8));
+            }
+        };
+
+        Resource resource = vfs.resolve(new BifrostSession("session-bridge", 2), "ref://artifacts/message.txt");
+
+        assertThat(readUtf8(resource)).isEqualTo("ref://artifacts/message.txt");
+        assertThat(resolvedRef.get()).isEqualTo(new VfsRef("ref://artifacts/message.txt", "artifacts/message.txt"));
+    }
 
     @Test
     void isolatesRefsBySessionNamespace() throws Exception {
@@ -68,10 +86,41 @@ class VirtualFileSystemTest {
 
         assertThatThrownBy(() -> vfs.resolve(session, "artifacts/message.txt"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("ref://");
+                .hasMessageContaining("Malformed ref");
         assertThatThrownBy(() -> vfs.resolve(session, "ref://"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("ref://");
+                .hasMessageContaining("Malformed ref");
+    }
+
+    @Test
+    void missingRefsFailWithSessionAwareMessage() {
+        SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
+        BifrostSession session = new BifrostSession("session-missing", 2);
+
+        assertThatThrownBy(() -> vfs.resolve(session, "ref://artifacts/missing.txt"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unknown ref 'ref://artifacts/missing.txt'")
+                .hasMessageContaining("session-missing");
+    }
+
+    @Test
+    void traversalDefenseRemainsEnforcedByBackend() {
+        SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
+        BifrostSession session = new BifrostSession("session-backend-escape", 2);
+
+        assertThatThrownBy(() -> vfs.resolve(session, VfsRef.parse("ref://../other-session/secret.txt")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("escapes the session namespace");
+    }
+
+    @Test
+    void rejectsSessionIdsThatEscapeTheConfiguredVfsRoot() {
+        SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
+        BifrostSession session = new BifrostSession("../escaped-session", 2);
+
+        assertThatThrownBy(() -> vfs.resolve(session, "ref://artifacts/secret.txt"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("escapes the VFS root");
     }
 
     @Test

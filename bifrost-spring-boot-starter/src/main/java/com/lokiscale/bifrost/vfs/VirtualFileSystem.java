@@ -5,5 +5,9 @@ import org.springframework.core.io.Resource;
 
 public interface VirtualFileSystem {
 
-    Resource resolve(BifrostSession session, String ref);
+    default Resource resolve(BifrostSession session, String ref) {
+        return resolve(session, VfsRef.parse(ref));
+    }
+
+    Resource resolve(BifrostSession session, VfsRef ref);
 }

@@ -20,7 +20,8 @@ class RefResolverTest {
     @Test
     void resolvesOnlyExactRefStrings() {
         BifrostSession session = new BifrostSession("session-1", 2);
-        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> new ByteArrayResource(("resolved:" + ref).getBytes()));
+        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
+                new ByteArrayResource(("resolved:" + ref.raw()).getBytes(StandardCharsets.UTF_8)));
 
         assertThat(readResource(resolver.resolveArgument("ref://artifacts/abc123", session)))
                 .isEqualTo("resolved:ref://artifacts/abc123");
@@ -37,7 +38,8 @@ class RefResolverTest {
     @Test
     void resolvesExactRefStringsInsideNestedMapsAndLists() {
         BifrostSession session = new BifrostSession("session-1", 2);
-        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> new ByteArrayResource(("resolved:" + ref).getBytes()));
+        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
+                new ByteArrayResource(("resolved:" + ref.raw()).getBytes(StandardCharsets.UTF_8)));
 
         Map<String, Object> resolved = resolver.resolveArguments(Map.of(
                 "direct", "ref://artifacts/root.txt",
@@ -76,14 +78,15 @@ class RefResolverTest {
     @Test
     void leavesNonLeafContainersUntouchedWhenNoExactRefLeafExists() {
         BifrostSession session = new BifrostSession("session-nonleaf", 2);
-        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> new ByteArrayResource(("resolved:" + ref).getBytes()));
+        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
+                new ByteArrayResource(("resolved:" + ref.raw()).getBytes(StandardCharsets.UTF_8)));
 
         Map<String, Object> resolved = resolver.resolveArguments(Map.of(
                 "prefixed", "see ref://artifacts/not-exact",
                 "nested", Map.of(
                         "spaced", "ref://artifacts/not exact",
                         "list", List.of("hello", "suffix ref://artifacts/nope")),
-                "array", new Object[]{" ref://artifacts/nope", "ref://artifacts/real.txt "} ), session);
+                "array", new Object[]{" ref://artifacts/nope", "ref://artifacts/real.txt "}), session);
 
         assertThat(resolved).isEqualTo(Map.of(
                 "prefixed", "see ref://artifacts/not-exact",
@@ -97,12 +100,49 @@ class RefResolverTest {
     void propagatesUnderlyingResolutionFailures() {
         BifrostSession session = new BifrostSession("session-errors", 2);
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> {
-            throw new IllegalArgumentException("Unknown ref '" + ref + "'");
+            throw new IllegalArgumentException("Unknown ref '" + ref.raw() + "'");
         });
 
         assertThatThrownBy(() -> resolver.resolveArgument("ref://artifacts/missing.txt", session))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown ref");
+    }
+
+    @Test
+    void exactRefLeavesDelegateWithoutDuplicateExistenceChecks() {
+        BifrostSession session = new BifrostSession("session-1", 2);
+        Resource resource = new ByteArrayResource("resolved".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public boolean exists() {
+                throw new AssertionError("DefaultRefResolver should not check resource existence");
+            }
+        };
+        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> resource);
+
+        Object resolved = resolver.resolveArgument("ref://artifacts/root.txt", session);
+
+        assertThat(resolved).isSameAs(resource);
+    }
+
+    @Test
+    void nestedContainersStillResolveToResourceLeaves() {
+        BifrostSession session = new BifrostSession("session-nested", 2);
+        DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
+                new ByteArrayResource(("resolved:" + ref.relativePath()).getBytes(StandardCharsets.UTF_8)));
+
+        Map<String, Object> resolved = resolver.resolveArguments(Map.of(
+                "nested", Map.of(
+                        "list", List.of(
+                                "ref://artifacts/child.txt",
+                                Map.of("deep", "ref://artifacts/deep.txt"))),
+                "array", new Object[]{"ref://artifacts/array.txt"}), session);
+
+        assertThat(readNestedResources(resolved)).isEqualTo(Map.of(
+                "nested", Map.of(
+                        "list", List.of(
+                                "resolved:artifacts/child.txt",
+                                Map.of("deep", "resolved:artifacts/deep.txt"))),
+                "array", List.of("resolved:artifacts/array.txt")));
     }
 
     private Object readNestedResources(Object value) {

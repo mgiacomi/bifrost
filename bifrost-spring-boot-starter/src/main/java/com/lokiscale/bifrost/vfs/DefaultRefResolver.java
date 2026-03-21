@@ -20,10 +20,6 @@ public class DefaultRefResolver implements RefResolver {
         if (!(value instanceof String text) || !STRICT_REF_PATTERN.matcher(text).matches()) {
             return value;
         }
-        Resource resource = virtualFileSystem.resolve(session, text);
-        if (!resource.exists()) {
-            throw new IllegalStateException("Failed to resolve ref '" + text + "' for session '" + session.getSessionId() + "'");
-        }
-        return resource;
+        return virtualFileSystem.resolve(session, text);
     }
 }
