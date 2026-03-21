@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.skill;
 
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
+import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -40,8 +41,13 @@ class YamlSkillCatalogTests {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
                     assertThat(catalog.getSkill("thinking.default.skill")).isNotNull();
-                    assertThat(catalog.getSkill("thinking.default.skill").executionConfiguration().frameworkModel()).isEqualTo("gpt-5");
-                    assertThat(catalog.getSkill("thinking.default.skill").executionConfiguration().thinkingLevel()).isEqualTo("medium");
+                    assertThat(catalog.getSkill("thinking.default.skill").executionConfiguration())
+                            .extracting(
+                                    EffectiveSkillExecutionConfiguration::frameworkModel,
+                                    EffectiveSkillExecutionConfiguration::provider,
+                                    EffectiveSkillExecutionConfiguration::providerModel,
+                                    EffectiveSkillExecutionConfiguration::thinkingLevel)
+                            .containsExactly("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
                 });
     }
 
@@ -81,6 +87,19 @@ class YamlSkillCatalogTests {
                             .hasMessageContaining("unsupported-thinking-skill.yaml")
                             .hasMessageContaining("field 'thinking_level'")
                             .hasMessageContaining("unsupported thinking_level 'high'");
+                });
+    }
+
+    @Test
+    void failsStartupWhenYamlSkillsShareDuplicateName() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/duplicate-name/*.yaml")
+                .run(context -> {
+                    assertThat(context.getStartupFailure())
+                            .isNotNull()
+                            .hasMessageContaining("second-skill.yaml")
+                            .hasMessageContaining("field 'name'")
+                            .hasMessageContaining("duplicate skill name 'duplicate.skill'");
                 });
     }
 

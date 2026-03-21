@@ -101,14 +101,8 @@ public class YamlSkillCatalog implements InitializingBean {
         validateRequiredField(resource, "description", manifest.getDescription());
         validateRequiredField(resource, "model", manifest.getModel());
 
-        BifrostModelsProperties.ModelCatalogEntry catalogEntry = modelsProperties.getModels().get(manifest.getModel());
-        if (catalogEntry == null) {
-            throw invalidSkill(resource, "model", "unknown model '" + manifest.getModel() + "'");
-        }
-
-        String effectiveThinkingLevel = StringUtils.hasText(manifest.getThinkingLevel())
-                ? manifest.getThinkingLevel()
-                : catalogEntry.supportsThinking() ? DEFAULT_THINKING_LEVEL : null;
+        BifrostModelsProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
+        String effectiveThinkingLevel = resolveEffectiveThinkingLevel(manifest, catalogEntry);
 
         if (!catalogEntry.supportsThinkingLevel(effectiveThinkingLevel)) {
             throw invalidSkill(resource, "thinking_level",
@@ -122,6 +116,22 @@ public class YamlSkillCatalog implements InitializingBean {
                 effectiveThinkingLevel);
 
         return new YamlSkillDefinition(resource, manifest, effectiveConfiguration);
+    }
+
+    private BifrostModelsProperties.ModelCatalogEntry resolveModelCatalogEntry(Resource resource, YamlSkillManifest manifest) {
+        BifrostModelsProperties.ModelCatalogEntry catalogEntry = modelsProperties.getModels().get(manifest.getModel());
+        if (catalogEntry == null) {
+            throw invalidSkill(resource, "model", "unknown model '" + manifest.getModel() + "'");
+        }
+        return catalogEntry;
+    }
+
+    private String resolveEffectiveThinkingLevel(YamlSkillManifest manifest,
+                                                 BifrostModelsProperties.ModelCatalogEntry catalogEntry) {
+        if (StringUtils.hasText(manifest.getThinkingLevel())) {
+            return manifest.getThinkingLevel();
+        }
+        return catalogEntry.supportsThinking() ? DEFAULT_THINKING_LEVEL : null;
     }
 
     private YamlSkillManifest readManifest(Resource resource) {
