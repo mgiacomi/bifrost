@@ -1,7 +1,10 @@
 package com.lokiscale.bifrost.core;
 
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
-import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
+import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
+import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.client.ChatClient;
@@ -11,37 +14,36 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 public class ExecutionCoordinator {
 
     private final YamlSkillCatalog yamlSkillCatalog;
     private final CapabilityRegistry capabilityRegistry;
-    private final SkillVisibilityResolver skillVisibilityResolver;
     private final SkillChatClientFactory skillChatClientFactory;
-    private final CapabilityToolCallbackAdapter toolCallbackAdapter;
-    private final Clock clock;
+    private final ToolSurfaceService toolSurfaceService;
+    private final ToolCallbackFactory toolCallbackFactory;
+    private final MissionExecutionEngine missionExecutionEngine;
+    private final ExecutionStateService executionStateService;
     private final boolean planningModeEnabled;
 
     public ExecutionCoordinator(YamlSkillCatalog yamlSkillCatalog,
                                 CapabilityRegistry capabilityRegistry,
-                                SkillVisibilityResolver skillVisibilityResolver,
                                 SkillChatClientFactory skillChatClientFactory,
-                                CapabilityToolCallbackAdapter toolCallbackAdapter,
-                                Clock clock,
+                                ToolSurfaceService toolSurfaceService,
+                                ToolCallbackFactory toolCallbackFactory,
+                                MissionExecutionEngine missionExecutionEngine,
+                                ExecutionStateService executionStateService,
                                 boolean planningModeEnabled) {
         this.yamlSkillCatalog = Objects.requireNonNull(yamlSkillCatalog, "yamlSkillCatalog must not be null");
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
-        this.skillVisibilityResolver = Objects.requireNonNull(skillVisibilityResolver, "skillVisibilityResolver must not be null");
         this.skillChatClientFactory = Objects.requireNonNull(skillChatClientFactory, "skillChatClientFactory must not be null");
-        this.toolCallbackAdapter = Objects.requireNonNull(toolCallbackAdapter, "toolCallbackAdapter must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.toolSurfaceService = Objects.requireNonNull(toolSurfaceService, "toolSurfaceService must not be null");
+        this.toolCallbackFactory = Objects.requireNonNull(toolCallbackFactory, "toolCallbackFactory must not be null");
+        this.missionExecutionEngine = Objects.requireNonNull(missionExecutionEngine, "missionExecutionEngine must not be null");
+        this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.planningModeEnabled = planningModeEnabled;
     }
 
@@ -51,47 +53,25 @@ public class ExecutionCoordinator {
         YamlSkillDefinition definition = requireYamlSkill(skillName);
         CapabilityMetadata rootCapability = requireCapability(skillName);
         ensureAuthorized(rootCapability, authentication);
-        session.clearExecutionPlan();
-        Instant now = clock.instant();
-        ExecutionFrame frame = new ExecutionFrame(
-                UUID.randomUUID().toString(),
-                currentFrameId(session),
-                OperationType.SKILL,
-                rootCapability.name(),
-                Map.of("objective", objective),
-                now);
-
-        session.pushFrame(frame);
+        executionStateService.clearPlan(session);
+        ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.of("objective", objective));
         try {
             ChatClient chatClient = skillChatClientFactory.create(definition.executionConfiguration());
-            List<ToolCallback> visibleTools = toolCallbackAdapter.toToolCallbacks(
-                    skillVisibilityResolver.visibleSkillsFor(skillName, authentication),
+            List<ToolCallback> visibleTools = toolCallbackFactory.createToolCallbacks(
                     session,
+                    toolSurfaceService.visibleToolsFor(skillName, authentication),
                     authentication);
-
-            if (definition.planningModeEnabled(planningModeEnabled)) {
-                ExecutionPlan plan = chatClient.prompt()
-                        .system("Create an ordered flight plan for this mission before execution.")
-                        .user(objective)
-                        .call()
-                        .entity(ExecutionPlan.class);
-                session.replaceExecutionPlan(plan);
-                session.logPlanCreated(clock.instant(), plan);
-            }
-
-            String executionPrompt = session.getExecutionPlan()
-                    .map(this::buildExecutionPrompt)
-                    .orElse("Execute the mission using only the visible YAML tools when needed.");
-
-            return chatClient.prompt()
-                    .system(executionPrompt)
-                    .user(objective)
-                    .toolCallbacks(visibleTools)
-                    .call()
-                    .content();
+            return missionExecutionEngine.executeMission(
+                    session,
+                    skillName,
+                    objective,
+                    chatClient,
+                    visibleTools,
+                    definition.planningModeEnabled(planningModeEnabled),
+                    authentication);
         }
         finally {
-            session.popFrame();
+            executionStateService.closeMissionFrame(session, frame);
         }
     }
 
@@ -109,39 +89,6 @@ public class ExecutionCoordinator {
             throw new IllegalArgumentException("Unknown capability '" + skillName + "'");
         }
         return capability;
-    }
-
-    private String currentFrameId(BifrostSession session) {
-        List<ExecutionFrame> frames = session.getFramesSnapshot();
-        return frames.isEmpty() ? null : frames.getFirst().frameId();
-    }
-
-    private String buildExecutionPrompt(ExecutionPlan plan) {
-        String readyTaskLines = plan.readyTasks().stream()
-                .sorted(Comparator.comparingInt(plan.tasks()::indexOf))
-                .map(task -> "- [" + task.status() + "] " + task.taskId() + ": " + task.title()
-                        + (task.note() == null ? "" : " (" + task.note() + ")"))
-                .reduce((left, right) -> left + "\n" + right)
-                .orElse("- No ready tasks");
-        String blockedTaskLines = plan.tasks().stream()
-                .filter(task -> task.status() == PlanTaskStatus.BLOCKED)
-                .map(task -> "- " + task.taskId() + ": " + task.title()
-                        + (task.note() == null ? "" : " (" + task.note() + ")"))
-                .reduce((left, right) -> left + "\n" + right)
-                .orElse("- No blocked tasks");
-        String activeTask = plan.activeTask()
-                .map(task -> task.taskId() + ": " + task.title())
-                .orElse("none");
-        return """
-                Execute the mission using only the visible YAML tools when needed.
-                Keep the stored flight plan as the execution anchor and advance work consistently with it.
-                Active plan %s for capability %s is %s.
-                Active task: %s
-                Ready tasks:
-                %s
-                Blocked tasks:
-                %s
-                """.formatted(plan.planId(), plan.capabilityName(), plan.status(), activeTask, readyTaskLines, blockedTaskLines);
     }
 
     private void ensureAuthorized(CapabilityMetadata capability, @Nullable Authentication authentication) {

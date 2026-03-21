@@ -77,11 +77,13 @@ Role:
 - owns session mutation semantics for mission runtime
 - manages frame push/pop
 - manages active plan replacement/clearing
+- manages parent-plan snapshot/restore for nested YAML skill execution
 - manages structured journal writes for mission events
 
 This service should centralize consistency around:
 - plan state vs journal snapshots
 - tool call / tool result journaling
+- nested mission plan preservation
 - mission lifecycle transitions
 
 This is the main guard against state mutation becoming fragmented across multiple classes.
@@ -90,6 +92,7 @@ This is the main guard against state mutation becoming fragmented across multipl
 Role:
 - owns planning-specific model interaction
 - requests initial plan when planning mode is enabled
+- owns task-link semantics for tool start/completion/failure transitions
 - applies plan updates in a way isolated from mission-loop details
 
 For this ticket, the existing behavior may stay simple, but the planning concerns should move behind a dedicated interface so later tickets can replace the internals without destabilizing the rest of the runtime.
@@ -144,11 +147,15 @@ public interface ExecutionStateService {
     void storePlan(BifrostSession session, ExecutionPlan plan);
     void clearPlan(BifrostSession session);
     Optional<ExecutionPlan> getPlan(BifrostSession session);
+    PlanSnapshot snapshotPlan(BifrostSession session);
+    void restorePlan(BifrostSession session, PlanSnapshot snapshot);
 
     void logPlanCreated(BifrostSession session, ExecutionPlan plan);
     void logPlanUpdated(BifrostSession session, ExecutionPlan plan);
-    void logToolCall(BifrostSession session, String toolName, Map<String, Object> arguments);
-    void logToolResult(BifrostSession session, String toolName, Object result);
+    void logToolCall(BifrostSession session, TaskExecutionEvent event);
+    void logUnplannedToolCall(BifrostSession session, TaskExecutionEvent event);
+    void logToolResult(BifrostSession session, TaskExecutionEvent event);
+    void logError(BifrostSession session, Map<String, Object> payload);
 }
 ```
 
@@ -163,12 +170,20 @@ public interface PlanningService {
 
     Optional<ExecutionPlan> markToolStarted(
             BifrostSession session,
-            String toolName);
+            CapabilityMetadata capability,
+            Map<String, Object> arguments);
 
     Optional<ExecutionPlan> markToolCompleted(
             BifrostSession session,
-            String toolName,
+            String taskId,
+            String capabilityName,
             @Nullable Object result);
+
+    Optional<ExecutionPlan> markToolFailed(
+            BifrostSession session,
+            String taskId,
+            String capabilityName,
+            RuntimeException error);
 }
 ```
 
@@ -184,7 +199,8 @@ public interface ToolSurfaceService {
 public interface ToolCallbackFactory {
     List<ToolCallback> createToolCallbacks(
             BifrostSession session,
-            List<CapabilityMetadata> capabilities);
+            List<CapabilityMetadata> capabilities,
+            @Nullable Authentication authentication);
 }
 ```
 
@@ -196,6 +212,7 @@ public interface MissionExecutionEngine {
             String objective,
             ChatClient chatClient,
             List<ToolCallback> visibleTools,
+            boolean planningEnabled,
             @Nullable Authentication authentication);
 }
 ```
@@ -225,6 +242,7 @@ Refactor `ExecutionCoordinator` so it primarily:
 All runtime writes to:
 - execution frames
 - active execution plan
+- nested parent-plan snapshot/restore
 - plan journal entries
 - tool journal entries
 
@@ -239,7 +257,9 @@ The service should make it obvious where later tickets can change:
 - how the plan is requested
 - how it is parsed
 - when replanning happens
+- how task linking uses capability metadata and tool arguments
 - how task progress maps to real tool execution
+- how tool failures transition linked tasks into blocked or stale states
 
 ### D. Tool exposure vs tool execution separation
 There should be a clean distinction between:
@@ -252,9 +272,15 @@ This means the current visibility behavior should stay, but the runtime should s
 This refactor must preserve the accepted behavior from the previous ticket:
 - YAML-defined skills remain the LLM-facing surface
 - `allowed_skills` plus RBAC still gate tool visibility
+- execution-time RBAC still applies when a visible tool is actually invoked
 - `ref://` resolution remains strict scalar-only resolution
 - typed plan state still lives in `BifrostSession`
 - structured plan journaling remains separate from session state
+- linked versus unplanned tool execution journaling remains reconstructable
+- planning-disabled YAML skills still skip planning initialization explicitly rather than by inference
+- nested YAML execution still restores the parent mission plan after child execution completes
+- task linking still uses the accepted `ENG-007` runtime semantics so ambiguous matches remain unlinked
+- tool failures still drive the accepted blocked-task / stale-plan transitions
 - stack unwind behavior remains safe
 
 ---
@@ -316,8 +342,10 @@ Not every component needs to depend on every other component. Prefer one-way dep
 - `ExecutionCoordinator` remains the entrypoint for executing a YAML-defined skill mission.
 - The accepted `ENG-007` mission flow still works without behavioral regression.
 - Planning initialization happens through a planning-specific service boundary.
+- Planning-disabled execution remains explicit through the mission execution boundary.
 - Runtime session and journal mutations happen through a state-specific service boundary.
 - Tool visibility and tool callback adaptation happen through distinct boundaries.
+- Execution-time RBAC remains enforceable from the tool callback boundary.
 
 ### Structural
 - `ExecutionCoordinator` is materially smaller and easier to understand.
@@ -341,24 +369,29 @@ Not every component needs to depend on every other component. Prefer one-way dep
 Should verify:
 - frame lifecycle is consistent
 - plan creation/update/clearing is consistent
+- parent-plan snapshot/restore is consistent for nested YAML execution
 - journal writes remain structured and correct
 
 ### 2. `PlanningServiceTest`
 Should verify:
 - planning initialization is isolated from coordinator wiring
+- task linking preserves the accepted `ENG-007` linker semantics and keeps ambiguous matches unlinked
 - task status updates happen through well-defined semantics
 - planning-disabled behavior is explicit and testable
+- tool failure semantics mark linked tasks and plans correctly
 
 ### 3. `ToolCallbackFactoryTest`
 Should verify:
 - visible capabilities become tool callbacks correctly
 - strict `ref://` resolution still happens before deterministic execution
-- tool call / result mutations are routed through the state service
+- linked and unplanned tool call / result mutations are routed through the state service
+- execution-time RBAC remains enforced with the caller authentication context
 
 ### 4. `MissionExecutionEngineTest`
 Should verify:
 - the engine performs the accepted mission loop
 - planning bootstrap and final execution stay decoupled
+- planning-disabled execution is controlled by an explicit mission input
 - the engine does not own visibility policy
 
 ### 5. `ExecutionCoordinatorIntegrationTest`
@@ -409,4 +442,3 @@ This ticket is done when:
 - behavior from `ENG-007` is preserved
 - tests clearly reflect the new boundaries
 - a new session can understand the runtime by reading the smaller components instead of reverse-engineering a single orchestration class
-

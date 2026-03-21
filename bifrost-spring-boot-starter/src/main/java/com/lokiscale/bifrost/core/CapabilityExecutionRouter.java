@@ -2,6 +2,8 @@ package com.lokiscale.bifrost.core;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.state.PlanSnapshot;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.lang.Nullable;
@@ -18,20 +20,24 @@ public class CapabilityExecutionRouter {
     private final RefResolver refResolver;
     private final ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider;
     private final ObjectMapper objectMapper;
+    private final ExecutionStateService executionStateService;
 
     public CapabilityExecutionRouter(RefResolver refResolver,
-                                     ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider) {
-        this(refResolver, executionCoordinatorProvider, new ObjectMapper());
+                                     ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
+                                     ExecutionStateService executionStateService) {
+        this(refResolver, executionCoordinatorProvider, new ObjectMapper(), executionStateService);
     }
 
     CapabilityExecutionRouter(RefResolver refResolver,
                               ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              ExecutionStateService executionStateService) {
         this.refResolver = Objects.requireNonNull(refResolver, "refResolver must not be null");
         this.executionCoordinatorProvider = Objects.requireNonNull(
                 executionCoordinatorProvider,
                 "executionCoordinatorProvider must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
     }
 
     public Object execute(CapabilityMetadata capability,
@@ -45,13 +51,13 @@ public class CapabilityExecutionRouter {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
 
         if (capability.kind() == CapabilityKind.YAML_SKILL && capability.mappedTargetId() == null) {
-            java.util.Optional<ExecutionPlan> parentPlan = session.getExecutionPlan();
+            PlanSnapshot parentPlan = executionStateService.snapshotPlan(session);
             try {
                 return executionCoordinatorProvider.getObject()
                         .execute(capability.name(), objectiveFor(capability, safeArguments), session, authentication);
             }
             finally {
-                parentPlan.ifPresentOrElse(session::replaceExecutionPlan, session::clearExecutionPlan);
+                executionStateService.restorePlan(session, parentPlan);
             }
         }
 

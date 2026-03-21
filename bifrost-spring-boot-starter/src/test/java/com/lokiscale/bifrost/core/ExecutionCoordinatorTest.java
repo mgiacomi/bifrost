@@ -2,6 +2,16 @@ package com.lokiscale.bifrost.core;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
+import com.lokiscale.bifrost.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
+import com.lokiscale.bifrost.runtime.tool.DefaultToolSurfaceService;
+import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
+import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
@@ -26,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ExecutionCoordinatorTest {
+
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
 
     @Test
     void deniesRestrictedRootSkillBeforePlanningOrModelExecution() {
@@ -75,13 +87,13 @@ class ExecutionCoordinatorTest {
                 "unused",
                 "{\"value\":\"hello\"}");
 
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 (currentSkillName, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
-                callbackAdapter((value, session) -> value, null),
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                (value, session) -> value,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -149,15 +161,13 @@ class ExecutionCoordinatorTest {
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
                 ? "resolved-content"
                 : value;
-        CapabilityToolCallbackAdapter adapter = callbackAdapter(refResolver, null);
-
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 visibilityResolver,
                 factory,
-                adapter,
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                refResolver,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -177,6 +187,12 @@ class ExecutionCoordinatorTest {
                 .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
+        assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
+                .containsSubsequence(
+                        JournalEntryType.PLAN_CREATED,
+                        JournalEntryType.TOOL_CALL,
+                        JournalEntryType.PLAN_UPDATED,
+                        JournalEntryType.TOOL_RESULT);
         assertThat(chatClient.toolNamesSeen).containsExactly("allowed.visible.skill");
         assertThat(chatClient.toolNamesByCall).containsExactly(List.of(), List.of("allowed.visible.skill"));
         assertThat(chatClient.systemMessagesSeen).hasSize(2);
@@ -245,13 +261,13 @@ class ExecutionCoordinatorTest {
                 false);
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
 
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 (currentSkillName, authentication) -> List.of(childMetadata),
                 factory,
-                callbackAdapter((value, session) -> value, null),
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                (value, session) -> value,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -316,13 +332,13 @@ class ExecutionCoordinatorTest {
                 "{\"value\":\"hello\"}",
                 false);
 
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 (currentSkillName, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
-                callbackAdapter((value, session) -> value, null),
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                (value, session) -> value,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -396,15 +412,13 @@ class ExecutionCoordinatorTest {
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
                 ? "resolved-content"
                 : value;
-        CapabilityToolCallbackAdapter adapter = callbackAdapter(refResolver, null);
-
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 visibilityResolver,
                 factory,
-                adapter,
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                refResolver,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -495,23 +509,21 @@ class ExecutionCoordinatorTest {
                 ? "resolved-content"
                 : value;
 
-        CapabilityToolCallbackAdapter adapter = callbackAdapter(refResolver, null);
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 visibilityResolver,
                 factory,
-                adapter,
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                refResolver,
+                null,
                 true);
-        CapabilityToolCallbackAdapter routedAdapter = callbackAdapter(refResolver, coordinator);
-        coordinator = new ExecutionCoordinator(
+        coordinator = coordinator(
                 catalog,
                 registry,
                 visibilityResolver,
                 factory,
-                routedAdapter,
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                refResolver,
+                coordinator,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 4);
@@ -524,6 +536,12 @@ class ExecutionCoordinatorTest {
         assertThat(session.getExecutionPlan().orElseThrow().planId()).isEqualTo("plan-root");
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
                 .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
+        assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
+                .containsSubsequence(
+                        JournalEntryType.PLAN_CREATED,
+                        JournalEntryType.TOOL_CALL,
+                        JournalEntryType.PLAN_UPDATED,
+                        JournalEntryType.TOOL_RESULT);
         assertThat(childChatClient.userMessagesSeen).hasSize(2);
         assertThat(childChatClient.userMessagesSeen.get(1))
                 .contains("ref://")
@@ -579,13 +597,13 @@ class ExecutionCoordinatorTest {
                 "unused",
                 "{\"value\":\"hello\"}");
 
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 (currentSkillName, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
-                callbackAdapter((value, session) -> value, null),
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                (value, session) -> value,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -619,8 +637,11 @@ class ExecutionCoordinatorTest {
                 new CapabilityToolDescriptor("allowed.visible.skill", "child", methodSchema),
                 "targetBean#deterministicTarget");
 
-        CapabilityToolCallbackAdapter adapter = callbackAdapter((value, session) -> value, null);
-        ToolCallback callback = adapter.toToolCallbacks(List.of(childMetadata), new BifrostSession("session-1", 2), null).getFirst();
+        ExecutionStateService stateService = fixedStateService();
+        PlanningService planningService = fixedPlanningService(stateService);
+        ToolCallback callback = toolCallbackFactory((value, session) -> value, null, stateService, planningService)
+                .createToolCallbacks(new BifrostSession("session-1", 2), List.of(childMetadata), null)
+                .getFirst();
 
         assertThat(callback.getToolDefinition().inputSchema()).isEqualTo(methodSchema);
     }
@@ -675,13 +696,13 @@ class ExecutionCoordinatorTest {
                 "mission complete",
                 "{\"value\":\"hello\"}");
 
-        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+        ExecutionCoordinator coordinator = coordinator(
                 catalog,
                 registry,
                 (currentSkillName, authentication) -> List.of(childMetadata),
                 new RecordingSkillChatClientFactory(chatClient),
-                callbackAdapter((value, session) -> value, null),
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC),
+                (value, session) -> value,
+                null,
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
@@ -707,14 +728,53 @@ class ExecutionCoordinatorTest {
         return manifest;
     }
 
-    private static CapabilityToolCallbackAdapter callbackAdapter(RefResolver refResolver, ExecutionCoordinator coordinator) {
+    private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
+                                                   InMemoryCapabilityRegistry registry,
+                                                   SkillVisibilityResolver visibilityResolver,
+                                                   SkillChatClientFactory factory,
+                                                   RefResolver refResolver,
+                                                   ExecutionCoordinator routedCoordinator,
+                                                   boolean planningModeEnabled) {
+        ExecutionStateService stateService = fixedStateService();
+        PlanningService planningService = fixedPlanningService(stateService);
+        ToolSurfaceService toolSurfaceService = new DefaultToolSurfaceService(visibilityResolver);
+        ToolCallbackFactory toolCallbackFactory = toolCallbackFactory(refResolver, routedCoordinator, stateService, planningService);
+        MissionExecutionEngine missionExecutionEngine = missionExecutionEngine(planningService, stateService);
+        return new ExecutionCoordinator(
+                catalog,
+                registry,
+                factory,
+                toolSurfaceService,
+                toolCallbackFactory,
+                missionExecutionEngine,
+                stateService,
+                planningModeEnabled);
+    }
+
+    private static ToolCallbackFactory toolCallbackFactory(RefResolver refResolver,
+                                                           ExecutionCoordinator coordinator,
+                                                           ExecutionStateService stateService,
+                                                           PlanningService planningService) {
         StaticListableBeanFactory beanFactory = coordinator == null
                 ? new StaticListableBeanFactory()
                 : new StaticListableBeanFactory(java.util.Map.of("executionCoordinator", coordinator));
-        return new CapabilityToolCallbackAdapter(
-                new CapabilityExecutionRouter(refResolver, beanFactory.getBeanProvider(ExecutionCoordinator.class)),
-                new DefaultPlanTaskLinker(),
-                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC));
+        return new DefaultToolCallbackFactory(
+                new CapabilityExecutionRouter(refResolver, beanFactory.getBeanProvider(ExecutionCoordinator.class), stateService),
+                planningService,
+                stateService);
+    }
+
+    private static ExecutionStateService fixedStateService() {
+        return new DefaultExecutionStateService(FIXED_CLOCK);
+    }
+
+    private static PlanningService fixedPlanningService(ExecutionStateService stateService) {
+        return new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+    }
+
+    private static MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
+                                                                 ExecutionStateService stateService) {
+        return new DefaultMissionExecutionEngine(planningService, stateService);
     }
 
     private static PlanTask toolTask(String taskId, String title, String capabilityName, boolean autoCompletable) {

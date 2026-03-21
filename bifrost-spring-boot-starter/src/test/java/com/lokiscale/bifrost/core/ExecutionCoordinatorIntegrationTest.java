@@ -82,6 +82,12 @@ class ExecutionCoordinatorIntegrationTest {
                     .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
+            assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
+                    .containsSubsequence(
+                            JournalEntryType.PLAN_CREATED,
+                            JournalEntryType.TOOL_CALL,
+                            JournalEntryType.PLAN_UPDATED,
+                            JournalEntryType.TOOL_RESULT);
             assertThat(factory.chatClient.toolNamesSeen).containsExactly("allowed.visible.skill");
             assertThat(factory.chatClient.toolNamesByCall).containsExactly(List.of(), List.of("allowed.visible.skill"));
             assertThat(factory.chatClient.systemMessagesSeen).hasSize(2);
@@ -149,6 +155,12 @@ class ExecutionCoordinatorIntegrationTest {
                     .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
+            assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
+                    .containsSubsequence(
+                            JournalEntryType.PLAN_CREATED,
+                            JournalEntryType.TOOL_CALL,
+                            JournalEntryType.PLAN_UPDATED,
+                            JournalEntryType.TOOL_RESULT);
             assertThat(factory.chatClient.toolNamesSeen).containsExactly("binary.visible.skill");
             assertThat(factory.chatClient.toolNamesByCall).containsExactly(List.of(), List.of("binary.visible.skill"));
             assertThat(factory.chatClient.lastToolResult).isEqualTo("\"binary:00ff41\"");

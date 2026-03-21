@@ -4,7 +4,6 @@ import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.chat.SkillChatOptionsAdapter;
 import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
 import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
-import com.lokiscale.bifrost.core.CapabilityToolCallbackAdapter;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
@@ -14,6 +13,16 @@ import com.lokiscale.bifrost.core.ExecutionCoordinator;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
+import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
+import com.lokiscale.bifrost.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
+import com.lokiscale.bifrost.runtime.tool.DefaultToolSurfaceService;
+import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
+import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
 import com.lokiscale.bifrost.skill.DefaultSkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillCapabilityRegistrar;
@@ -116,8 +125,9 @@ public class BifrostAutoConfiguration {
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public CapabilityExecutionRouter capabilityExecutionRouter(RefResolver refResolver,
-                                                               org.springframework.beans.factory.ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider) {
-        return new CapabilityExecutionRouter(refResolver, executionCoordinatorProvider);
+                                                               org.springframework.beans.factory.ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
+                                                               ExecutionStateService executionStateService) {
+        return new CapabilityExecutionRouter(refResolver, executionCoordinatorProvider, executionStateService);
     }
 
     @Bean
@@ -137,10 +147,40 @@ public class BifrostAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public CapabilityToolCallbackAdapter capabilityToolCallbackAdapter(CapabilityExecutionRouter capabilityExecutionRouter,
-                                                                       PlanTaskLinker planTaskLinker,
-                                                                       Clock bifrostClock) {
-        return new CapabilityToolCallbackAdapter(capabilityExecutionRouter, planTaskLinker, bifrostClock);
+    public ExecutionStateService executionStateService(Clock bifrostClock) {
+        return new DefaultExecutionStateService(bifrostClock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public PlanningService planningService(PlanTaskLinker planTaskLinker,
+                                           ExecutionStateService executionStateService) {
+        return new DefaultPlanningService(planTaskLinker, executionStateService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public ToolSurfaceService toolSurfaceService(SkillVisibilityResolver skillVisibilityResolver) {
+        return new DefaultToolSurfaceService(skillVisibilityResolver);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public ToolCallbackFactory toolCallbackFactory(CapabilityExecutionRouter capabilityExecutionRouter,
+                                                   PlanningService planningService,
+                                                   ExecutionStateService executionStateService) {
+        return new DefaultToolCallbackFactory(capabilityExecutionRouter, planningService, executionStateService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
+                                                         ExecutionStateService executionStateService) {
+        return new DefaultMissionExecutionEngine(planningService, executionStateService);
     }
 
     @Bean
@@ -186,17 +226,19 @@ public class BifrostAutoConfiguration {
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public ExecutionCoordinator executionCoordinator(YamlSkillCatalog yamlSkillCatalog,
                                                      CapabilityRegistry capabilityRegistry,
-                                                     SkillVisibilityResolver skillVisibilityResolver,
                                                      SkillChatClientFactory skillChatClientFactory,
-                                                     CapabilityToolCallbackAdapter capabilityToolCallbackAdapter,
-                                                     Clock bifrostClock) {
+                                                     ToolSurfaceService toolSurfaceService,
+                                                     ToolCallbackFactory toolCallbackFactory,
+                                                     MissionExecutionEngine missionExecutionEngine,
+                                                     ExecutionStateService executionStateService) {
         return new ExecutionCoordinator(
                 yamlSkillCatalog,
                 capabilityRegistry,
-                skillVisibilityResolver,
                 skillChatClientFactory,
-                capabilityToolCallbackAdapter,
-                bifrostClock,
+                toolSurfaceService,
+                toolCallbackFactory,
+                missionExecutionEngine,
+                executionStateService,
                 true);
     }
 }
