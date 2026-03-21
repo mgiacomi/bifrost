@@ -90,10 +90,11 @@ class ExecutionCoordinatorLinterIntegrationTest {
                 null);
         registry.register(metadata.name(), metadata);
 
+        ExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         AdvisedSequenceChatClient chatClient = new AdvisedSequenceChatClient(
-                new DefaultSkillAdvisorResolver(FIXED_CLOCK).resolve(definition),
+                new DefaultSkillAdvisorResolver(stateService).resolve(definition),
                 List.of("not ok", "OK: corrected"));
-        ExecutionCoordinator coordinator = coordinator(catalog, registry, ignored -> chatClient);
+        ExecutionCoordinator coordinator = coordinator(catalog, registry, ignored -> chatClient, stateService);
         BifrostSession session = new BifrostSession("session-1", 3);
 
         String response = coordinator.execute("linted.skill", "Produce YAML", session, null);
@@ -120,8 +121,8 @@ class ExecutionCoordinatorLinterIntegrationTest {
 
     private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
                                                     InMemoryCapabilityRegistry registry,
-                                                    SkillChatClientFactory factory) {
-        ExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+                                                    SkillChatClientFactory factory,
+                                                    ExecutionStateService stateService) {
         PlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
         SkillVisibilityResolver visibilityResolver = (currentSkillName, session, authentication) -> List.of();
         ToolSurfaceService toolSurfaceService = new DefaultToolSurfaceService(visibilityResolver);

@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
+import com.lokiscale.bifrost.linter.LinterOutcome;
 
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +34,8 @@ public interface ExecutionStateService {
     void logUnplannedToolCall(BifrostSession session, TaskExecutionEvent event);
 
     void logToolResult(BifrostSession session, TaskExecutionEvent event);
+
+    void recordLinterOutcome(BifrostSession session, LinterOutcome outcome);
 
     void logError(BifrostSession session, Map<String, Object> payload);
 }

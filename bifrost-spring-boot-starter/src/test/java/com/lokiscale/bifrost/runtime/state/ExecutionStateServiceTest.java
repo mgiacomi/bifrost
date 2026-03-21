@@ -8,6 +8,8 @@ import com.lokiscale.bifrost.core.JournalEntryType;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
+import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -28,24 +30,36 @@ class ExecutionStateServiceTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         BifrostSession session = new BifrostSession("session-1", 3);
         ExecutionPlan plan = plan("plan-1");
+        LinterOutcome outcome = new LinterOutcome(
+                "linted.skill",
+                "regex",
+                2,
+                1,
+                2,
+                LinterOutcomeStatus.PASSED,
+                "Return fenced YAML only.");
 
         ExecutionFrame frame = stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello"));
         stateService.storePlan(session, plan);
         stateService.logPlanCreated(session, plan);
         stateService.logToolCall(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
         stateService.logToolResult(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("result", "done"), null));
+        stateService.recordLinterOutcome(session, outcome);
         stateService.logError(session, Map.of("message", "boom"));
         stateService.closeMissionFrame(session, frame);
         stateService.clearPlan(session);
 
         assertThat(session.getFramesSnapshot()).isEmpty();
         assertThat(session.getExecutionPlan()).isEmpty();
+        assertThat(session.getLastLinterOutcome()).contains(outcome);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .containsExactly(
                         JournalEntryType.PLAN_CREATED,
                         JournalEntryType.TOOL_CALL,
                         JournalEntryType.TOOL_RESULT,
+                        JournalEntryType.LINTER,
                         JournalEntryType.ERROR);
+        assertThat(session.getJournalSnapshot().get(3).payload().get("status").textValue()).isEqualTo("PASSED");
     }
 
     @Test

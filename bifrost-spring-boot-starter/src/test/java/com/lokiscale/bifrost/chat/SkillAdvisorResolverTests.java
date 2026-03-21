@@ -2,6 +2,7 @@ package com.lokiscale.bifrost.chat;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
+import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
@@ -17,7 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SkillAdvisorResolverTests {
 
     private final DefaultSkillAdvisorResolver resolver =
-            new DefaultSkillAdvisorResolver(Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC));
+            new DefaultSkillAdvisorResolver(
+                    new DefaultExecutionStateService(Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC)));
 
     @Test
     void returnsEmptyAdvisorListForSkillWithoutLinter() {

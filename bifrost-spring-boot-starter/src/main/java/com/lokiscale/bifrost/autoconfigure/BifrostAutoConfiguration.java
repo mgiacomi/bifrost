@@ -229,8 +229,8 @@ public class BifrostAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillAdvisorResolver skillAdvisorResolver(Clock bifrostClock) {
-        return new DefaultSkillAdvisorResolver(bifrostClock);
+    public SkillAdvisorResolver skillAdvisorResolver(ExecutionStateService executionStateService) {
+        return new DefaultSkillAdvisorResolver(executionStateService);
     }
 
     @Bean

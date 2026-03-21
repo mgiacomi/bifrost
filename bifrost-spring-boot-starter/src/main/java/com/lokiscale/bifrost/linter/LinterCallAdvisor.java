@@ -1,6 +1,5 @@
 package com.lokiscale.bifrost.linter;
 
-import com.lokiscale.bifrost.core.BifrostSession;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
@@ -9,7 +8,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.util.StringUtils;
 
-import java.time.Clock;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -29,14 +27,14 @@ public final class LinterCallAdvisor implements CallAdvisor {
     private final Pattern pattern;
     private final String failureMessage;
     private final int maxRetries;
-    private final Clock clock;
+    private final LinterOutcomeRecorder outcomeRecorder;
 
     public LinterCallAdvisor(String skillName,
                              String linterType,
                              Pattern pattern,
                              String failureMessage,
                              int maxRetries,
-                             Clock clock) {
+                             LinterOutcomeRecorder outcomeRecorder) {
         this.skillName = Objects.requireNonNull(skillName, "skillName must not be null");
         this.linterType = Objects.requireNonNull(linterType, "linterType must not be null");
         this.pattern = Objects.requireNonNull(pattern, "pattern must not be null");
@@ -45,7 +43,7 @@ public final class LinterCallAdvisor implements CallAdvisor {
             throw new IllegalArgumentException("maxRetries must not be negative");
         }
         this.maxRetries = maxRetries;
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.outcomeRecorder = Objects.requireNonNull(outcomeRecorder, "outcomeRecorder must not be null");
     }
 
     @Override
@@ -97,9 +95,7 @@ public final class LinterCallAdvisor implements CallAdvisor {
 
     private void recordOnSession(LinterOutcome outcome) {
         try {
-            BifrostSession session = BifrostSession.getCurrentSession();
-            session.setLastLinterOutcome(outcome);
-            session.logLinterOutcome(clock.instant(), outcome);
+            outcomeRecorder.record(outcome);
         }
         catch (IllegalStateException ignored) {
             // Advisor usage outside a managed Bifrost session still exposes the outcome via response context.

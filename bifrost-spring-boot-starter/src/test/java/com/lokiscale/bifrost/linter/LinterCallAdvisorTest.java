@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.JournalEntry;
 import com.lokiscale.bifrost.core.JournalEntryType;
+import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -76,8 +77,26 @@ class LinterCallAdvisorTest {
     }
 
     @Test
+    void recordsEachOutcomeThroughRecorderBoundary() {
+        RecordingOutcomeRecorder recorder = new RecordingOutcomeRecorder();
+        LinterCallAdvisor advisor = advisor(2, recorder);
+        RecordingChain chain = new RecordingChain(List.of("bad", "OK: corrected"));
+
+        ChatClientResponse response = advisor.adviseCall(request("Write YAML"), chain);
+
+        assertThat(text(response)).isEqualTo("OK: corrected");
+        assertThat(recorder.outcomes)
+                .extracting(LinterOutcome::status, LinterOutcome::retryCount, LinterOutcome::attempt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(LinterOutcomeStatus.RETRYING, 0, 1),
+                        org.assertj.core.groups.Tuple.tuple(LinterOutcomeStatus.PASSED, 1, 2));
+    }
+
+    @Test
     void recordsObservableOutcomeOnBoundSession() {
-        LinterCallAdvisor advisor = advisor(1);
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        LinterCallAdvisor advisor = advisor(1, outcome ->
+                stateService.recordLinterOutcome(BifrostSession.getCurrentSession(), outcome));
         RecordingChain chain = new RecordingChain(List.of("bad", "OK: corrected"));
         BifrostSessionRunner runner = new BifrostSessionRunner(3);
 
@@ -97,13 +116,18 @@ class LinterCallAdvisorTest {
     }
 
     private static LinterCallAdvisor advisor(int maxRetries) {
+        return advisor(maxRetries, outcome -> {
+        });
+    }
+
+    private static LinterCallAdvisor advisor(int maxRetries, LinterOutcomeRecorder outcomeRecorder) {
         return new LinterCallAdvisor(
                 "linted.skill",
                 "regex",
                 Pattern.compile("^OK:.*$"),
                 "Return fenced YAML only.",
                 maxRetries,
-                FIXED_CLOCK);
+                outcomeRecorder);
     }
 
     private static ChatClientRequest request(String text) {
@@ -142,6 +166,16 @@ class LinterCallAdvisorTest {
         @Override
         public CallAdvisorChain copy(CallAdvisor after) {
             return this;
+        }
+    }
+
+    private static final class RecordingOutcomeRecorder implements LinterOutcomeRecorder {
+
+        private final List<LinterOutcome> outcomes = new ArrayList<>();
+
+        @Override
+        public void record(LinterOutcome outcome) {
+            outcomes.add(outcome);
         }
     }
 }

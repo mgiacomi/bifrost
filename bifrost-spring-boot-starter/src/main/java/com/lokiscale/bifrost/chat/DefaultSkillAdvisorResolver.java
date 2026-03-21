@@ -1,21 +1,24 @@
 package com.lokiscale.bifrost.chat;
 
+import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 
-import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
 public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver {
 
-    private final Clock clock;
+    private final ExecutionStateService executionStateService;
 
-    public DefaultSkillAdvisorResolver(Clock clock) {
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    public DefaultSkillAdvisorResolver(ExecutionStateService executionStateService) {
+        this.executionStateService = Objects.requireNonNull(
+                executionStateService,
+                "executionStateService must not be null");
     }
 
     @Override
@@ -38,6 +41,6 @@ public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver {
                 Pattern.compile(linter.getRegex().getPattern()),
                 detail,
                 linter.getMaxRetries(),
-                clock));
+                outcome -> executionStateService.recordLinterOutcome(BifrostSession.getCurrentSession(), outcome)));
     }
 }
