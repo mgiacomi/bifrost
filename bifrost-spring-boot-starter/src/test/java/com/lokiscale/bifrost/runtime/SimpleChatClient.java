@@ -15,12 +15,20 @@ public class SimpleChatClient implements ChatClient {
 
     private final ExecutionPlan plan;
     private final String content;
-    final List<String> systemMessagesSeen = new ArrayList<>();
-    final List<String> userMessagesSeen = new ArrayList<>();
+    private final List<String> systemMessagesSeen = new ArrayList<>();
+    private final List<String> userMessagesSeen = new ArrayList<>();
 
     public SimpleChatClient(ExecutionPlan plan, String content) {
         this.plan = plan;
         this.content = content;
+    }
+
+    public List<String> getSystemMessagesSeen() {
+        return systemMessagesSeen;
+    }
+
+    public List<String> getUserMessagesSeen() {
+        return userMessagesSeen;
     }
 
     @Override

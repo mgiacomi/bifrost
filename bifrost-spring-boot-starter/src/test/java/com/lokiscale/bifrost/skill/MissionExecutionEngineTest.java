@@ -1,9 +1,11 @@
-package com.lokiscale.bifrost.runtime;
+package com.lokiscale.bifrost.skill;
 
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
+import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.SimpleChatClient;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import org.junit.jupiter.api.Test;
@@ -51,7 +53,7 @@ class MissionExecutionEngineTest {
         String response = engine.executeMission(session, "root.visible.skill", "hello", chatClient, List.of(callback), true, null);
 
         assertThat(response).isEqualTo("mission complete");
-        assertThat(chatClient.systemMessagesSeen.getFirst()).contains("plan-1", "Ready tasks", "Blocked tasks");
+        assertThat(chatClient.getSystemMessagesSeen().getFirst()).contains("plan-1", "Ready tasks", "Blocked tasks");
     }
 
     @Test
@@ -65,7 +67,7 @@ class MissionExecutionEngineTest {
         String response = engine.executeMission(session, "root.visible.skill", "hello", chatClient, List.of(), false, null);
 
         assertThat(response).isEqualTo("mission complete");
-        assertThat(chatClient.systemMessagesSeen).containsExactly("Execute the mission using only the visible YAML tools when needed.");
+        assertThat(chatClient.getSystemMessagesSeen()).containsExactly("Execute the mission using only the visible YAML tools when needed.");
         verify(planningService, never()).initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(chatClient), any());
     }
 
