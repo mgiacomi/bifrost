@@ -4,13 +4,16 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,9 +28,12 @@ public final class BifrostSession {
     private final ReentrantLock lock;
     @JsonIgnore
     private final Deque<ExecutionFrame> frames;
+    @JsonIgnore
+    private final Map<String, Integer> toolActivityCountByFrameId;
     private final ExecutionJournal executionJournal;
     private ExecutionPlan executionPlan;
     private LinterOutcome lastLinterOutcome;
+    private SessionUsageSnapshot sessionUsage;
     @JsonIgnore
     private Authentication authentication;
 
@@ -36,15 +42,15 @@ public final class BifrostSession {
     }
 
     public BifrostSession(String sessionId, int maxDepth) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null);
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, null);
     }
 
     public BifrostSession(int maxDepth, @Nullable Authentication authentication) {
-        this(UUID.randomUUID().toString(), maxDepth, List.of(), new ExecutionJournal(), null, null, authentication);
+        this(UUID.randomUUID().toString(), maxDepth, List.of(), new ExecutionJournal(), null, null, null, authentication);
     }
 
     public BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, authentication);
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, authentication);
     }
 
     @JsonCreator
@@ -54,8 +60,9 @@ public final class BifrostSession {
             @JsonProperty("frames") List<ExecutionFrame> frames,
             @JsonProperty("executionJournal") ExecutionJournal executionJournal,
             @JsonProperty("executionPlan") ExecutionPlan executionPlan,
-            @JsonProperty("lastLinterOutcome") LinterOutcome lastLinterOutcome) {
-        this(sessionId, maxDepth, frames, executionJournal, executionPlan, lastLinterOutcome, null);
+            @JsonProperty("lastLinterOutcome") LinterOutcome lastLinterOutcome,
+            @JsonProperty("sessionUsage") SessionUsageSnapshot sessionUsage) {
+        this(sessionId, maxDepth, frames, executionJournal, executionPlan, lastLinterOutcome, sessionUsage, null);
     }
 
     public BifrostSession(
@@ -65,6 +72,7 @@ public final class BifrostSession {
             ExecutionJournal executionJournal,
             ExecutionPlan executionPlan,
             @Nullable LinterOutcome lastLinterOutcome,
+            @Nullable SessionUsageSnapshot sessionUsage,
             @Nullable Authentication authentication) {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         if (maxDepth <= 0) {
@@ -73,9 +81,11 @@ public final class BifrostSession {
         this.maxDepth = maxDepth;
         this.lock = new ReentrantLock();
         this.frames = new ArrayDeque<>(frames == null ? List.of() : List.copyOf(frames));
+        this.toolActivityCountByFrameId = new HashMap<>();
         this.executionJournal = executionJournal == null ? new ExecutionJournal() : executionJournal;
         this.executionPlan = executionPlan;
         this.lastLinterOutcome = lastLinterOutcome;
+        this.sessionUsage = sessionUsage;
         this.authentication = authentication;
     }
 
@@ -123,8 +133,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return Optional.ofNullable(executionPlan);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -133,8 +142,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             executionPlan = Objects.requireNonNull(plan, "plan must not be null");
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -143,8 +151,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             executionPlan = null;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -158,8 +165,7 @@ public final class BifrostSession {
             }
             executionPlan = Objects.requireNonNull(updater.apply(executionPlan), "updated plan must not be null");
             return Optional.of(executionPlan);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -168,8 +174,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return Optional.ofNullable(authentication);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -178,8 +183,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return Optional.ofNullable(lastLinterOutcome);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -188,8 +192,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             this.lastLinterOutcome = lastLinterOutcome;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -198,8 +201,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             this.authentication = authentication;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -212,8 +214,7 @@ public final class BifrostSession {
                 throw new BifrostStackOverflowException(sessionId, maxDepth, frame.route());
             }
             frames.push(frame);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -224,9 +225,10 @@ public final class BifrostSession {
             if (frames.isEmpty()) {
                 throw new IllegalStateException("Cannot pop execution frame from an empty session stack.");
             }
-            return frames.pop();
-        }
-        finally {
+            ExecutionFrame frame = frames.pop();
+            toolActivityCountByFrameId.remove(frame.frameId());
+            return frame;
+        } finally {
             lock.unlock();
         }
     }
@@ -238,8 +240,7 @@ public final class BifrostSession {
                 throw new IllegalStateException("Cannot peek execution frame from an empty session stack.");
             }
             return frames.peek();
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -249,8 +250,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return List.copyOf(frames);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -260,8 +260,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return executionJournal.getEntriesSnapshot();
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -271,8 +270,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return new ExecutionJournal(executionJournal.getEntriesSnapshot());
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -282,8 +280,7 @@ public final class BifrostSession {
         lock.lock();
         try {
             return executionPlan;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -293,8 +290,49 @@ public final class BifrostSession {
         lock.lock();
         try {
             return lastLinterOutcome;
+        } finally {
+            lock.unlock();
         }
-        finally {
+    }
+
+    public Optional<SessionUsageSnapshot> getSessionUsage() {
+        lock.lock();
+        try {
+            return Optional.ofNullable(sessionUsage);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void setSessionUsage(@Nullable SessionUsageSnapshot sessionUsage) {
+        lock.lock();
+        try {
+            this.sessionUsage = sessionUsage;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public Optional<SessionUsageSnapshot> updateSessionUsage(UnaryOperator<SessionUsageSnapshot> updater) {
+        Objects.requireNonNull(updater, "updater must not be null");
+        lock.lock();
+        try {
+            if (sessionUsage == null) {
+                return Optional.empty();
+            }
+            sessionUsage = Objects.requireNonNull(updater.apply(sessionUsage), "updated session usage must not be null");
+            return Optional.of(sessionUsage);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @JsonProperty("sessionUsage")
+    public SessionUsageSnapshot getSessionUsageSnapshot() {
+        lock.lock();
+        try {
+            return sessionUsage;
+        } finally {
             lock.unlock();
         }
     }
@@ -303,12 +341,36 @@ public final class BifrostSession {
         return BifrostSessionHolder.requireCurrentSession();
     }
 
+    public void markToolActivityForCurrentFrame() {
+        lock.lock();
+        try {
+            if (frames.isEmpty()) {
+                return;
+            }
+            toolActivityCountByFrameId.merge(frames.peek().frameId(), 1, Integer::sum);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int consumeToolActivityCountForCurrentFrame() {
+        lock.lock();
+        try {
+            if (frames.isEmpty()) {
+                return 0;
+            }
+            Integer count = toolActivityCountByFrameId.remove(frames.peek().frameId());
+            return count == null ? 0 : count;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private void appendJournalEntry(Instant timestamp, JournalLevel level, JournalEntryType type, Object payload) {
         lock.lock();
         try {
             executionJournal.append(timestamp, level, type, payload);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }

@@ -6,6 +6,10 @@ import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.NoOpUsageMetricsRecorder;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.UsageMetricsRecorder;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.core.ParameterizedTypeReference;
@@ -21,15 +25,27 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
     private final CapabilityExecutionRouter capabilityExecutionRouter;
     private final PlanningService planningService;
     private final ExecutionStateService executionStateService;
+    private final SessionUsageService sessionUsageService;
+    private final UsageMetricsRecorder usageMetricsRecorder;
 
     public DefaultToolCallbackFactory(CapabilityExecutionRouter capabilityExecutionRouter,
                                       PlanningService planningService,
                                       ExecutionStateService executionStateService) {
+        this(capabilityExecutionRouter, planningService, executionStateService, new NoOpSessionUsageService(), new NoOpUsageMetricsRecorder());
+    }
+
+    public DefaultToolCallbackFactory(CapabilityExecutionRouter capabilityExecutionRouter,
+                                      PlanningService planningService,
+                                      ExecutionStateService executionStateService,
+                                      SessionUsageService sessionUsageService,
+                                      UsageMetricsRecorder usageMetricsRecorder) {
         this.capabilityExecutionRouter = Objects.requireNonNull(
                 capabilityExecutionRouter,
                 "capabilityExecutionRouter must not be null");
         this.planningService = Objects.requireNonNull(planningService, "planningService must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
+        this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
+        this.usageMetricsRecorder = Objects.requireNonNull(usageMetricsRecorder, "usageMetricsRecorder must not be null");
     }
 
     @Override
@@ -61,6 +77,8 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                                     BifrostSession session,
                                     @Nullable Authentication authentication) {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
+        String currentSkillName = currentSkillName(session);
+        sessionUsageService.recordToolCall(session, currentSkillName, capability.name());
         var startedPlan = planningService.markToolStarted(session, capability, safeArguments);
         String linkedTaskId = startedPlan.flatMap(plan -> plan.activeTask().map(task -> task.taskId())).orElse(null);
         if (linkedTaskId == null) {
@@ -68,8 +86,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                     capability.name(),
                     Map.of("arguments", safeArguments),
                     "No unique ready task matched this tool call"));
-        }
-        else {
+        } else {
             executionStateService.logToolCall(session, TaskExecutionEvent.linked(
                     capability.name(),
                     linkedTaskId,
@@ -81,21 +98,30 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
             if (linkedTaskId != null) {
                 planningService.markToolCompleted(session, linkedTaskId, capability.name(), result);
             }
+            usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "success");
             executionStateService.logToolResult(session, linkedTaskId == null
                     ? TaskExecutionEvent.unlinked(capability.name(), Map.of("result", result), null)
                     : TaskExecutionEvent.linked(capability.name(), linkedTaskId, Map.of("result", result), null));
             return result;
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             if (linkedTaskId != null) {
                 planningService.markToolFailed(session, linkedTaskId, capability.name(), ex);
             }
+            usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "failure");
             executionStateService.logError(session, Map.of(
                     "tool", capability.name(),
                     "linkedTaskId", linkedTaskId,
                     "message", ex.getMessage(),
                     "exceptionType", ex.getClass().getSimpleName()));
             throw ex;
+        }
+    }
+
+    private String currentSkillName(BifrostSession session) {
+        try {
+            return session.peekFrame().route();
+        } catch (IllegalStateException ignored) {
+            return session.getExecutionPlan().map(plan -> plan.capabilityName()).orElse("unknown");
         }
     }
 }

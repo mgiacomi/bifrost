@@ -6,6 +6,8 @@ import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.OperationType;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -17,9 +19,15 @@ import java.util.UUID;
 public class DefaultExecutionStateService implements ExecutionStateService {
 
     private final Clock clock;
+    private final SessionUsageService sessionUsageService;
 
     public DefaultExecutionStateService(Clock clock) {
+        this(clock, new NoOpSessionUsageService());
+    }
+
+    public DefaultExecutionStateService(Clock clock, SessionUsageService sessionUsageService) {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
     }
 
     @Override
@@ -120,6 +128,7 @@ public class DefaultExecutionStateService implements ExecutionStateService {
         LinterOutcome recordedOutcome = Objects.requireNonNull(outcome, "outcome must not be null");
         session.setLastLinterOutcome(recordedOutcome);
         session.logLinterOutcome(clock.instant(), recordedOutcome);
+        sessionUsageService.recordLinterOutcome(session, recordedOutcome);
     }
 
     @Override

@@ -7,7 +7,11 @@ import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.execution.ToolExecutionException;
 import org.springframework.lang.Nullable;
@@ -30,15 +34,28 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
     private final ExecutionStateService executionStateService;
     private final Duration missionTimeout;
     private final ExecutorService missionExecutor;
+    private final SessionUsageService sessionUsageService;
+    private final ModelUsageExtractor modelUsageExtractor;
 
     public DefaultMissionExecutionEngine(PlanningService planningService,
                                          ExecutionStateService executionStateService,
                                          Duration missionTimeout,
                                          ExecutorService missionExecutor) {
+        this(planningService, executionStateService, missionTimeout, missionExecutor, new NoOpSessionUsageService(), new ModelUsageExtractor());
+    }
+
+    public DefaultMissionExecutionEngine(PlanningService planningService,
+                                         ExecutionStateService executionStateService,
+                                         Duration missionTimeout,
+                                         ExecutorService missionExecutor,
+                                         SessionUsageService sessionUsageService,
+                                         ModelUsageExtractor modelUsageExtractor) {
         this.planningService = Objects.requireNonNull(planningService, "planningService must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.missionTimeout = Objects.requireNonNull(missionTimeout, "missionTimeout must not be null");
         this.missionExecutor = Objects.requireNonNull(missionExecutor, "missionExecutor must not be null");
+        this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
+        this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
     }
 
     @Override
@@ -55,6 +72,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
         Objects.requireNonNull(chatClient, "chatClient must not be null");
         Objects.requireNonNull(visibleTools, "visibleTools must not be null");
         Callable<String> missionCall = () -> SessionContextRunner.callWithSession(session, () -> {
+            sessionUsageService.recordMissionStart(session, skillName);
             if (planningEnabled) {
                 planningService.initializePlan(session, objective, skillName, chatClient, visibleTools);
             }
@@ -62,27 +80,30 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
             String executionPrompt = executionStateService.currentPlan(session)
                     .map(this::buildExecutionPrompt)
                     .orElse("Execute the mission using only the visible YAML tools when needed.");
-            return chatClient.prompt()
+            ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
                     .system(executionPrompt)
                     .user(objective)
                     .toolCallbacks(visibleTools)
-                    .call()
-                    .content();
+                    .call();
+            ChatResponse chatResponse = tryChatResponse(responseSpec);
+            String content = extractContent(responseSpec, chatResponse);
+            sessionUsageService.recordModelResponse(
+                    session,
+                    skillName,
+                    modelUsageExtractor.extract(chatResponse, objective, executionPrompt, content));
+            return content;
         });
         Future<String> mission = missionExecutor.submit(missionCall);
         try {
             return mission.get(missionTimeout.toMillis(), TimeUnit.MILLISECONDS);
-        }
-        catch (TimeoutException ex) {
+        } catch (TimeoutException ex) {
             mission.cancel(true);
             throw new BifrostMissionTimeoutException(session.getSessionId(), skillName, missionTimeout, ex);
-        }
-        catch (InterruptedException ex) {
+        } catch (InterruptedException ex) {
             mission.cancel(true);
             Thread.currentThread().interrupt();
             throw new BifrostMissionTimeoutException(session.getSessionId(), skillName, missionTimeout, ex);
-        }
-        catch (ExecutionException ex) {
+        } catch (ExecutionException ex) {
             Throwable cause = ex.getCause();
             if (cause instanceof RuntimeException runtimeException) {
                 throw unwrapMissionFailure(runtimeException);
@@ -99,6 +120,24 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
             return nestedRuntimeException;
         }
         return runtimeException;
+    }
+
+    private ChatResponse tryChatResponse(ChatClient.CallResponseSpec responseSpec) {
+        try {
+            return responseSpec.chatResponse();
+        } catch (UnsupportedOperationException ignored) {
+            return null;
+        }
+    }
+
+    private String extractContent(ChatClient.CallResponseSpec responseSpec, @Nullable ChatResponse chatResponse) {
+        if (chatResponse != null && chatResponse.getResult() != null && chatResponse.getResult().getOutput() != null) {
+            String text = chatResponse.getResult().getOutput().getText();
+            if (text != null) {
+                return text;
+            }
+        }
+        return responseSpec.content();
     }
 
     private String buildExecutionPrompt(ExecutionPlan plan) {

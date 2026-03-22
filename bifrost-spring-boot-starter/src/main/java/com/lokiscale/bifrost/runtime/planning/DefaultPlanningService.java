@@ -8,7 +8,11 @@ import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 
@@ -21,10 +25,21 @@ public class DefaultPlanningService implements PlanningService {
 
     private final PlanTaskLinker planTaskLinker;
     private final ExecutionStateService executionStateService;
+    private final SessionUsageService sessionUsageService;
+    private final ModelUsageExtractor modelUsageExtractor;
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker, ExecutionStateService executionStateService) {
+        this(planTaskLinker, executionStateService, new NoOpSessionUsageService(), new ModelUsageExtractor());
+    }
+
+    public DefaultPlanningService(PlanTaskLinker planTaskLinker,
+                                  ExecutionStateService executionStateService,
+                                  SessionUsageService sessionUsageService,
+                                  ModelUsageExtractor modelUsageExtractor) {
         this.planTaskLinker = Objects.requireNonNull(planTaskLinker, "planTaskLinker must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
+        this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
+        this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
     }
 
     @Override
@@ -37,11 +52,16 @@ public class DefaultPlanningService implements PlanningService {
         Objects.requireNonNull(objective, "objective must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
         Objects.requireNonNull(chatClient, "chatClient must not be null");
-        ExecutionPlan plan = chatClient.prompt()
+        ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
                 .system("Create an ordered flight plan for this mission before execution.")
                 .user(objective)
-                .call()
-                .entity(ExecutionPlan.class);
+                .call();
+        ChatResponse chatResponse = tryChatResponse(responseSpec);
+        ExecutionPlan plan = responseSpec.entity(ExecutionPlan.class);
+        sessionUsageService.recordModelResponse(
+                session,
+                capabilityName,
+                modelUsageExtractor.extract(chatResponse, objective, "Create an ordered flight plan for this mission before execution.", stringifyPlan(plan)));
         executionStateService.storePlan(session, plan);
         executionStateService.logPlanCreated(session, plan);
         return Optional.of(plan);
@@ -112,5 +132,17 @@ public class DefaultPlanningService implements PlanningService {
                                           String taskId,
                                           java.util.function.Function<PlanTask, PlanTask> updater) {
         return plan.updateTask(taskId, updater);
+    }
+
+    private ChatResponse tryChatResponse(ChatClient.CallResponseSpec responseSpec) {
+        try {
+            return responseSpec.chatResponse();
+        } catch (UnsupportedOperationException ignored) {
+            return null;
+        }
+    }
+
+    private String stringifyPlan(ExecutionPlan plan) {
+        return plan == null ? "" : plan.toString();
     }
 }

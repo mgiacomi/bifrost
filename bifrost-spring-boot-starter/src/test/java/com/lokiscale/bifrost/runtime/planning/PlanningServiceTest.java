@@ -16,6 +16,9 @@ import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
 import com.lokiscale.bifrost.runtime.SimpleChatClient;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -42,6 +45,25 @@ class PlanningServiceTest {
         assertThat(planningService.initializePlan(session, "hello", "root.visible.skill", new SimpleChatClient(plan, "done"), List.<ToolCallback>of()))
                 .contains(plan);
         assertThat(session.getExecutionPlan()).contains(plan);
+    }
+
+    @Test
+    void recordsPlanningModelUsageAgainstTheSession() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        RecordingSessionUsageService usageService = new RecordingSessionUsageService();
+        DefaultPlanningService planningService = new DefaultPlanningService(
+                new DefaultPlanTaskLinker(),
+                stateService,
+                usageService,
+                new ModelUsageExtractor());
+        BifrostSession session = new BifrostSession("session-usage", 3);
+        ExecutionPlan plan = plan("plan-usage", PlanTaskStatus.PENDING);
+
+        assertThat(planningService.initializePlan(session, "hello", "root.visible.skill", new SimpleChatClient(plan, "done"), List.of()))
+                .contains(plan);
+        assertThat(usageService.lastSkillName).isEqualTo("root.visible.skill");
+        assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(1);
+        assertThat(usageService.snapshot(session).usageUnits()).isGreaterThan(0);
     }
 
     @Test
@@ -113,5 +135,36 @@ class PlanningServiceTest {
                 "root.visible.skill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool", status, null)));
+    }
+
+    private static final class RecordingSessionUsageService implements SessionUsageService {
+
+        private String lastSkillName;
+
+        @Override
+        public SessionUsageSnapshot snapshot(BifrostSession session) {
+            return session.getSessionUsage().orElse(SessionUsageSnapshot.empty());
+        }
+
+        @Override
+        public void recordMissionStart(BifrostSession session, String skillName) {
+        }
+
+        @Override
+        public void recordModelResponse(BifrostSession session,
+                                        String skillName,
+                                        com.lokiscale.bifrost.runtime.usage.ModelUsageRecord usageRecord) {
+            lastSkillName = skillName;
+            SessionUsageSnapshot existing = snapshot(session);
+            session.setSessionUsage(existing.recordModelUsage(usageRecord));
+        }
+
+        @Override
+        public void recordToolCall(BifrostSession session, String skillName, String capabilityName) {
+        }
+
+        @Override
+        public void recordLinterOutcome(BifrostSession session, com.lokiscale.bifrost.linter.LinterOutcome outcome) {
+        }
     }
 }

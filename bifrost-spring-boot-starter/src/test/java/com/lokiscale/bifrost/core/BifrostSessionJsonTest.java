@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -41,6 +42,7 @@ class BifrostSessionJsonTest {
                 2,
                 LinterOutcomeStatus.PASSED,
                 "Return fenced YAML only."));
+        session.setSessionUsage(new SessionUsageSnapshot(1, 2, 1, 3, 10, 20, 30, 2, 1, 0));
         session.logPlanCreated(Instant.parse("2026-03-15T12:00:02Z"), session.getExecutionPlan().orElseThrow());
 
         String json = OBJECT_MAPPER.writeValueAsString(session);
@@ -54,6 +56,7 @@ class BifrostSessionJsonTest {
         assertThat(restored.getJournalSnapshot()).hasSize(session.getJournalSnapshot().size());
         assertThat(restored.getExecutionPlan()).contains(session.getExecutionPlan().orElseThrow());
         assertThat(restored.getLastLinterOutcome()).contains(session.getLastLinterOutcome().orElseThrow());
+        assertThat(restored.getSessionUsage()).contains(session.getSessionUsage().orElseThrow());
     }
 
     @Test

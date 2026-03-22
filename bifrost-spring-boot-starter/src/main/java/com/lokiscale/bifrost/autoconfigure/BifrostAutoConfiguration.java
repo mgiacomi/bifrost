@@ -26,6 +26,12 @@ import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.DefaultToolSurfaceService;
 import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
+import com.lokiscale.bifrost.runtime.usage.DefaultSessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.MicrometerUsageMetricsRecorder;
+import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.runtime.usage.NoOpUsageMetricsRecorder;
+import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
+import com.lokiscale.bifrost.runtime.usage.UsageMetricsRecorder;
 import com.lokiscale.bifrost.security.AccessGuard;
 import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import com.lokiscale.bifrost.skill.DefaultSkillVisibilityResolver;
@@ -36,6 +42,7 @@ import com.lokiscale.bifrost.vfs.DefaultRefResolver;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import com.lokiscale.bifrost.vfs.VirtualFileSystem;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -165,16 +172,49 @@ public class BifrostAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ExecutionStateService executionStateService(Clock bifrostClock) {
-        return new DefaultExecutionStateService(bifrostClock);
+    public ModelUsageExtractor modelUsageExtractor() {
+        return new ModelUsageExtractor();
+    }
+
+    @Bean
+    @ConditionalOnBean(MeterRegistry.class)
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public UsageMetricsRecorder usageMetricsRecorder(MeterRegistry meterRegistry) {
+        return new MicrometerUsageMetricsRecorder(meterRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(UsageMetricsRecorder.class)
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public UsageMetricsRecorder noOpUsageMetricsRecorder() {
+        return new NoOpUsageMetricsRecorder();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public SessionUsageService sessionUsageService(BifrostSessionProperties sessionProperties,
+                                                    UsageMetricsRecorder usageMetricsRecorder) {
+        return new DefaultSessionUsageService(sessionProperties.getQuotas(), usageMetricsRecorder);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public ExecutionStateService executionStateService(Clock bifrostClock,
+                                                        SessionUsageService sessionUsageService) {
+        return new DefaultExecutionStateService(bifrostClock, sessionUsageService);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public PlanningService planningService(PlanTaskLinker planTaskLinker,
-                                           ExecutionStateService executionStateService) {
-        return new DefaultPlanningService(planTaskLinker, executionStateService);
+                                           ExecutionStateService executionStateService,
+                                           SessionUsageService sessionUsageService,
+                                           ModelUsageExtractor modelUsageExtractor) {
+        return new DefaultPlanningService(planTaskLinker, executionStateService, sessionUsageService, modelUsageExtractor);
     }
 
     @Bean
@@ -188,9 +228,16 @@ public class BifrostAutoConfiguration {
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public ToolCallbackFactory toolCallbackFactory(CapabilityExecutionRouter capabilityExecutionRouter,
-                                                   PlanningService planningService,
-                                                   ExecutionStateService executionStateService) {
-        return new DefaultToolCallbackFactory(capabilityExecutionRouter, planningService, executionStateService);
+                                                    PlanningService planningService,
+                                                    ExecutionStateService executionStateService,
+                                                    SessionUsageService sessionUsageService,
+                                                    UsageMetricsRecorder usageMetricsRecorder) {
+        return new DefaultToolCallbackFactory(
+                capabilityExecutionRouter,
+                planningService,
+                executionStateService,
+                sessionUsageService,
+                usageMetricsRecorder);
     }
 
     @Bean(name = "bifrostMissionExecutor", destroyMethod = "close")
@@ -206,12 +253,16 @@ public class BifrostAutoConfiguration {
     public MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
                                                          ExecutionStateService executionStateService,
                                                          BifrostSessionProperties sessionProperties,
+                                                         SessionUsageService sessionUsageService,
+                                                         ModelUsageExtractor modelUsageExtractor,
                                                          @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor) {
         return new DefaultMissionExecutionEngine(
                 planningService,
                 executionStateService,
                 sessionProperties.getMissionTimeout(),
-                bifrostMissionExecutor);
+                bifrostMissionExecutor,
+                sessionUsageService,
+                modelUsageExtractor);
     }
 
     @Bean
