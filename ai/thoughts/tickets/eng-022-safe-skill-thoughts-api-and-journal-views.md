@@ -50,6 +50,15 @@ This ticket should **not** introduce:
 
 ---
 
+## Implementation Suggestions
+- **JournalEntry Enhancements**: Add explicit `frameId` and `route` fields directly on `JournalEntry` records. `BifrostSession` can populate these from `frames.peek()` when logging events, creating a strong relationship between the journal entry and the active context.
+- **Diagnostics View**: Introduce a new domain abstraction (e.g., `SkillThoughtTrace`) to project raw `JournalEntry` instances.
+  - **THOUGHT**: Passed through directly.
+  - **TOOL_CALL / TOOL_RESULT**: Scrub the raw JSON payloads; expose just the tool name/route and success status.
+  - **ERROR / LINTER**: Show messages and status, omitting inner variables or sensitive data.
+
+---
+
 ## Suggested Files
 - `bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/ExecutionJournal.java`
 - `bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/JournalEntry.java`

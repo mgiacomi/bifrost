@@ -19,6 +19,24 @@ class ExecutionJournalTest {
             .build();
 
     @Test
+    void deserializesOlderJournalsWithoutFrameId() throws Exception {
+        String json = """
+                {
+                  "timestamp": "2026-03-15T12:00:00Z",
+                  "level": "INFO",
+                  "type": "THOUGHT",
+                  "payload": "testing"
+                }
+                """;
+
+        JournalEntry restored = OBJECT_MAPPER.readValue(json, JournalEntry.class);
+
+        assertThat(restored.frameId()).isNull();
+        assertThat(restored.route()).isNull();
+        assertThat(restored.payload().textValue()).isEqualTo("testing");
+    }
+
+    @Test
     void roundTripsExecutionJournalThroughJackson() throws Exception {
         ExecutionJournal journal = new ExecutionJournal();
         journal.append(Instant.parse("2026-03-15T12:00:00Z"), JournalLevel.INFO, JournalEntryType.THOUGHT, "draft plan");
@@ -32,6 +50,25 @@ class ExecutionJournalTest {
         ExecutionJournal restored = OBJECT_MAPPER.readValue(json, ExecutionJournal.class);
 
         assertThat(restored.getEntriesSnapshot()).containsExactlyElementsOf(journal.getEntriesSnapshot());
+    }
+
+    @Test
+    void executionJournalAppendsRetainFrameContext() {
+        ExecutionJournal journal = new ExecutionJournal();
+
+        journal.append(
+                Instant.parse("2026-03-15T12:00:00Z"),
+                JournalLevel.INFO,
+                JournalEntryType.THOUGHT,
+                "draft plan",
+                "frame-1",
+                "route.one");
+
+        assertThat(journal.getEntriesSnapshot()).singleElement().satisfies(entry -> {
+            assertThat(entry.frameId()).isEqualTo("frame-1");
+            assertThat(entry.route()).isEqualTo("route.one");
+            assertThat(entry.payload().textValue()).isEqualTo("draft plan");
+        });
     }
 
     @Test

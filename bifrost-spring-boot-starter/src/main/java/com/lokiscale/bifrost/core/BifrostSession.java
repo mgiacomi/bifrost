@@ -22,6 +22,8 @@ import java.util.function.UnaryOperator;
 
 public final class BifrostSession {
 
+    private static final SkillThoughtMapper SKILL_THOUGHT_MAPPER = new SkillThoughtMapper();
+
     private final String sessionId;
     private final int maxDepth;
     @JsonIgnore
@@ -127,6 +129,16 @@ public final class BifrostSession {
 
     public void logError(Instant timestamp, Object payload) {
         appendJournalEntry(timestamp, JournalLevel.ERROR, JournalEntryType.ERROR, payload);
+    }
+
+    public SkillThoughtTrace getSkillThoughts(String route) {
+        String normalizedRoute = requireNonBlank(route, "route");
+        lock.lock();
+        try {
+            return SKILL_THOUGHT_MAPPER.toTrace(normalizedRoute, executionJournal.getEntriesSnapshot());
+        } finally {
+            lock.unlock();
+        }
     }
 
     public Optional<ExecutionPlan> getExecutionPlan() {
@@ -347,7 +359,7 @@ public final class BifrostSession {
             if (frames.isEmpty()) {
                 return;
             }
-            toolActivityCountByFrameId.merge(frames.peek().frameId(), 1, Integer::sum);
+            toolActivityCountByFrameId.merge(frames.peek().frameId(), 1, (current, increment) -> current + increment);
         } finally {
             lock.unlock();
         }
@@ -369,7 +381,14 @@ public final class BifrostSession {
     private void appendJournalEntry(Instant timestamp, JournalLevel level, JournalEntryType type, Object payload) {
         lock.lock();
         try {
-            executionJournal.append(timestamp, level, type, payload);
+            ExecutionFrame activeFrame = frames.peek();
+            executionJournal.append(
+                    timestamp,
+                    level,
+                    type,
+                    payload,
+                    activeFrame == null ? null : activeFrame.frameId(),
+                    activeFrame == null ? null : activeFrame.route());
         } finally {
             lock.unlock();
         }

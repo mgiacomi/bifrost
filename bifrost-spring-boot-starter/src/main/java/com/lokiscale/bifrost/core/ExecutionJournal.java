@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -29,11 +30,22 @@ public final class ExecutionJournal {
     }
 
     public void append(Instant timestamp, JournalLevel level, JournalEntryType type, Object payload) {
+        append(timestamp, level, type, payload, null, null);
+    }
+
+    public void append(Instant timestamp,
+                       JournalLevel level,
+                       JournalEntryType type,
+                       Object payload,
+                       @Nullable String frameId,
+                       @Nullable String route) {
         entries.add(new JournalEntry(
                 Objects.requireNonNull(timestamp, "timestamp must not be null"),
                 Objects.requireNonNull(level, "level must not be null"),
                 Objects.requireNonNull(type, "type must not be null"),
-                toJsonNode(payload)));
+                toJsonNode(payload),
+                frameId,
+                route));
     }
 
     @JsonProperty("entries")

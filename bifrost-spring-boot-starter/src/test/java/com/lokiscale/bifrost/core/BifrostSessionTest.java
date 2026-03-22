@@ -100,6 +100,24 @@ class BifrostSessionTest {
     }
 
     @Test
+    void sessionBindsFramesToJournalEntries() {
+        BifrostSession session = new BifrostSession("session-1", 4);
+        ExecutionFrame frame = frame("frame-1", "route.one");
+
+        session.pushFrame(frame);
+        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
+        session.logToolExecution(
+                Instant.parse("2026-03-15T12:00:01Z"),
+                TaskExecutionEvent.linked("tool.run", "task-1", Map.of("arguments", Map.of("id", 42)), null));
+        session.popFrame();
+
+        assertThat(session.getJournalSnapshot()).allSatisfy(entry -> {
+            assertThat(entry.frameId()).isEqualTo("frame-1");
+            assertThat(entry.route()).isEqualTo("route.one");
+        });
+    }
+
+    @Test
     void exposesImmutableJournalSnapshots() {
         BifrostSession session = new BifrostSession(2);
         session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
@@ -110,7 +128,9 @@ class BifrostSessionTest {
                 Instant.parse("2026-03-15T12:00:01Z"),
                 JournalLevel.INFO,
                 JournalEntryType.THOUGHT,
-                new com.fasterxml.jackson.databind.ObjectMapper().valueToTree("extra"))))
+                new com.fasterxml.jackson.databind.ObjectMapper().valueToTree("extra"),
+                null,
+                null)))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
