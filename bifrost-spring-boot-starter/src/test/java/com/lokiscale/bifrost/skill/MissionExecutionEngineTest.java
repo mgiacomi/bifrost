@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -148,9 +149,17 @@ class MissionExecutionEngineTest {
                     .hasMessageContaining("session-timeout")
                     .hasMessageContaining("root.visible.skill")
                     .hasMessageContaining("PT0.025S");
-            assertThat(interrupted.get()).isTrue();
+            awaitInterrupted(interrupted);
             assertThat(session.getExecutionPlan()).isEmpty();
         }
+    }
+
+    private void awaitInterrupted(AtomicBoolean interrupted) {
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (!interrupted.get() && System.nanoTime() < deadlineNanos) {
+            Thread.onSpinWait();
+        }
+        assertThat(interrupted.get()).isTrue();
     }
 
     private static final class MissionChatClient extends SimpleChatClient {

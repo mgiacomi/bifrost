@@ -1,15 +1,3 @@
 name: invoiceParser
 description: Parses an unstructured invoice payload extracting Date, Amount, and Vendor.
 model: default-model
-input:
-  type: string
-  description: The raw text representation of an invoice.
-output:
-  type: object
-  properties:
-    invoiceDate:
-      type: string
-    vendor:
-      type: string
-    amount:
-      type: number

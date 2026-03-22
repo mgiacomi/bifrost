@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.annotation.SkillMethod;
 import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.NoOpSkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
+import com.lokiscale.bifrost.chat.TaalasChatModel;
 import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
@@ -133,14 +134,30 @@ class BifrostAutoConfigurationTests {
                 .run(context -> {
                     BifrostModelsProperties properties = context.getBean(BifrostModelsProperties.class);
 
-                    assertThat(properties.getModels()).containsKeys("gpt-5", "claude-sonnet", "gemini-pro", "ollama-llama3");
+                    assertThat(properties.getModels()).containsKeys("gpt-5", "claude-sonnet", "gemini-pro", "ollama-llama3", "taalas-llama");
                     assertThat(properties.getModels().get("gpt-5").getProvider()).isEqualTo(AiProvider.OPENAI);
                     assertThat(properties.getModels().get("claude-sonnet").getProvider()).isEqualTo(AiProvider.ANTHROPIC);
                     assertThat(properties.getModels().get("gemini-pro").getProvider()).isEqualTo(AiProvider.GEMINI);
                     assertThat(properties.getModels().get("ollama-llama3").getProvider()).isEqualTo(AiProvider.OLLAMA);
+                    assertThat(properties.getModels().get("taalas-llama").getProvider()).isEqualTo(AiProvider.TAALAS);
                     assertThat(properties.getModels().get("gpt-5").getProviderModel()).isEqualTo("openai/gpt-5");
                     assertThat(properties.getModels().get("claude-sonnet").getThinkingLevels()).containsExactlyInAnyOrder("low", "medium", "high");
                     assertThat(properties.getModels().get("ollama-llama3").getThinkingLevels()).isEmpty();
+                    assertThat(properties.getModels().get("taalas-llama").getThinkingLevels()).isEmpty();
+                });
+    }
+
+    @Test
+    void autoConfiguresTaalasChatModelAndBuilderWhenEnabled() {
+        contextRunner
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml",
+                        "spring.ai.taalas.enabled=true",
+                        "spring.ai.taalas.api-key=test-key")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(TaalasChatProperties.class);
+                    assertThat(context).hasSingleBean(TaalasChatModel.class);
+                    assertThat(context).hasSingleBean(org.springframework.ai.chat.client.ChatClient.Builder.class);
                 });
     }
 

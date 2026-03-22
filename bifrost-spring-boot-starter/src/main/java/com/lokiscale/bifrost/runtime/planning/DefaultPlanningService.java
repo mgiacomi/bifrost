@@ -1,5 +1,12 @@
 package com.lokiscale.bifrost.runtime.planning;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.ExecutionPlan;
@@ -11,35 +18,63 @@ import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.messages.AbstractMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 public class DefaultPlanningService implements PlanningService {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultPlanningService.class);
+
+    private static final ObjectMapper YAML_OBJECT_MAPPER = YAMLMapper.builder().findAndAddModules().build();
+
+    private static final String PLANNING_PROMPT = """
+            Create an ordered flight plan for this mission before execution.
+            Return only valid JSON matching the ExecutionPlan structure with these fields:
+            planId, capabilityName, createdAt, status, activeTaskId, tasks.
+            Each task must include:
+            taskId, title, status, capabilityName, intent, dependsOn, expectedOutputs, autoCompletable, note.
+            """;
+
     private final PlanTaskLinker planTaskLinker;
     private final ExecutionStateService executionStateService;
     private final SessionUsageService sessionUsageService;
     private final ModelUsageExtractor modelUsageExtractor;
+    private final ObjectMapper objectMapper;
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker, ExecutionStateService executionStateService) {
-        this(planTaskLinker, executionStateService, new NoOpSessionUsageService(), new ModelUsageExtractor());
+        this(planTaskLinker, executionStateService, new NoOpSessionUsageService(), new ModelUsageExtractor(), defaultObjectMapper());
     }
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker,
                                   ExecutionStateService executionStateService,
                                   SessionUsageService sessionUsageService,
                                   ModelUsageExtractor modelUsageExtractor) {
+        this(planTaskLinker, executionStateService, sessionUsageService, modelUsageExtractor, defaultObjectMapper());
+    }
+
+    DefaultPlanningService(PlanTaskLinker planTaskLinker,
+                           ExecutionStateService executionStateService,
+                           SessionUsageService sessionUsageService,
+                           ModelUsageExtractor modelUsageExtractor,
+                           ObjectMapper objectMapper) {
         this.planTaskLinker = Objects.requireNonNull(planTaskLinker, "planTaskLinker must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
         this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     }
 
     @Override
@@ -52,16 +87,39 @@ public class DefaultPlanningService implements PlanningService {
         Objects.requireNonNull(objective, "objective must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
         Objects.requireNonNull(chatClient, "chatClient must not be null");
+        log.debug(
+                "Initializing plan for capability='{}' chatClientType={} visibleTools={}",
+                capabilityName,
+                chatClient.getClass().getName(),
+                visibleTools == null ? 0 : visibleTools.size());
         ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                .system("Create an ordered flight plan for this mission before execution.")
+                .system(PLANNING_PROMPT)
                 .user(objective)
                 .call();
-        ChatResponse chatResponse = tryChatResponse(responseSpec);
-        ExecutionPlan plan = responseSpec.entity(ExecutionPlan.class);
+        ChatResponse chatResponse;
+        String planPayload;
+        try {
+            ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+            chatResponse = clientResponse.chatResponse();
+            planPayload = extractContent(chatResponse);
+            log.debug(
+                    "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
+                    capabilityName,
+                    preview(planPayload));
+        }
+        catch (UnsupportedOperationException ignored) {
+            chatResponse = null;
+            planPayload = responseSpec.content();
+            log.debug(
+                    "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
+                    capabilityName,
+                    preview(planPayload));
+        }
+        ExecutionPlan plan = parsePlan(planPayload, capabilityName);
         sessionUsageService.recordModelResponse(
                 session,
                 capabilityName,
-                modelUsageExtractor.extract(chatResponse, objective, "Create an ordered flight plan for this mission before execution.", stringifyPlan(plan)));
+                modelUsageExtractor.extract(chatResponse, objective, PLANNING_PROMPT, stringifyPlan(plan)));
         executionStateService.storePlan(session, plan);
         executionStateService.logPlanCreated(session, plan);
         return Optional.of(plan);
@@ -134,12 +192,145 @@ public class DefaultPlanningService implements PlanningService {
         return plan.updateTask(taskId, updater);
     }
 
-    private ChatResponse tryChatResponse(ChatClient.CallResponseSpec responseSpec) {
+    @Nullable
+    private static String extractContent(@Nullable ChatResponse chatResponse) {
+        return java.util.Optional.ofNullable(chatResponse)
+                .map(ChatResponse::getResult)
+                .map(Generation::getOutput)
+                .map(AbstractMessage::getText)
+                .orElse(null);
+    }
+
+    private ExecutionPlan parsePlan(String payload, String capabilityName) {
+        String unwrapped = unwrapFencedBlock(payload);
+        log.debug(
+                "Parsing plan for capability='{}' looksLikeJson={} payloadPreview={}...",
+                capabilityName,
+                looksLikeJson(unwrapped),
+                preview(unwrapped));
         try {
-            return responseSpec.chatResponse();
-        } catch (UnsupportedOperationException ignored) {
-            return null;
+            JsonNode tree = parsePlanTree(unwrapped, capabilityName);
+            normalizePlanTree(tree);
+            return objectMapper.treeToValue(tree, ExecutionPlan.class);
         }
+        catch (JsonProcessingException ex) {
+            throw new IllegalStateException(
+                    "Failed to parse planning response for capability '" + capabilityName
+                            + "' as JSON or YAML. Payload preview: " + preview(unwrapped), ex);
+        }
+    }
+
+    private JsonNode parsePlanTree(String payload, String capabilityName) throws JsonProcessingException {
+        if (looksLikeJson(payload)) {
+            try {
+                return objectMapper.readTree(payload);
+            }
+            catch (JsonProcessingException ex) {
+                log.debug("JSON plan parsing failed for capability='{}'; trying YAML tree parsing", capabilityName, ex);
+            }
+        }
+        return YAML_OBJECT_MAPPER.readTree(payload);
+    }
+
+    private void normalizePlanTree(JsonNode tree) {
+        if (!(tree instanceof ObjectNode planNode)) {
+            return;
+        }
+        normalizePlanStatus(planNode);
+        normalizeTaskStatuses(planNode.get("tasks"));
+    }
+
+    private void normalizePlanStatus(ObjectNode planNode) {
+        JsonNode statusNode = planNode.get("status");
+        if (statusNode == null || !statusNode.isTextual()) {
+            return;
+        }
+        String normalizedStatus = normalizePlanStatusValue(statusNode.asText());
+        if (normalizedStatus != null) {
+            planNode.put("status", normalizedStatus);
+        }
+    }
+
+    private void normalizeTaskStatuses(@Nullable JsonNode tasksNode) {
+        if (!(tasksNode instanceof ArrayNode taskArray)) {
+            return;
+        }
+        for (JsonNode taskNode : taskArray) {
+            if (!(taskNode instanceof ObjectNode objectTaskNode)) {
+                continue;
+            }
+            JsonNode statusNode = objectTaskNode.get("status");
+            if (statusNode == null || !statusNode.isTextual()) {
+                continue;
+            }
+            String normalizedStatus = normalizeTaskStatusValue(statusNode.asText());
+            if (normalizedStatus != null) {
+                objectTaskNode.put("status", normalizedStatus);
+            }
+        }
+    }
+
+    @Nullable
+    private String normalizePlanStatusValue(String rawStatus) {
+        String normalized = canonicalizeEnumToken(rawStatus);
+        return switch (normalized) {
+            case "VALID", "STALE", "INVALID" -> normalized;
+            case "EXECUTED", "EXECUTING", "COMPLETED", "COMPLETE", "SUCCESS", "SUCCEEDED", "DONE",
+                    "READY", "PENDING", "IN_PROGRESS", "INPROGRESS" -> PlanStatus.VALID.name();
+            case "FAILED", "FAILURE", "ERROR", "BLOCKED" -> PlanStatus.INVALID.name();
+            default -> null;
+        };
+    }
+
+    @Nullable
+    private String normalizeTaskStatusValue(String rawStatus) {
+        String normalized = canonicalizeEnumToken(rawStatus);
+        return switch (normalized) {
+            case "PENDING", "IN_PROGRESS", "COMPLETED", "BLOCKED" -> normalized;
+            case "SUCCESS", "SUCCEEDED", "DONE", "COMPLETE", "EXECUTED" -> PlanTaskStatus.COMPLETED.name();
+            case "RUNNING", "ACTIVE", "EXECUTING", "INPROGRESS" -> PlanTaskStatus.IN_PROGRESS.name();
+            case "WAITING", "READY", "TODO" -> PlanTaskStatus.PENDING.name();
+            case "FAILED", "FAILURE", "ERROR", "INVALID", "STALE" -> PlanTaskStatus.BLOCKED.name();
+            default -> null;
+        };
+    }
+
+    private String canonicalizeEnumToken(String rawStatus) {
+        return rawStatus == null
+                ? ""
+                : rawStatus.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+    }
+
+    private String unwrapFencedBlock(String payload) {
+        String safePayload = payload == null ? "" : payload.trim();
+        if (safePayload.startsWith("```")) {
+            int firstNewline = safePayload.indexOf('\n');
+            int lastFence = safePayload.lastIndexOf("```");
+            if (firstNewline >= 0 && lastFence > firstNewline) {
+                return safePayload.substring(firstNewline + 1, lastFence).trim();
+            }
+        }
+        // Strip leading YAML document marker
+        if (safePayload.startsWith("---")) {
+            safePayload = safePayload.substring(3).trim();
+        }
+        return safePayload;
+    }
+
+    private boolean looksLikeJson(String payload) {
+        return payload.startsWith("{") || payload.startsWith("[");
+    }
+
+    private String preview(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return "<empty>";
+        }
+        String normalized = payload.replace('\n', ' ').replace('\r', ' ').trim();
+        return normalized.length() <= 200 ? normalized : normalized.substring(0, 200);
+    }
+
+    private static ObjectMapper defaultObjectMapper() {
+        return JsonMapper.builder().findAndAddModules().build();
     }
 
     private String stringifyPlan(ExecutionPlan plan) {

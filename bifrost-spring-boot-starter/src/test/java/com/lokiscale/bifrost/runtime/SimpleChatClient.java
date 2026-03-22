@@ -1,5 +1,8 @@
 package com.lokiscale.bifrost.runtime;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -12,6 +15,10 @@ import java.util.List;
 import java.util.Map;
 
 public class SimpleChatClient implements ChatClient {
+
+    private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
+            .findAndAddModules()
+            .build();
 
     private final ExecutionPlan plan;
     private final String content;
@@ -206,6 +213,14 @@ public class SimpleChatClient implements ChatClient {
 
         @Override
         public String content() {
+            if (payload instanceof ExecutionPlan executionPlan) {
+                try {
+                    return OBJECT_MAPPER.writeValueAsString(executionPlan);
+                }
+                catch (JsonProcessingException ex) {
+                    throw new IllegalStateException("Failed to serialize execution plan", ex);
+                }
+            }
             return String.valueOf(payload);
         }
 

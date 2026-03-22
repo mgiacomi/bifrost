@@ -22,7 +22,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -86,9 +85,10 @@ class SpringAiSkillChatClientFactoryTests {
 
         CapturedFactoryResult result = captureFactoryInvocation(definition, new NoOpSkillAdvisorResolver());
 
+        assertThat(result.client()).isSameAs(result.factoryClient());
         assertThat(result.advisors()).isEmpty();
         verify(result.cloneBuilder()).defaultOptions(any(ChatOptions.class));
-        verify(result.cloneBuilder(), never()).defaultAdvisors(anyList());
+        verify(result.cloneBuilder(), org.mockito.Mockito.never()).defaultAdvisors(anyList());
     }
 
     @Test
@@ -126,10 +126,17 @@ class SpringAiSkillChatClientFactoryTests {
                 null))).options();
         assertThat(ollama).isInstanceOf(OllamaChatOptions.class);
         assertThat(((OllamaChatOptions) ollama).getModel()).isEqualTo("llama3.2");
+
+        ChatOptions taalas = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
+                "taalas-llama",
+                AiProvider.TAALAS,
+                "llama3.1-8B",
+                null))).options();
+        assertThat(taalas.getModel()).isEqualTo("llama3.1-8B");
     }
 
     private FactoryClient createFactoryBackedClient(YamlSkillDefinition definition) {
-        return captureFactoryInvocation(definition, new NoOpSkillAdvisorResolver()).client();
+        return captureFactoryInvocation(definition, new NoOpSkillAdvisorResolver()).factoryClient();
     }
 
     private CapturedFactoryResult captureFactoryInvocation(YamlSkillDefinition definition, SkillAdvisorResolver skillAdvisorResolver) {
@@ -155,7 +162,7 @@ class SpringAiSkillChatClientFactoryTests {
         ChatClient created = factory.create(definition);
         ArgumentCaptor<ChatOptions> captor = ArgumentCaptor.forClass(ChatOptions.class);
         verify(cloneBuilder).defaultOptions(captor.capture());
-        return new CapturedFactoryResult((FactoryClient) created, captor.getValue(), cloneBuilder);
+        return new CapturedFactoryResult(created, client, captor.getValue(), cloneBuilder);
     }
 
     private YamlSkillDefinition definition(EffectiveSkillExecutionConfiguration configuration) {
@@ -166,10 +173,13 @@ class SpringAiSkillChatClientFactoryTests {
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, configuration);
     }
 
-    private record CapturedFactoryResult(FactoryClient client, ChatOptions options, ChatClient.Builder cloneBuilder) {
+    private record CapturedFactoryResult(ChatClient client,
+                                         FactoryClient factoryClient,
+                                         ChatOptions options,
+                                         ChatClient.Builder cloneBuilder) {
 
         List<Advisor> advisors() {
-            return client.advisors();
+            return factoryClient.advisors();
         }
     }
 

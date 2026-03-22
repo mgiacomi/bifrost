@@ -3,6 +3,8 @@ package com.lokiscale.bifrost.chat;
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -18,6 +20,8 @@ import java.util.Map;
 import java.util.Objects;
 
 public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
+
+    private static final Logger log = LoggerFactory.getLogger(SpringAiSkillChatClientFactory.class);
 
     private static final int LOW_THINKING_BUDGET = 1024;
     private static final int MEDIUM_THINKING_BUDGET = 4096;
@@ -48,13 +52,24 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
             throw new IllegalStateException("No ChatOptions adapter configured for provider " + executionConfiguration.provider());
         }
         ChatOptions options = adapter.createOptions(executionConfiguration);
-        List<Advisor> advisors = skillAdvisorResolver.resolve(definition);
+        List<Advisor> advisors = resolvedAdvisors(skillAdvisorResolver.resolve(definition));
         ChatClient.Builder builder = chatClientBuilder.clone();
         builder.defaultOptions(options);
         if (!advisors.isEmpty()) {
             builder.defaultAdvisors(advisors);
         }
-        return builder.build();
+        ChatClient delegate = builder.build();
+        log.debug(
+                "Created skill ChatClient for skill '{}' provider={} delegateType={} advisors={}",
+                definition.manifest().getName(),
+                executionConfiguration.provider(),
+                delegate.getClass().getName(),
+                advisorNames(advisors));
+        return delegate;
+    }
+
+    private List<Advisor> resolvedAdvisors(List<Advisor> advisors) {
+        return advisors == null ? List.of() : List.copyOf(advisors);
     }
 
     public static List<SkillChatOptionsAdapter> defaultAdapters() {
@@ -62,7 +77,15 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
                 new OpenAiOptionsAdapter(),
                 new AnthropicOptionsAdapter(),
                 new GeminiOptionsAdapter(),
-                new OllamaOptionsAdapter());
+                new OllamaOptionsAdapter(),
+                new TaalasOptionsAdapter());
+    }
+
+    private static String advisorNames(List<Advisor> advisors) {
+        return advisors.stream()
+                .map(advisor -> advisor.getName() + ":" + advisor.getClass().getSimpleName())
+                .toList()
+                .toString();
     }
 
     private static final class OpenAiOptionsAdapter implements SkillChatOptionsAdapter {
@@ -130,6 +153,21 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
         @Override
         public ChatOptions createOptions(EffectiveSkillExecutionConfiguration executionConfiguration) {
             return OllamaChatOptions.builder()
+                    .model(executionConfiguration.providerModel())
+                    .build();
+        }
+    }
+
+    private static final class TaalasOptionsAdapter implements SkillChatOptionsAdapter {
+
+        @Override
+        public AiProvider provider() {
+            return AiProvider.TAALAS;
+        }
+
+        @Override
+        public ChatOptions createOptions(EffectiveSkillExecutionConfiguration executionConfiguration) {
+            return ChatOptions.builder()
                     .model(executionConfiguration.providerModel())
                     .build();
         }

@@ -28,7 +28,13 @@ Bifrost can be configured using standard Spring Boot properties (e.g., `applicat
 ```yaml
 bifrost:
   skills:
-    location: classpath:/skills
+    locations:
+      - classpath:/skills/**/*.yml
+      - classpath:/skills/**/*.yaml
+  models:
+    default-model:
+      provider: ollama
+      provider-model: ibm/granite4:tiny-h
 ```
 
 ## Defining Skills
@@ -42,18 +48,7 @@ Ideal for purely declarative prompts or specific LLM extraction/transformation t
 ```yaml
 name: invoiceParser
 description: Parses an unstructured invoice payload extracting Date, Amount, and Vendor.
-input:
-  type: string
-  description: The raw text representation of an invoice.
-output:
-  type: object
-  properties:
-    invoiceDate:
-      type: string
-    vendor:
-      type: string
-    amount:
-      type: number
+model: default-model
 ```
 
 ### 2. Java `@SkillMethod` Annotation

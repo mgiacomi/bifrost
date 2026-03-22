@@ -34,6 +34,25 @@ class PlanningServiceTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
 
+    private static final String YAML_PLAN_WITH_LLM_STATUSES = """
+            ---
+            planId: 12345
+            capabilityName: invoiceParser
+            createdAt: 2023-03-15T14:30:00.000Z
+            status: EXECUTED
+            activeTaskId: 67890
+            tasks:
+              - taskId: 67890
+                title: Parse Invoice
+                status: SUCCESS
+                capabilityName: invoiceParser
+                intent: Parse the invoice data
+                dependsOn: []
+                expectedOutputs: []
+                autoCompletable: false
+                note: Parsed successfully
+            """;
+
     @Test
     void initializesPlanOnlyWhenInvoked() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
@@ -64,6 +83,26 @@ class PlanningServiceTest {
         assertThat(usageService.lastSkillName).isEqualTo("root.visible.skill");
         assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(1);
         assertThat(usageService.snapshot(session).usageUnits()).isGreaterThan(0);
+    }
+
+    @Test
+    void initializesPlanFromYamlWithNormalizedStatuses() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = new BifrostSession("session-yaml", 3);
+
+        ExecutionPlan plan = planningService.initializePlan(
+                        session,
+                        "parse invoice",
+                        "invoiceParser",
+                        new SimpleChatClient(null, YAML_PLAN_WITH_LLM_STATUSES),
+                        List.<ToolCallback>of())
+                .orElseThrow();
+
+        assertThat(plan.planId()).isEqualTo("12345");
+        assertThat(plan.status()).isEqualTo(PlanStatus.VALID);
+        assertThat(plan.findTask("67890")).isPresent();
+        assertThat(plan.findTask("67890").orElseThrow().status()).isEqualTo(PlanTaskStatus.COMPLETED);
     }
 
     @Test

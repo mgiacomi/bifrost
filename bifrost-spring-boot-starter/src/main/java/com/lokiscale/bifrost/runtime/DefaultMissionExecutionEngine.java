@@ -11,7 +11,10 @@ import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.messages.AbstractMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.execution.ToolExecutionException;
 import org.springframework.lang.Nullable;
@@ -85,8 +88,17 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
                     .user(objective)
                     .toolCallbacks(visibleTools)
                     .call();
-            ChatResponse chatResponse = tryChatResponse(responseSpec);
-            String content = extractContent(responseSpec, chatResponse);
+            ChatResponse chatResponse;
+            String content;
+            try {
+                ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+                chatResponse = clientResponse.chatResponse();
+                content = extractContentFromChatResponse(chatResponse);
+            }
+            catch (UnsupportedOperationException ignored) {
+                chatResponse = null;
+                content = responseSpec.content();
+            }
             sessionUsageService.recordModelResponse(
                     session,
                     skillName,
@@ -122,22 +134,13 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
         return runtimeException;
     }
 
-    private ChatResponse tryChatResponse(ChatClient.CallResponseSpec responseSpec) {
-        try {
-            return responseSpec.chatResponse();
-        } catch (UnsupportedOperationException ignored) {
-            return null;
-        }
-    }
-
-    private String extractContent(ChatClient.CallResponseSpec responseSpec, @Nullable ChatResponse chatResponse) {
-        if (chatResponse != null && chatResponse.getResult() != null && chatResponse.getResult().getOutput() != null) {
-            String text = chatResponse.getResult().getOutput().getText();
-            if (text != null) {
-                return text;
-            }
-        }
-        return responseSpec.content();
+    @Nullable
+    private static String extractContentFromChatResponse(@Nullable ChatResponse chatResponse) {
+        return java.util.Optional.ofNullable(chatResponse)
+                .map(ChatResponse::getResult)
+                .map(Generation::getOutput)
+                .map(AbstractMessage::getText)
+                .orElse(null);
     }
 
     private String buildExecutionPrompt(ExecutionPlan plan) {
