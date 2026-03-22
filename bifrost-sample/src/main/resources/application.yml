@@ -4,3 +4,13 @@ spring:
 
 server:
   port: 8081
+
+bifrost:
+  skills:
+    locations:
+      - classpath:/skills/**/*.yml
+      - classpath:/skills/**/*.yaml
+  models:
+    default-model:
+      provider: openai
+      provider-model: gpt-4
