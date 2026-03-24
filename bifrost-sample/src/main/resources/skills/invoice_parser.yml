@@ -1,3 +1,4 @@
 name: invoiceParser
 description: Parses an unstructured invoice payload extracting Date, Amount, and Vendor.
 model: default-model
+planning_mode: false

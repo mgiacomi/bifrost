@@ -1,0 +1,19 @@
+name: "Example Skill"
+description: "A comprehensive example skill showcasing all available configurations."
+model: "gemini-2.5-pro"
+thinking_level: "high"
+allowed_skills:
+  - "other_skill_1"
+  - "other_skill_2"
+rbac_roles:
+  - "ROLE_ADMIN"
+  - "ROLE_USER"
+planning_mode: true
+linter:
+  type: "regex"
+  max_retries: 3
+  regex:
+    pattern: "^[A-Z].*"
+    message: "Output must start with an uppercase letter."
+mapping:
+  target_id: "some_target_identifier"

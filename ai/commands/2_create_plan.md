@@ -11,7 +11,7 @@ You are tasked with creating detailed implementation plans through an interactiv
 - **Planning docs directory**: `ai/thoughts/plans/`
 - **Research docs directory**: `ai/thoughts/research/`
 - **Ticket/requirements directory** (if present): `ai/thoughts/tickets/`
-- **Testing plan command**: `/testing_plan` (creates a dedicated test plan artifact)
+- **Testing plan command**: `3_testing_plan.md` (creates a dedicated test plan artifact)
 
 ## Initial Response
 
@@ -122,7 +122,7 @@ After getting initial clarifications:
    ```
 
 6. **Plan testing before implementation**:
-   - After the approach is agreed, recommend running `/testing_plan` before implementation
+   - After the approach is agreed, recommend running `3_testing_plan.md` before implementation
    - The testing plan should outline impacted areas, a failing test (when applicable), and exit criteria
 
 ### Step 3: Plan Structure Development
@@ -236,7 +236,7 @@ After structure approval:
 ### Integration Tests:
 - [End-to-end scenarios]
 
- **Note**: Prefer a dedicated testing plan artifact created via `/testing_plan` for full details (impacted areas, failing test first, commands to run, exit criteria). Keep this section as a high-level summary.
+ **Note**: Prefer a dedicated testing plan artifact created via `3_testing_plan.md` for full details (impacted areas, failing test first, commands to run, exit criteria). Keep this section as a high-level summary.
 
 ### Manual Testing Steps:
 1. [Specific step to verify feature]

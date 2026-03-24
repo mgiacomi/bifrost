@@ -77,7 +77,7 @@ Then wait for the user's research query.
 
 6. **Generate the research document:**
    - Use the metadata gathered in step 5
-   - Replace `[MODEL_NAME]` with the model name you are running as (for example: `Claude`, `Gemini`, `GPT-5.2`). If you cannot determine it reliably, use `Unknown`.
+   - Replace `[MODEL_NAME]` with the model name you are running as (for example: `Claude`, `Opus`, `Gemini`, `GPT-5.2`). If you cannot determine it reliably, use `Unknown`.
    - Structure the document with YAML frontmatter followed by content:
      ```markdown
      ---
@@ -95,10 +95,10 @@ Then wait for the user's research query.
 
      # Research: [User's Question/Topic]
 
-     **Date**: [Current date and time with timezone from step 4]
+     **Date**: [Current date and time with timezone from step 5]
      **Researcher**: [Researcher name from thoughts status]
-     **Git Commit**: [Current commit hash from step 4]
-     **Branch**: [Current branch name from step 4]
+     **Git Commit**: [Current commit hash from step 5]
+     **Branch**: [Current branch name from step 5]
      **Repository**: [Repository name]
 
      ## Research Question

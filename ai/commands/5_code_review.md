@@ -22,9 +22,6 @@ When invoked:
    # Review local working copy changes (uncommitted)
    git status
    git diff
-
-   # Run comprehensive checks
-   make check test
    ```
 
 ## Validation Process
@@ -34,6 +31,7 @@ When invoked:
 If starting fresh or need more context:
 
 1. **Read the implementation plan** completely
+   - If a dedicated testing plan exists (for example, `ai/thoughts/plans/*.md`, but not `*-testing.md`), read it completely
 2. **Read the testing plan if present**:
    - If a dedicated testing plan exists (for example, `ai/thoughts/plans/*-testing.md`), read it completely
    - Treat it as the source of truth for what tests should have been added/updated and what commands should have been run
@@ -62,6 +60,12 @@ If starting fresh or need more context:
    If a testing plan exists, verify that the planned tests were implemented.
    Run test commands and capture results.
    Return: Test status and any missing coverage
+
+   Task 4 - Security Review:
+   Check to see if any security considerations were mentioned in the plan.
+   If so, verify that appropriate security measures were implemented.
+   If this is a Spring Boot application, report on any changes made to security configuration, security annotations, or security-related UI code changes.
+   Return: Security status and any missing coverage
    ```
 
 ### Step 2: Systematic Validation
@@ -99,9 +103,9 @@ Create comprehensive validation summary:
 ⚠️ Phase 3: [Name] - Partially implemented (see issues)
 
 ### Automated Verification Results
-✓ Build passes: `make build`
-✓ Tests pass: `make test`
-✗ Linting issues: `make lint` (3 warnings)
+✓ Build passes: `maven compile`
+✓ Tests pass: `maven test`
+✓ Package passes: `maven package`
 
 ### Code Review Findings
 
@@ -125,13 +129,7 @@ Create comprehensive validation summary:
 
 2. Integration:
    - [ ] Confirm works with existing [component]
-   - [ ] Check performance with large datasets
-
-### Recommendations:
-- Address linting warnings before merge
-- Consider adding integration test for [scenario]
-- Document new API endpoints
-```
+   - [ ] Check performance with large datasets if possible
 
 ## Working with Existing Context
 
@@ -160,16 +158,5 @@ Always verify:
 - [ ] Error handling is robust
 - [ ] Documentation updated if needed
 - [ ] Manual test steps are clear
-
-## Relationship to Other Commands
-
-Recommended workflow:
-1. `/implement_plan` - Execute the implementation
-2. `/commit` - Create atomic commits for changes
-3. `/validate_plan` - Verify implementation correctness
-4. `/testing_plan` - Review testing plan (if present)
-5. `/describe_pr` - Generate PR description
-
-The validation works best when changes are easy to inspect as a single coherent unit (either a working-copy diff/patch or committed revisions).
 
 Remember: Good validation catches issues before they reach production. Be constructive but thorough in identifying gaps or improvements.
