@@ -1,4 +1,4 @@
-# ENG-017 - Output Schema Support For YAML Skills
+# ENG-024 - Output Schema Support For YAML Skills
 
 ## Summary
 
@@ -94,7 +94,7 @@ Supported keywords:
 - `required`
 - `additionalProperties`
 - `items`
-- `enum`
+- `enum` for string fields
 - `description`
 - `format`
 - nested objects
@@ -104,6 +104,7 @@ Supported keywords:
 Behavior notes:
 
 - Root schema must be `type: object`.
+- `enum` is supported only for `type: string` in the MVP.
 - `format` is prompt guidance only in the MVP. It should not cause validation failure.
 - `description` is prompt guidance only.
 - Unknown schema keywords must fail startup.

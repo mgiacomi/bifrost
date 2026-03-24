@@ -4,10 +4,13 @@ import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.PropertySource;
@@ -15,6 +18,7 @@ import org.springframework.core.io.ClassPathResource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(OutputCaptureExtension.class)
 class YamlSkillCatalogTests {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
@@ -207,6 +211,109 @@ class YamlSkillCatalogTests {
 
                     assertThat(catalog.getSkill("thinking.default.skill")).isNotNull();
                     assertThat(catalog.getSkill("thinking.default.skill").linter()).isNull();
+                });
+    }
+
+    @Test
+    void defaultsOutputSchemaMaxRetriesToTwoWhenSchemaIsPresent() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/output-schema-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("output.schema.skill")).isNotNull();
+                    assertThat(catalog.getSkill("output.schema.skill").manifest().getOutputSchemaMaxRetries()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    void failsStartupWhenOutputSchemaMaxRetriesIsPresentWithoutSchema() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-max-retries-without-schema-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("output-schema-max-retries-without-schema-skill.yaml")
+                        .hasMessageContaining("field 'output_schema_max_retries'")
+                        .hasMessageContaining("may only be configured when output_schema is present"));
+    }
+
+    @Test
+    void failsStartupWhenOutputSchemaUsesUnsupportedKeyword() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-unsupported-keyword-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("output-schema-unsupported-keyword-skill.yaml")
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.oneOf'")
+                        .hasMessageContaining("unknown field"));
+    }
+
+    @Test
+    void failsStartupWhenOutputSchemaUsesEnumOnObjectSchema() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-object-enum-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("output-schema-object-enum-skill.yaml")
+                        .hasMessageContaining("field 'output_schema.enum'")
+                        .hasMessageContaining("is only supported for string schemas in the MVP"));
+    }
+
+    @Test
+    void failsStartupWhenRootSchemaIsNotObject() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-root-array-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("output-schema-root-array-skill.yaml")
+                        .hasMessageContaining("field 'output_schema.type'")
+                        .hasMessageContaining("root output_schema type must be 'object'"));
+    }
+
+    @Test
+    void failsStartupWhenRequiredFieldIsMissingFromProperties() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-missing-required-property-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("output-schema-missing-required-property-skill.yaml")
+                        .hasMessageContaining("field 'output_schema.required'")
+                        .hasMessageContaining("references unknown property 'vendorName'"));
+    }
+
+    @Test
+    void failsStartupWhenPropertiesDifferOnlyByCase() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-duplicate-properties-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("output-schema-duplicate-properties-skill.yaml")
+                        .hasMessageContaining("field 'output_schema.properties.VendorName'")
+                        .hasMessageContaining("duplicates property 'vendorName'"));
+    }
+
+    @Test
+    void defaultsAdditionalPropertiesToFalseWhenOmitted() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/output-schema-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("output.schema.skill").manifest().getOutputSchema().getAdditionalProperties())
+                            .isFalse();
+                });
+    }
+
+    @Test
+    void logsWarningForComplexButSupportedSchema(CapturedOutput output) {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/output-schema-complex-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(YamlSkillCatalog.class).getSkill("output.schema.complex.skill")).isNotNull();
+                    assertThat(output.getOut())
+                            .contains("output_schema")
+                            .contains("recommended");
                 });
     }
 

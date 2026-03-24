@@ -5,6 +5,7 @@ public enum JournalEntryType {
     PLAN_CREATED,
     PLAN_UPDATED,
     LINTER,
+    OUTPUT_SCHEMA,
     TOOL_CALL,
     UNPLANNED_TOOL_EXECUTION,
     TOOL_RESULT,

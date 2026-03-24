@@ -1,0 +1,10 @@
+name: output.schema.object.enum
+description: Invalid enum usage on object schema.
+model: gpt-5
+output_schema:
+  type: object
+  enum:
+    - invalid
+  properties:
+    vendorName:
+      type: string

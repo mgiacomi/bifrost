@@ -6,6 +6,7 @@ import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.OperationType;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 
@@ -129,6 +130,14 @@ public class DefaultExecutionStateService implements ExecutionStateService {
         session.setLastLinterOutcome(recordedOutcome);
         session.logLinterOutcome(clock.instant(), recordedOutcome);
         sessionUsageService.recordLinterOutcome(session, recordedOutcome);
+    }
+
+    @Override
+    public void recordOutputSchemaOutcome(BifrostSession session, OutputSchemaOutcome outcome) {
+        Objects.requireNonNull(session, "session must not be null");
+        OutputSchemaOutcome recordedOutcome = Objects.requireNonNull(outcome, "outcome must not be null");
+        session.setLastOutputSchemaOutcome(recordedOutcome);
+        session.logOutputSchemaOutcome(clock.instant(), recordedOutcome);
     }
 
     @Override

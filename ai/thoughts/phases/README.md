@@ -21,7 +21,7 @@ Bifrost natively exposes four primary operations to the LLM:
 
 - **callMethod:** Fast, deterministic execution of a YAML skill whose `mapping.target_id` resolves to a Spring bean method flagged with `@SkillMethod`.
 - **callMethod failure handling (current iteration):** Exceptions from deterministic `@SkillMethod` execution should be normalized at Bifrost's own invocation boundary so the LLM receives an AI-readable tool result rather than a raw Java stack trace.
-- **callSkill:** Logic-heavy delegation of a YAML skill whose mapping resolves to an LLM-backed sub-agent utilizing Spring AI's `ChatClient`. This is the intended architecture for YAML-defined sub-agents; the current codebase has the YAML metadata path in place but does not yet execute this branch end to end.
+- **callSkill:** Top-level YAML skills execute through `ExecutionCoordinator`, which creates a skill-specific Spring AI `ChatClient`, applies any configured advisors, and runs the mission prompt. YAML skills without `mapping.target_id` can execute as top-level skills through this path, but they are not registered as nested callable invokers through the capability registry.
 - **readData / writeData:** `Resource`-backed Spring interfaces that let the LLM store data and pass `ref://...` pointers between skills to prevent context rot.
 
 ### 4. The Skill Architecture (YAML Manifest)
@@ -35,7 +35,7 @@ Skills are defined in pure YAML: the YAML is the LLM-facing skill contract and c
 **Zone B: Private Manifest (visible only to kernel)**
 - `rbac`: Required Spring Security roles for access
 - `tags`: For contextual filtering
-- `mapping`: `target_id` linking the skill to either a Spring bean implementation discovered through `@SkillMethod` or an LLM-backed sub-agent implementation. When `target_id` is present, the YAML-defined skill still remains the registry-facing capability while delegating invocation to the discovered Java target. If `target_id` is omitted, the manifest still describes the LLM-backed branch, but the runtime execution path is not fully implemented yet.
+- `mapping`: `target_id` linking the skill to a Spring bean implementation discovered through `@SkillMethod`. When `target_id` is present, the YAML-defined skill remains the registry-facing capability while delegating invocation to the discovered Java target. When `target_id` is omitted, the skill uses the LLM-backed execution path for top-level execution.
 - `model`: Required exact model name, matching a configured framework model entry in `application.yml`
 - `thinking_level`: Optional execution hint, validated against the selected model's supported thinking levels
 - `linter`: Optional verification gate that auto-validates output and provides "Success/Fail + Hint" feedback
@@ -53,7 +53,7 @@ Security is enforced at two points: discovery (filtering visible tools injected 
 - **Provider-aware resolver/factory execution:** Bifrost resolves the effective model settings for each skill through a shared resolver/factory rather than a small set of abstract profile tiers. The framework model catalog can describe providers such as OpenAI, Anthropic Claude, Gemini, and Ollama behind one consistent YAML contract.
 - **Concurrency:** `callSkill` utilizes Java Virtual Threads natively supported by modern Spring environments for efficient, non-blocking asynchronous execution.
 - **Telemetry:** Built on Micrometer, capturing reasoning logs and performance metrics for isolated sub-agents.
-- **Current exception boundary:** Until a dedicated `ExecutionCoordinator` exists in code, deterministic method-execution error transformation lives at the shared `SkillMethodBeanPostProcessor` invoker boundary rather than inside Spring AI internals.
+- **Current exception boundary:** Deterministic method-execution error transformation lives at the shared `SkillMethodBeanPostProcessor` invoker boundary, while top-level YAML execution flows through `ExecutionCoordinator` and `MissionExecutionEngine`.
 
 ### 7. The Session Model (BifrostSession)
 When a developer or system calls the library, it runs under a `BifrostSession`. This object lives for the duration of the "Mission" and holds:

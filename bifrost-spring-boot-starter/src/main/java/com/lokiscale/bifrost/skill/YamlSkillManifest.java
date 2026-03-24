@@ -4,8 +4,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Collections;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
 public class YamlSkillManifest {
@@ -27,6 +30,12 @@ public class YamlSkillManifest {
     private Boolean planningMode;
 
     private LinterManifest linter;
+
+    @JsonProperty("output_schema")
+    private OutputSchemaManifest outputSchema;
+
+    @JsonProperty("output_schema_max_retries")
+    private Integer outputSchemaMaxRetries;
 
     private MappingManifest mapping = new MappingManifest();
 
@@ -102,6 +111,22 @@ public class YamlSkillManifest {
         this.mapping = mapping == null ? new MappingManifest() : mapping;
     }
 
+    public OutputSchemaManifest getOutputSchema() {
+        return outputSchema;
+    }
+
+    public void setOutputSchema(OutputSchemaManifest outputSchema) {
+        this.outputSchema = outputSchema;
+    }
+
+    public Integer getOutputSchemaMaxRetries() {
+        return outputSchemaMaxRetries;
+    }
+
+    public void setOutputSchemaMaxRetries(Integer outputSchemaMaxRetries) {
+        this.outputSchemaMaxRetries = outputSchemaMaxRetries;
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
     public static class LinterManifest {
 
@@ -173,6 +198,90 @@ public class YamlSkillManifest {
 
         public void setTargetId(String targetId) {
             this.targetId = targetId;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class OutputSchemaManifest {
+
+        private String type;
+        private Map<String, OutputSchemaManifest> properties = Map.of();
+        private List<String> required = List.of();
+        private Boolean additionalProperties;
+        private OutputSchemaManifest items;
+
+        @JsonProperty("enum")
+        private List<String> enumValues = List.of();
+
+        private String description;
+        private String format;
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = StringUtils.hasText(type) ? type.trim().toLowerCase(Locale.ROOT) : type;
+        }
+
+        public Map<String, OutputSchemaManifest> getProperties() {
+            return properties;
+        }
+
+        public void setProperties(Map<String, OutputSchemaManifest> properties) {
+            if (properties == null || properties.isEmpty()) {
+                this.properties = Map.of();
+                return;
+            }
+            this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
+        }
+
+        public List<String> getRequired() {
+            return required;
+        }
+
+        public void setRequired(List<String> required) {
+            this.required = required == null ? List.of() : List.copyOf(required);
+        }
+
+        public Boolean getAdditionalProperties() {
+            return additionalProperties;
+        }
+
+        public void setAdditionalProperties(Boolean additionalProperties) {
+            this.additionalProperties = additionalProperties;
+        }
+
+        public OutputSchemaManifest getItems() {
+            return items;
+        }
+
+        public void setItems(OutputSchemaManifest items) {
+            this.items = items;
+        }
+
+        public List<String> getEnumValues() {
+            return enumValues;
+        }
+
+        public void setEnumValues(List<String> enumValues) {
+            this.enumValues = enumValues == null ? List.of() : List.copyOf(enumValues);
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public void setDescription(String description) {
+            this.description = StringUtils.hasText(description) ? description.trim() : null;
+        }
+
+        public String getFormat() {
+            return format;
+        }
+
+        public void setFormat(String format) {
+            this.format = StringUtils.hasText(format) ? format.trim() : null;
         }
     }
 }

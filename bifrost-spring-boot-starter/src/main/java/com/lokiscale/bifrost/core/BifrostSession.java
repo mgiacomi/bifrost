@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
@@ -35,6 +36,7 @@ public final class BifrostSession {
     private final ExecutionJournal executionJournal;
     private ExecutionPlan executionPlan;
     private LinterOutcome lastLinterOutcome;
+    private OutputSchemaOutcome lastOutputSchemaOutcome;
     private SessionUsageSnapshot sessionUsage;
     @JsonIgnore
     private Authentication authentication;
@@ -44,15 +46,15 @@ public final class BifrostSession {
     }
 
     public BifrostSession(String sessionId, int maxDepth) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, null);
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, null, null);
     }
 
     public BifrostSession(int maxDepth, @Nullable Authentication authentication) {
-        this(UUID.randomUUID().toString(), maxDepth, List.of(), new ExecutionJournal(), null, null, null, authentication);
+        this(UUID.randomUUID().toString(), maxDepth, List.of(), new ExecutionJournal(), null, null, null, null, authentication);
     }
 
     public BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, authentication);
+        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, null, authentication);
     }
 
     @JsonCreator
@@ -63,8 +65,9 @@ public final class BifrostSession {
             @JsonProperty("executionJournal") ExecutionJournal executionJournal,
             @JsonProperty("executionPlan") ExecutionPlan executionPlan,
             @JsonProperty("lastLinterOutcome") LinterOutcome lastLinterOutcome,
+            @JsonProperty("lastOutputSchemaOutcome") OutputSchemaOutcome lastOutputSchemaOutcome,
             @JsonProperty("sessionUsage") SessionUsageSnapshot sessionUsage) {
-        this(sessionId, maxDepth, frames, executionJournal, executionPlan, lastLinterOutcome, sessionUsage, null);
+        this(sessionId, maxDepth, frames, executionJournal, executionPlan, lastLinterOutcome, lastOutputSchemaOutcome, sessionUsage, null);
     }
 
     public BifrostSession(
@@ -74,6 +77,7 @@ public final class BifrostSession {
             ExecutionJournal executionJournal,
             ExecutionPlan executionPlan,
             @Nullable LinterOutcome lastLinterOutcome,
+            @Nullable OutputSchemaOutcome lastOutputSchemaOutcome,
             @Nullable SessionUsageSnapshot sessionUsage,
             @Nullable Authentication authentication) {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
@@ -87,6 +91,7 @@ public final class BifrostSession {
         this.executionJournal = executionJournal == null ? new ExecutionJournal() : executionJournal;
         this.executionPlan = executionPlan;
         this.lastLinterOutcome = lastLinterOutcome;
+        this.lastOutputSchemaOutcome = lastOutputSchemaOutcome;
         this.sessionUsage = sessionUsage;
         this.authentication = authentication;
     }
@@ -125,6 +130,10 @@ public final class BifrostSession {
 
     public void logLinterOutcome(Instant timestamp, LinterOutcome outcome) {
         appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.LINTER, outcome);
+    }
+
+    public void logOutputSchemaOutcome(Instant timestamp, OutputSchemaOutcome outcome) {
+        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.OUTPUT_SCHEMA, outcome);
     }
 
     public void logError(Instant timestamp, Object payload) {
@@ -204,6 +213,24 @@ public final class BifrostSession {
         lock.lock();
         try {
             this.lastLinterOutcome = lastLinterOutcome;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public Optional<OutputSchemaOutcome> getLastOutputSchemaOutcome() {
+        lock.lock();
+        try {
+            return Optional.ofNullable(lastOutputSchemaOutcome);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void setLastOutputSchemaOutcome(@Nullable OutputSchemaOutcome lastOutputSchemaOutcome) {
+        lock.lock();
+        try {
+            this.lastOutputSchemaOutcome = lastOutputSchemaOutcome;
         } finally {
             lock.unlock();
         }
@@ -302,6 +329,16 @@ public final class BifrostSession {
         lock.lock();
         try {
             return lastLinterOutcome;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @JsonProperty("lastOutputSchemaOutcome")
+    public OutputSchemaOutcome getLastOutputSchemaOutcomeSnapshot() {
+        lock.lock();
+        try {
+            return lastOutputSchemaOutcome;
         } finally {
             lock.unlock();
         }

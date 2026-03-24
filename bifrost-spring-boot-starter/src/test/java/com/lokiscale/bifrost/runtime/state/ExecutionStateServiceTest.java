@@ -10,6 +10,10 @@ import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
+import com.lokiscale.bifrost.outputschema.OutputSchemaFailureMode;
+import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
+import com.lokiscale.bifrost.outputschema.OutputSchemaOutcomeStatus;
+import com.lokiscale.bifrost.outputschema.OutputSchemaValidationIssue;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -38,6 +42,14 @@ class ExecutionStateServiceTest {
                 2,
                 LinterOutcomeStatus.PASSED,
                 "Return fenced YAML only.");
+        OutputSchemaOutcome outputSchemaOutcome = new OutputSchemaOutcome(
+                "schema.skill",
+                OutputSchemaFailureMode.SCHEMA_VALIDATION_FAILED,
+                1,
+                0,
+                2,
+                OutputSchemaOutcomeStatus.RETRYING,
+                List.of(new OutputSchemaValidationIssue("$.vendorName", "missing required field 'vendorName'", "vendorName")));
 
         ExecutionFrame frame = stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello"));
         stateService.storePlan(session, plan);
@@ -45,6 +57,7 @@ class ExecutionStateServiceTest {
         stateService.logToolCall(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
         stateService.logToolResult(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("result", "done"), null));
         stateService.recordLinterOutcome(session, outcome);
+        stateService.recordOutputSchemaOutcome(session, outputSchemaOutcome);
         stateService.logError(session, Map.of("message", "boom"));
         stateService.closeMissionFrame(session, frame);
         stateService.clearPlan(session);
@@ -52,14 +65,17 @@ class ExecutionStateServiceTest {
         assertThat(session.getFramesSnapshot()).isEmpty();
         assertThat(session.getExecutionPlan()).isEmpty();
         assertThat(session.getLastLinterOutcome()).contains(outcome);
+        assertThat(session.getLastOutputSchemaOutcome()).contains(outputSchemaOutcome);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .containsExactly(
                         JournalEntryType.PLAN_CREATED,
                         JournalEntryType.TOOL_CALL,
                         JournalEntryType.TOOL_RESULT,
                         JournalEntryType.LINTER,
+                        JournalEntryType.OUTPUT_SCHEMA,
                         JournalEntryType.ERROR);
         assertThat(session.getJournalSnapshot().get(3).payload().get("status").textValue()).isEqualTo("PASSED");
+        assertThat(session.getJournalSnapshot().get(4).payload().get("failureMode").textValue()).isEqualTo("SCHEMA_VALIDATION_FAILED");
     }
 
     @Test

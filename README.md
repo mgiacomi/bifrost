@@ -1,29 +1,27 @@
 # Bifrost
 
-Bifrost is an AI skill orchestration framework that makes it simple to integrate LLM capabilities natively into Java applications. It allows developers to define AI skills either through declarative YAML manifests or by binding directly to traditional Java methods using the `@SkillMethod` annotation.
+Bifrost is a Spring Boot-first AI skill orchestration framework for Java applications. It supports YAML-defined skills and `@SkillMethod`-backed deterministic skills.
 
 ## Project Structure
 
-Bifrost consists of several modules:
-- **`bifrost-core`**: The foundational abstractions, models, and core logic of the framework.
-- **`bifrost-spring-boot-starter`**: The auto-configuration module that seamlessly integrates Bifrost into Spring Boot applications, handling skill discovery, registration, and dependency injection.
-- **`bifrost-sample`**: A sample application demonstrating how to consume the starter, configure the framework, and implement skills.
+Bifrost currently contains two modules:
+
+- `bifrost-spring-boot-starter`: the core starter.
+- `bifrost-sample`: a sample Spring Boot application.
 
 ## Getting Started
 
-To use Bifrost in your project, add the starter dependency to your `pom.xml`:
+Add the starter to your application:
 
 ```xml
 <dependency>
     <groupId>com.lokiscale.bifrost</groupId>
     <artifactId>bifrost-spring-boot-starter</artifactId>
-    <version>0.0.1-SNAPSHOT</version> <!-- Update to the current release version -->
+    <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
-### Configuration
-
-Bifrost can be configured using standard Spring Boot properties (e.g., `application.yml`). You'll need to specify where the framework should look for declarative YAML skills and how to connect to the underlying LLM models.
+Configure skill locations and at least one model in `application.yml`:
 
 ```yaml
 bifrost:
@@ -33,27 +31,25 @@ bifrost:
       - classpath:/skills/**/*.yaml
   models:
     default-model:
-      provider: ollama
-      provider-model: ibm/granite4:tiny-h
+      provider: taalas
+      provider-model: llama3.1-8B
 ```
 
 ## Defining Skills
 
-Bifrost supports two primary ways to define skills: Declarative YAML and Java Annotations.
+### YAML skills
 
-### 1. Declarative YAML Skills
-
-Ideal for purely declarative prompts or specific LLM extraction/transformation tasks. Place these files in your configured skills location (e.g., `src/main/resources/skills/`).
+YAML skills define a skill name, description, and execution settings.
 
 ```yaml
 name: invoiceParser
-description: Parses an unstructured invoice payload extracting Date, Amount, and Vendor.
+description: Parse an invoice payload.
 model: default-model
 ```
 
-### 2. Java `@SkillMethod` Annotation
+### Java `@SkillMethod` skills
 
-Ideal when you need to execute programmatic logic, interact with databases, or call external APIs as part of the skill's execution.
+Use `@SkillMethod` when the implementation should run deterministic Java logic.
 
 ```java
 import com.lokiscale.bifrost.annotation.SkillMethod;
@@ -74,16 +70,18 @@ public class ExpenseService {
 }
 ```
 
-## Running the Sample Application
+## Running The Sample
 
-The `bifrost-sample` module provides a working example of the framework.
+From the repository root:
 
-1. Navigate to the sample directory: `cd bifrost-sample`
-2. Run the application: `mvn spring-boot:run`
+```bash
+./mvnw -pl bifrost-sample spring-boot:run
+```
 
-This will bootstrap the application and register both the YAML skills and the annotated methods, making them available to the Bifrost orchestrator.
+On Windows PowerShell:
 
-## Limitations
+```powershell
+.\mvnw.cmd -pl bifrost-sample spring-boot:run
+```
 
-- The framework is currently under active development.
-- The sample application currently mocks data and does not actively execute against a live LLM endpoint by default.
+The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures a default Taalas-backed model in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).

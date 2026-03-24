@@ -24,6 +24,14 @@ public record YamlSkillDefinition(
         return manifest.getLinter();
     }
 
+    public YamlSkillManifest.OutputSchemaManifest outputSchema() {
+        return manifest.getOutputSchema();
+    }
+
+    public int outputSchemaMaxRetries() {
+        return manifest.getOutputSchemaMaxRetries() == null ? 0 : manifest.getOutputSchemaMaxRetries();
+    }
+
     public String mappingTargetId() {
         return manifest.getMapping().getTargetId();
     }

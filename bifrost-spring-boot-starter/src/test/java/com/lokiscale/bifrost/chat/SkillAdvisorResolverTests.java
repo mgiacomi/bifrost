@@ -2,6 +2,7 @@ package com.lokiscale.bifrost.chat;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
+import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
@@ -33,11 +34,35 @@ class SkillAdvisorResolverTests {
                 .isInstanceOf(LinterCallAdvisor.class);
     }
 
+    @Test
+    void createsOutputSchemaAdvisorBeforeLinterAdvisor() {
+        assertThat(resolver.resolve(definition(true, true)))
+                .hasSize(2)
+                .element(0).isInstanceOf(OutputSchemaCallAdvisor.class);
+        assertThat(resolver.resolve(definition(true, true)))
+                .element(1).isInstanceOf(LinterCallAdvisor.class);
+    }
+
     private YamlSkillDefinition definition(boolean withLinter) {
+        return definition(withLinter, false);
+    }
+
+    private YamlSkillDefinition definition(boolean withLinter, boolean withOutputSchema) {
         YamlSkillManifest manifest = new YamlSkillManifest();
         manifest.setName(withLinter ? "linted.skill" : "plain.skill");
         manifest.setDescription(manifest.getName());
         manifest.setModel("gpt-5");
+        if (withOutputSchema) {
+            YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
+            schema.setType("object");
+            YamlSkillManifest.OutputSchemaManifest vendorName = new YamlSkillManifest.OutputSchemaManifest();
+            vendorName.setType("string");
+            schema.setProperties(java.util.Map.of("vendorName", vendorName));
+            schema.setRequired(java.util.List.of("vendorName"));
+            schema.setAdditionalProperties(false);
+            manifest.setOutputSchema(schema);
+            manifest.setOutputSchemaMaxRetries(2);
+        }
         if (withLinter) {
             YamlSkillManifest.RegexManifest regex = new YamlSkillManifest.RegexManifest();
             regex.setPattern("^OK.*$");

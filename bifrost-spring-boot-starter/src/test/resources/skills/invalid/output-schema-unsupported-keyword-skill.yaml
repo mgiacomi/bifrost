@@ -1,0 +1,10 @@
+name: output.schema.unsupported.keyword
+description: Invalid schema keyword.
+model: gpt-5
+output_schema:
+  type: object
+  properties:
+    vendorName:
+      type: string
+      oneOf:
+        - type: string

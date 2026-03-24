@@ -1,7 +1,6 @@
 name: "Example Skill"
 description: "A comprehensive example skill showcasing all available configurations."
-model: "gemini-2.5-pro"
-thinking_level: "high"
+model: "default-model"
 allowed_skills:
   - "other_skill_1"
   - "other_skill_2"
@@ -15,5 +14,3 @@ linter:
   regex:
     pattern: "^[A-Z].*"
     message: "Output must start with an uppercase letter."
-mapping:
-  target_id: "some_target_identifier"
