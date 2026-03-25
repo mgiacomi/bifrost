@@ -26,6 +26,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,6 +67,7 @@ class OutputSchemaCallAdvisorTest {
         assertThat(chain.requests.get(1).prompt().getSystemMessage().getText())
                 .contains("Output schema validation failed")
                 .contains("Response is not valid JSON.");
+        assertThat(chain.copyInvocations()).isEqualTo(2);
     }
 
     @Test
@@ -285,18 +288,34 @@ class OutputSchemaCallAdvisorTest {
     private static final class RecordingChain implements CallAdvisorChain {
 
         private final List<String> responses;
-        private final List<ChatClientRequest> requests = new ArrayList<>();
-        private int index;
+        private final List<ChatClientRequest> requests;
+        private final AtomicInteger index;
+        private final AtomicInteger copyInvocations;
+        private final AtomicBoolean consumed;
 
         private RecordingChain(List<String> responses) {
+            this(responses, new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), new AtomicBoolean());
+        }
+
+        private RecordingChain(List<String> responses,
+                               List<ChatClientRequest> requests,
+                               AtomicInteger index,
+                               AtomicInteger copyInvocations,
+                               AtomicBoolean consumed) {
             this.responses = responses;
+            this.requests = requests;
+            this.index = index;
+            this.copyInvocations = copyInvocations;
+            this.consumed = consumed;
         }
 
         @Override
         public ChatClientResponse nextCall(ChatClientRequest chatClientRequest) {
+            if (!consumed.compareAndSet(false, true)) {
+                throw new IllegalStateException("No CallAdvisors available to execute");
+            }
             requests.add(chatClientRequest.copy());
-            String responseText = responses.get(Math.min(index, responses.size() - 1));
-            index++;
+            String responseText = responses.get(Math.min(index.getAndIncrement(), responses.size() - 1));
             return ChatClientResponse.builder()
                     .chatResponse(new ChatResponse(List.of(new Generation(new AssistantMessage(responseText)))))
                     .build();
@@ -309,7 +328,12 @@ class OutputSchemaCallAdvisorTest {
 
         @Override
         public CallAdvisorChain copy(CallAdvisor after) {
-            return this;
+            copyInvocations.incrementAndGet();
+            return new RecordingChain(responses, requests, index, copyInvocations, new AtomicBoolean());
+        }
+
+        private int copyInvocations() {
+            return copyInvocations.get();
         }
     }
 }

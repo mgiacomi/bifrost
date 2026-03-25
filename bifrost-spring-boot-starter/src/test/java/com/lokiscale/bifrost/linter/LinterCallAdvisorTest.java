@@ -21,6 +21,8 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,7 @@ class LinterCallAdvisorTest {
         assertThat(chain.requests.get(1).prompt().getSystemMessage().getText())
                 .contains("Linter validation failed")
                 .contains("Return fenced YAML only.");
+        assertThat(chain.copyInvocations()).isEqualTo(2);
         assertThat((LinterOutcome) response.context().get(LinterCallAdvisor.CONTEXT_KEY))
                 .extracting(LinterOutcome::status, LinterOutcome::retryCount, LinterOutcome::attempt)
                 .containsExactly(LinterOutcomeStatus.PASSED, 1, 2);
@@ -141,18 +144,34 @@ class LinterCallAdvisorTest {
     private static final class RecordingChain implements CallAdvisorChain {
 
         private final List<String> responses;
-        private final List<ChatClientRequest> requests = new ArrayList<>();
-        private int index;
+        private final List<ChatClientRequest> requests;
+        private final AtomicInteger index;
+        private final AtomicInteger copyInvocations;
+        private final AtomicBoolean consumed;
 
         private RecordingChain(List<String> responses) {
+            this(responses, new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), new AtomicBoolean());
+        }
+
+        private RecordingChain(List<String> responses,
+                               List<ChatClientRequest> requests,
+                               AtomicInteger index,
+                               AtomicInteger copyInvocations,
+                               AtomicBoolean consumed) {
             this.responses = responses;
+            this.requests = requests;
+            this.index = index;
+            this.copyInvocations = copyInvocations;
+            this.consumed = consumed;
         }
 
         @Override
         public ChatClientResponse nextCall(ChatClientRequest chatClientRequest) {
+            if (!consumed.compareAndSet(false, true)) {
+                throw new IllegalStateException("No CallAdvisors available to execute");
+            }
             requests.add(chatClientRequest.copy());
-            String responseText = responses.get(Math.min(index, responses.size() - 1));
-            index++;
+            String responseText = responses.get(Math.min(index.getAndIncrement(), responses.size() - 1));
             return ChatClientResponse.builder()
                     .chatResponse(new ChatResponse(List.of(new Generation(new AssistantMessage(responseText)))))
                     .build();
@@ -165,7 +184,12 @@ class LinterCallAdvisorTest {
 
         @Override
         public CallAdvisorChain copy(CallAdvisor after) {
-            return this;
+            copyInvocations.incrementAndGet();
+            return new RecordingChain(responses, requests, index, copyInvocations, new AtomicBoolean());
+        }
+
+        private int copyInvocations() {
+            return copyInvocations.get();
         }
     }
 

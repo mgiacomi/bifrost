@@ -13,11 +13,16 @@ server:
 
 logging:
   level:
+    com.lokiscale.bifrost.sample: INFO
     com.lokiscale.bifrost.chat: DEBUG
+    com.lokiscale.bifrost.linter: DEBUG
+    com.lokiscale.bifrost.outputschema: DEBUG
     com.lokiscale.bifrost.runtime.planning: DEBUG
     org.springframework.ai.chat.client: DEBUG
 
 bifrost:
+  session:
+    mission-timeout: 25s
   skills:
     locations:
       - classpath:/skills/**/*.yml

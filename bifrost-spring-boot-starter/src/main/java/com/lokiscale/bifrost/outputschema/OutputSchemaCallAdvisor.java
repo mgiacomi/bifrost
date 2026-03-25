@@ -55,9 +55,10 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
         ChatClientRequest currentRequest = chatClientRequest.mutate()
                 .prompt(promptAugmentor.augment(chatClientRequest.prompt(), schema))
                 .build();
+        CallAdvisorChain downstreamChain = callAdvisorChain.copy(this);
         int attempt = 1;
         while (true) {
-            ChatClientResponse response = callAdvisorChain.nextCall(currentRequest);
+            ChatClientResponse response = downstreamChain.nextCall(currentRequest);
             String candidate = extractAssistantText(response);
             OutputSchemaValidationResult result = validator.validate(candidate, schema);
             if (result.valid()) {
@@ -96,6 +97,7 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
             currentRequest = currentRequest.mutate()
                     .prompt(appendHint(currentRequest.prompt(), result))
                     .build();
+            downstreamChain = callAdvisorChain.copy(this);
             attempt++;
         }
     }

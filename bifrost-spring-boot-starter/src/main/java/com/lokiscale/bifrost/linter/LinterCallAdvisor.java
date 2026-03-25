@@ -52,9 +52,10 @@ public final class LinterCallAdvisor implements CallAdvisor {
         Objects.requireNonNull(callAdvisorChain, "callAdvisorChain must not be null");
 
         ChatClientRequest currentRequest = chatClientRequest;
+        CallAdvisorChain downstreamChain = callAdvisorChain.copy(this);
         int attempt = 1;
         while (true) {
-            ChatClientResponse response = callAdvisorChain.nextCall(currentRequest);
+            ChatClientResponse response = downstreamChain.nextCall(currentRequest);
             String candidate = extractAssistantText(response);
             if (pattern.matcher(candidate).matches()) {
                 return record(response, outcome(attempt, LinterOutcomeStatus.PASSED, failureMessage));
@@ -68,6 +69,7 @@ public final class LinterCallAdvisor implements CallAdvisor {
             currentRequest = currentRequest.mutate()
                     .prompt(appendHint(currentRequest.prompt(), failureMessage))
                     .build();
+            downstreamChain = callAdvisorChain.copy(this);
             attempt++;
         }
     }
