@@ -81,21 +81,25 @@ class BifrostSessionTest {
     void appendsJournalEntriesInSequentialOrder() {
         BifrostSession session = new BifrostSession("session-1", 4);
 
-        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
-        session.logToolExecution(
+        ExecutionPlan plan = plan("plan-1");
+        appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:00Z"), Map.of("planId", plan.planId()), plan);
+        appendRecord(
+                session,
+                TraceRecordType.TOOL_CALL_REQUESTED,
                 Instant.parse("2026-03-15T12:00:01Z"),
+                Map.of(),
                 Map.of("route", "tool.run", "arguments", Map.of("id", 42)));
-        session.logError(Instant.parse("2026-03-15T12:00:02Z"), "boom");
+        appendError(session, Instant.parse("2026-03-15T12:00:02Z"), "boom");
 
         assertThat(session.getJournalSnapshot())
                 .extracting(JournalEntry::type)
-                .containsExactly(JournalEntryType.THOUGHT, JournalEntryType.TOOL_CALL, JournalEntryType.ERROR);
+                .containsExactly(JournalEntryType.PLAN_CREATED, JournalEntryType.TOOL_CALL, JournalEntryType.ERROR);
         assertThat(session.getJournalSnapshot())
                 .extracting(JournalEntry::level)
                 .containsExactly(JournalLevel.INFO, JournalLevel.INFO, JournalLevel.ERROR);
-        assertThat(session.getJournalSnapshot().get(0).payload().textValue()).isEqualTo("plan");
-        assertThat(session.getJournalSnapshot().get(1).payload().get("route").textValue()).isEqualTo("tool.run");
-        assertThat(session.getJournalSnapshot().get(1).payload().get("arguments").get("id").intValue()).isEqualTo(42);
+        assertThat(session.getJournalSnapshot().get(0).payload().get("planId").textValue()).isEqualTo("plan-1");
+        assertThat(session.getJournalSnapshot().get(1).payload().get("capabilityName").textValue()).isEqualTo("tool.run");
+        assertThat(session.getJournalSnapshot().get(1).payload().get("details").get("arguments").get("id").intValue()).isEqualTo(42);
         assertThat(session.getJournalSnapshot().get(2).payload().textValue()).isEqualTo("boom");
     }
 
@@ -105,9 +109,13 @@ class BifrostSessionTest {
         ExecutionFrame frame = frame("frame-1", "route.one");
 
         session.pushFrame(frame);
-        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
-        session.logToolExecution(
+        ExecutionPlan plan = plan("plan-1");
+        appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:00Z"), Map.of("planId", plan.planId()), plan);
+        appendRecord(
+                session,
+                TraceRecordType.TOOL_CALL_REQUESTED,
                 Instant.parse("2026-03-15T12:00:01Z"),
+                Map.of("capabilityName", "tool.run", "linkedTaskId", "task-1"),
                 TaskExecutionEvent.linked("tool.run", "task-1", Map.of("arguments", Map.of("id", 42)), null));
         session.popFrame();
 
@@ -120,7 +128,8 @@ class BifrostSessionTest {
     @Test
     void exposesImmutableJournalSnapshots() {
         BifrostSession session = new BifrostSession(2);
-        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
+        ExecutionPlan plan = plan("plan-1");
+        appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:00Z"), Map.of("planId", plan.planId()), plan);
 
         List<JournalEntry> snapshot = session.getJournalSnapshot();
 
@@ -146,9 +155,9 @@ class BifrostSessionTest {
                 task -> task.withStatus(PlanTaskStatus.COMPLETED, "done"));
 
         session.replaceExecutionPlan(created);
-        session.logPlanCreated(Instant.parse("2026-03-15T12:00:00Z"), created);
+        appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:00Z"), Map.of("planId", created.planId()), created);
         session.replaceExecutionPlan(updated);
-        session.logPlanUpdated(Instant.parse("2026-03-15T12:00:01Z"), updated);
+        appendRecord(session, TraceRecordType.PLAN_UPDATED, Instant.parse("2026-03-15T12:00:01Z"), Map.of("planId", updated.planId()), updated);
 
         assertThat(session.getExecutionPlan()).contains(updated);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
@@ -183,7 +192,12 @@ class BifrostSessionTest {
                 "Return fenced YAML only.");
 
         session.setLastLinterOutcome(outcome);
-        session.logLinterOutcome(Instant.parse("2026-03-15T12:00:03Z"), outcome);
+        appendRecord(
+                session,
+                TraceRecordType.LINTER_RECORDED,
+                Instant.parse("2026-03-15T12:00:03Z"),
+                Map.of("skillName", outcome.skillName(), "status", outcome.status().name()),
+                outcome);
 
         assertThat(session.getLastLinterOutcome()).contains(outcome);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
@@ -191,13 +205,61 @@ class BifrostSessionTest {
         assertThat(session.getJournalSnapshot().getFirst().payload().get("status").textValue()).isEqualTo("PASSED");
     }
 
+    @Test
+    void preservesFinalizedJournalAcrossRepeatedFinalizationAfterTraceDeletion() {
+        BifrostSession session = TestBifrostSessions.withId(
+                "session-repeat-finalize",
+                2,
+                null,
+                TracePersistencePolicy.ONERROR,
+                java.time.Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), java.time.ZoneOffset.UTC));
+        ExecutionPlan plan = plan("plan-1");
+        appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:00Z"), Map.of("planId", plan.planId()), plan);
+
+        session.finalizeTrace(Map.of("status", "completed"));
+        session.finalizeTrace(Map.of("entryPoint", "session-runner", "status", "completed"));
+
+        assertThat(session.getExecutionTrace().completed()).isTrue();
+        assertThat(session.getExecutionTrace().filePath()).isNull();
+        assertThat(session.getExecutionJournal().getEntriesSnapshot())
+                .extracting(JournalEntry::type)
+                .containsExactly(JournalEntryType.PLAN_CREATED);
+    }
+
     private static ExecutionFrame frame(String frameId, String route) {
         return new ExecutionFrame(
                 frameId,
                 null,
                 OperationType.CAPABILITY,
+                TraceFrameType.ROOT_MISSION,
                 route,
                 Map.of("route", route),
                 Instant.parse("2026-03-15T12:00:00Z"));
+    }
+
+    private static void appendError(BifrostSession session, Instant timestamp, Object payload) {
+        session.markTraceErrored();
+        appendRecord(session, TraceRecordType.ERROR_RECORDED, timestamp, Map.of(), payload);
+    }
+
+    private static ExecutionPlan plan(String planId) {
+        return new ExecutionPlan(
+                planId,
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null)));
+    }
+
+    private static void appendRecord(BifrostSession session,
+                                     TraceRecordType type,
+                                     Instant timestamp,
+                                     Map<String, Object> metadata,
+                                     Object payload) {
+        java.util.LinkedHashMap<String, Object> traceMetadata = new java.util.LinkedHashMap<>();
+        if (metadata != null) {
+            traceMetadata.putAll(metadata);
+        }
+        traceMetadata.put("timestampOverride", timestamp.toString());
+        session.appendTraceRecord(type, traceMetadata, payload);
     }
 }

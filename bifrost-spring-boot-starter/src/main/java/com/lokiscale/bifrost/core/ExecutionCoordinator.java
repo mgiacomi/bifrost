@@ -59,7 +59,9 @@ public class ExecutionCoordinator {
         }
         accessGuard.checkAccess(rootCapability, session, authentication);
         executionStateService.clearPlan(session);
+        boolean topLevelInvocation = session.getFramesSnapshot().isEmpty();
         ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.of("objective", objective));
+        Throwable failure = null;
         try {
             return BifrostSessionHolder.callWithSession(session, () -> {
                 ChatClient chatClient = skillChatClientFactory.create(definition);
@@ -71,15 +73,73 @@ public class ExecutionCoordinator {
                         session,
                         skillName,
                         objective,
+                        definition.executionConfiguration(),
                         chatClient,
                         visibleTools,
                         definition.planningModeEnabled(planningModeEnabled),
                         authentication);
             });
         }
-        finally {
-            executionStateService.closeMissionFrame(session, frame);
+        catch (RuntimeException | Error ex) {
+            failure = ex;
+            executionStateService.logError(session, errorPayload(skillName, objective, ex));
+            session.markTraceErrored();
+            throw ex;
         }
+        finally {
+            RuntimeException cleanupFailure = null;
+            try {
+                executionStateService.closeFrame(session, frame, closeMetadata(failure));
+            }
+            catch (RuntimeException ex) {
+                cleanupFailure = ex;
+            }
+            if (topLevelInvocation) {
+                try {
+                    executionStateService.finalizeTrace(session, Map.of(
+                            "skillName", skillName,
+                            "objective", objective,
+                            "remainingFrames", session.getFramesSnapshot().size()));
+                }
+                catch (RuntimeException ex) {
+                    if (cleanupFailure == null) {
+                        cleanupFailure = ex;
+                    } else {
+                        cleanupFailure.addSuppressed(ex);
+                    }
+                }
+            }
+            if (cleanupFailure != null) {
+                if (failure != null) {
+                    failure.addSuppressed(cleanupFailure);
+                } else {
+                    throw cleanupFailure;
+                }
+            }
+        }
+    }
+
+    private Map<String, Object> closeMetadata(@Nullable Throwable failure) {
+        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("status", failure == null ? "completed" : (Thread.currentThread().isInterrupted() ? "aborted" : "failed"));
+        if (failure != null) {
+            metadata.put("exceptionType", failure.getClass().getName());
+            if (failure.getMessage() != null && !failure.getMessage().isBlank()) {
+                metadata.put("message", failure.getMessage());
+            }
+        }
+        return metadata;
+    }
+
+    private Map<String, Object> errorPayload(String skillName, String objective, Throwable failure) {
+        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("skillName", skillName);
+        payload.put("objective", objective);
+        payload.put("message", failure.getMessage() == null || failure.getMessage().isBlank()
+                ? "Mission execution failed"
+                : failure.getMessage());
+        payload.put("exceptionType", failure.getClass().getName());
+        return payload;
     }
 
     private YamlSkillDefinition requireYamlSkill(String skillName) {

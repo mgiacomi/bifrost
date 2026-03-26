@@ -27,7 +27,6 @@ public class BifrostSessionProperties {
     private Duration missionTimeout = DEFAULT_MISSION_TIMEOUT;
 
     @Valid
-    @NotNull
     private Quotas quotas = new Quotas();
 
     public int getMaxDepth() {
@@ -114,4 +113,5 @@ public class BifrostSessionProperties {
             this.maxUsageUnits = maxUsageUnits;
         }
     }
+
 }

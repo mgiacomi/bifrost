@@ -8,6 +8,7 @@ public record ExecutionFrame(
         String frameId,
         String parentFrameId,
         OperationType operationType,
+        TraceFrameType traceFrameType,
         String route,
         Map<String, Object> parameters,
         Instant openedAt) {
@@ -15,6 +16,7 @@ public record ExecutionFrame(
     public ExecutionFrame {
         frameId = requireNonBlank(frameId, "frameId");
         operationType = Objects.requireNonNull(operationType, "operationType must not be null");
+        traceFrameType = Objects.requireNonNull(traceFrameType, "traceFrameType must not be null");
         route = requireNonBlank(route, "route");
         parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
         openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");

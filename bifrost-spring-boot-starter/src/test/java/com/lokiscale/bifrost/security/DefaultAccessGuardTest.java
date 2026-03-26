@@ -25,7 +25,7 @@ class DefaultAccessGuardTest {
     @Test
     void allowsUnprotectedCapabilityWithoutAuthentication() {
         CapabilityMetadata capability = capability("public.skill", Set.of());
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
 
         assertThat(accessGuard.canAccess(capability, session, null)).isTrue();
         accessGuard.checkAccess(capability, session, null);
@@ -34,7 +34,7 @@ class DefaultAccessGuardTest {
     @Test
     void deniesProtectedCapabilityWithoutInvocationOrSessionAuthentication() {
         CapabilityMetadata capability = capability("protected.skill", Set.of("ROLE_ALLOWED"));
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
 
         assertThat(accessGuard.canAccess(capability, session, null)).isFalse();
         assertThatThrownBy(() -> accessGuard.checkAccess(capability, session, null))
@@ -45,7 +45,7 @@ class DefaultAccessGuardTest {
     @Test
     void usesSessionAuthenticationWhenInvocationAuthenticationIsNull() {
         CapabilityMetadata capability = capability("protected.skill", Set.of("ROLE_ALLOWED"));
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         session.setAuthentication(authentication("ROLE_ALLOWED"));
 
         assertThat(accessGuard.resolveAuthentication(null, session)).isEqualTo(session.getAuthentication().orElseThrow());
@@ -55,7 +55,7 @@ class DefaultAccessGuardTest {
     @Test
     void prefersInvocationAuthenticationOverSessionAuthentication() {
         CapabilityMetadata capability = capability("protected.skill", Set.of("ROLE_ALLOWED"));
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         session.setAuthentication(authentication("ROLE_ALLOWED"));
         Authentication invocationAuthentication = authentication("ROLE_OTHER");
 

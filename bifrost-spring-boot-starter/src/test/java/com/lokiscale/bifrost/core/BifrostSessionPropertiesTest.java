@@ -2,6 +2,7 @@ package com.lokiscale.bifrost.core;
 
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
 import com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties;
+import com.lokiscale.bifrost.autoconfigure.ExecutionTraceProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -31,6 +32,7 @@ class BifrostSessionPropertiesTest {
             assertThat(properties.getQuotas().getMaxLinterRetries()).isEqualTo(32);
             assertThat(properties.getQuotas().getMaxModelCalls()).isEqualTo(64);
             assertThat(properties.getQuotas().getMaxUsageUnits()).isEqualTo(200_000);
+            assertThat(context.getBean(ExecutionTraceProperties.class).getPersistence()).isEqualTo(TracePersistencePolicy.ONERROR);
         });
 
         contextRunner
@@ -41,9 +43,11 @@ class BifrostSessionPropertiesTest {
                         "bifrost.session.quotas.max-tool-invocations=9",
                         "bifrost.session.quotas.max-linter-retries=7",
                         "bifrost.session.quotas.max-model-calls=5",
-                        "bifrost.session.quotas.max-usage-units=1234")
+                        "bifrost.session.quotas.max-usage-units=1234",
+                        "execution-trace.persistence=always")
                 .run(context -> {
                     BifrostSessionProperties properties = context.getBean(BifrostSessionProperties.class);
+                    ExecutionTraceProperties executionTraceProperties = context.getBean(ExecutionTraceProperties.class);
                     BifrostSessionRunner runner = context.getBean(BifrostSessionRunner.class);
 
                     assertThat(properties.getMaxDepth()).isEqualTo(3);
@@ -53,6 +57,7 @@ class BifrostSessionPropertiesTest {
                     assertThat(properties.getQuotas().getMaxLinterRetries()).isEqualTo(7);
                     assertThat(properties.getQuotas().getMaxModelCalls()).isEqualTo(5);
                     assertThat(properties.getQuotas().getMaxUsageUnits()).isEqualTo(1234);
+                    assertThat(executionTraceProperties.getPersistence()).isEqualTo(TracePersistencePolicy.ALWAYS);
                     assertThat(runner.callWithNewSession(BifrostSession::getMaxDepth)).isEqualTo(3);
                 });
     }

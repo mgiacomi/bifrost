@@ -1,15 +1,19 @@
 package com.lokiscale.bifrost.skill;
 
+import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
+import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.SimpleChatClient;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.core.TraceRecord;
+import com.lokiscale.bifrost.core.TraceRecordType;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -17,6 +21,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -36,6 +41,8 @@ import static org.mockito.Mockito.when;
 class MissionExecutionEngineTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
+    private static final EffectiveSkillExecutionConfiguration EXECUTION_CONFIGURATION =
+            new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
 
     @Test
     void executesPlanningEnabledMissionLoop() {
@@ -47,7 +54,7 @@ class MissionExecutionEngineTest {
                     stateService,
                     Duration.ofSeconds(5),
                     missionExecutor);
-            BifrostSession session = new BifrostSession("session-1", 2);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
             ExecutionPlan plan = new ExecutionPlan(
                     "plan-1",
                     "root.visible.skill",
@@ -58,13 +65,13 @@ class MissionExecutionEngineTest {
             MissionChatClient chatClient = new MissionChatClient("mission complete");
             ToolCallback callback = mock(ToolCallback.class);
 
-            when(planningService.initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(chatClient), any()))
+            when(planningService.initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(EXECUTION_CONFIGURATION), eq(chatClient), any()))
                     .thenAnswer(invocation -> {
                         stateService.storePlan(session, plan);
                         return java.util.Optional.of(plan);
                     });
 
-            String response = engine.executeMission(session, "root.visible.skill", "hello", chatClient, List.of(callback), true, null);
+            String response = engine.executeMission(session, "root.visible.skill", "hello", EXECUTION_CONFIGURATION, chatClient, List.of(callback), true, null);
 
             assertThat(response).isEqualTo("mission complete");
             assertThat(chatClient.getSystemMessagesSeen().getFirst()).contains("plan-1", "Ready tasks", "Blocked tasks");
@@ -81,14 +88,56 @@ class MissionExecutionEngineTest {
                     stateService,
                     Duration.ofSeconds(5),
                     missionExecutor);
-            BifrostSession session = new BifrostSession("session-1", 2);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
             MissionChatClient chatClient = new MissionChatClient("mission complete");
 
-            String response = engine.executeMission(session, "root.visible.skill", "hello", chatClient, List.of(), false, null);
+            String response = engine.executeMission(session, "root.visible.skill", "hello", EXECUTION_CONFIGURATION, chatClient, List.of(), false, null);
 
             assertThat(response).isEqualTo("mission complete");
             assertThat(chatClient.getSystemMessagesSeen()).containsExactly("Execute the mission using only the visible YAML tools when needed.");
-            verify(planningService, never()).initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(chatClient), any());
+            verify(planningService, never()).initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(EXECUTION_CONFIGURATION), eq(chatClient), any());
+        }
+    }
+
+    @Test
+    void recordsFullMissionRequestPayloadWhenRequestIsSent() {
+        PlanningService planningService = mock(PlanningService.class);
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofSeconds(5),
+                    missionExecutor);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-request-trace", 2);
+            ToolCallback callback = mock(ToolCallback.class);
+
+            String response = engine.executeMission(
+                    session,
+                    "root.visible.skill",
+                    "hello",
+                    EXECUTION_CONFIGURATION,
+                    new MissionChatClient("mission complete"),
+                    List.of(callback),
+                    false,
+                    null);
+
+            assertThat(response).isEqualTo("mission complete");
+            TraceRecord sentRecord = readRecords(session).stream()
+                    .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
+                    .filter(record -> record.frameType() == TraceFrameType.MODEL_CALL)
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(sentRecord.data()).isNotNull();
+            assertThat(sentRecord.data().get("system").asText())
+                    .isEqualTo("Execute the mission using only the visible YAML tools when needed.");
+            assertThat(sentRecord.data().get("user").asText()).isEqualTo("hello");
+            assertThat(sentRecord.data().get("toolCallbackCount").asInt()).isEqualTo(1);
+            assertThat(sentRecord.data().get("toolCallbackTypes").isArray()).isTrue();
+            assertThat(sentRecord.data().get("toolCallbackTypes")).hasSize(1);
+            assertThat(sentRecord.data().get("toolCallbackTypes").get(0).asText())
+                    .contains("ToolCallback");
         }
     }
 
@@ -104,13 +153,14 @@ class MissionExecutionEngineTest {
                     stateService,
                     Duration.ofMillis(25),
                     missionExecutor);
-            BifrostSession session = new BifrostSession("session-timeout", 2);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-timeout", 2);
             BlockingMissionChatClient chatClient = new BlockingMissionChatClient(interrupted);
 
             assertThatThrownBy(() -> engine.executeMission(
                     session,
                     "root.visible.skill",
                     "hello",
+                    EXECUTION_CONFIGURATION,
                     chatClient,
                     List.of(),
                     false,
@@ -119,6 +169,18 @@ class MissionExecutionEngineTest {
                     .hasMessageContaining("session-timeout")
                     .hasMessageContaining("root.visible.skill")
                     .hasMessageContaining("PT0.025S");
+            awaitInterrupted(interrupted);
+            awaitFramesCleared(session);
+
+            List<TraceRecord> records = readRecords(session);
+            assertThat(records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.FRAME_CLOSED)
+                    .count()).isEqualTo(1);
+            assertThat(records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.FRAME_CLOSED)
+                    .findFirst()
+                    .orElseThrow()
+                    .metadata()).containsEntry("status", "aborted");
         }
     }
 
@@ -134,13 +196,14 @@ class MissionExecutionEngineTest {
                     stateService,
                     Duration.ofMillis(25),
                     missionExecutor);
-            BifrostSession session = new BifrostSession("session-timeout", 2);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-timeout", 2);
             MissionChatClient chatClient = new MissionChatClient("mission complete");
 
             assertThatThrownBy(() -> engine.executeMission(
                     session,
                     "root.visible.skill",
                     "hello",
+                    EXECUTION_CONFIGURATION,
                     chatClient,
                     List.of(),
                     true,
@@ -154,12 +217,60 @@ class MissionExecutionEngineTest {
         }
     }
 
+    @Test
+    void recordsFailedModelFrameStatusWhenMissionCallThrows() {
+        PlanningService planningService = mock(PlanningService.class);
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofSeconds(5),
+                    missionExecutor);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-failure", 2);
+
+            assertThatThrownBy(() -> engine.executeMission(
+                    session,
+                    "root.visible.skill",
+                    "hello",
+                    EXECUTION_CONFIGURATION,
+                    new FailingMissionChatClient(),
+                    List.of(),
+                    false,
+                    null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("boom");
+
+            TraceRecord frameClosed = readRecords(session).stream()
+                    .filter(record -> record.recordType() == TraceRecordType.FRAME_CLOSED)
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(frameClosed.metadata()).containsEntry("status", "failed");
+            assertThat(frameClosed.metadata()).containsEntry("exceptionType", IllegalStateException.class.getName());
+        }
+    }
+
     private void awaitInterrupted(AtomicBoolean interrupted) {
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
         while (!interrupted.get() && System.nanoTime() < deadlineNanos) {
             Thread.onSpinWait();
         }
         assertThat(interrupted.get()).isTrue();
+    }
+
+    private void awaitFramesCleared(BifrostSession session) {
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (!session.getFramesSnapshot().isEmpty() && System.nanoTime() < deadlineNanos) {
+            Thread.onSpinWait();
+        }
+        assertThat(session.getFramesSnapshot()).isEmpty();
+    }
+
+    private static List<TraceRecord> readRecords(BifrostSession session) {
+        List<TraceRecord> records = new ArrayList<>();
+        session.readTraceRecords(records::add);
+        return records;
     }
 
     private static final class MissionChatClient extends SimpleChatClient {
@@ -365,6 +476,141 @@ class MissionExecutionEngineTest {
         }
     }
 
+    private static final class FailingMissionChatClient extends SimpleChatClient {
+
+        private FailingMissionChatClient() {
+            super(null, "unused");
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt() {
+            return new FailingRequestSpec();
+        }
+
+        private static final class FailingRequestSpec implements ChatClientRequestSpec {
+
+            @Override
+            public Builder mutate() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(java.util.function.Consumer<AdvisorSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(org.springframework.ai.chat.client.advisor.api.Advisor... advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(List<org.springframework.ai.chat.client.advisor.api.Advisor> advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(org.springframework.ai.chat.messages.Message... messages) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(List<org.springframework.ai.chat.messages.Message> messages) {
+                return this;
+            }
+
+            @Override
+            public <T extends org.springframework.ai.chat.prompt.ChatOptions> ChatClientRequestSpec options(T options) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolNames(String... toolNames) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec tools(Object... tools) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(ToolCallback... toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(List<ToolCallback> toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallbackProvider... providers) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolContext(java.util.Map<String, Object> toolContext) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(java.util.function.Consumer<PromptSystemSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec templateRenderer(org.springframework.ai.template.TemplateRenderer renderer) {
+                return this;
+            }
+
+            @Override
+            public CallResponseSpec call() {
+                throw new IllegalStateException("boom");
+            }
+
+            @Override
+            public StreamResponseSpec stream() {
+                throw new UnsupportedOperationException();
+            }
+        }
+    }
+
     private static final class BlockingPlanningService implements PlanningService {
 
         private final AtomicBoolean interrupted;
@@ -377,6 +623,7 @@ class MissionExecutionEngineTest {
         public java.util.Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                                 String objective,
                                                                 String capabilityName,
+                                                                EffectiveSkillExecutionConfiguration executionConfiguration,
                                                                 org.springframework.ai.chat.client.ChatClient chatClient,
                                                                 List<ToolCallback> visibleTools) {
             try {

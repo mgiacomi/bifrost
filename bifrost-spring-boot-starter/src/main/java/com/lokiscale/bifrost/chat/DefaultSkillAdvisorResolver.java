@@ -1,5 +1,7 @@
 package com.lokiscale.bifrost.chat;
 
+import com.lokiscale.bifrost.core.AdvisorTraceRecorder;
+import com.lokiscale.bifrost.core.AdvisorTraceFact;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
@@ -39,6 +41,28 @@ public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver {
     public List<Advisor> resolve(YamlSkillDefinition definition) {
         Objects.requireNonNull(definition, "definition must not be null");
         List<Advisor> advisors = new ArrayList<>();
+        AdvisorTraceRecorder advisorTraceRecorder = fact -> {
+            if (fact == null) {
+                return;
+            }
+            com.lokiscale.bifrost.core.AdvisorTraceContext context = fact.context();
+            java.util.Map<String, Object> payload = mutationPayload(fact);
+            if (payload.isEmpty()) {
+                payload = java.util.Map.of("kind", fact.kind().name().toLowerCase(java.util.Locale.ROOT));
+            }
+            BifrostSession session;
+            try {
+                session = BifrostSession.getCurrentSession();
+            }
+            catch (IllegalStateException ignored) {
+                return;
+            }
+            if (fact.direction() == AdvisorTraceFact.Direction.REQUEST) {
+                executionStateService.recordAdvisorRequestMutation(session, context, payload);
+            } else {
+                executionStateService.recordAdvisorResponseMutation(session, context, payload);
+            }
+        };
 
         if (definition.outputSchema() != null) {
             advisors.add(new OutputSchemaCallAdvisor(
@@ -47,7 +71,8 @@ public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver {
                     outputSchemaValidator,
                     outputSchemaPromptAugmentor,
                     definition.outputSchemaMaxRetries(),
-                    outcome -> executionStateService.recordOutputSchemaOutcome(BifrostSession.getCurrentSession(), outcome)));
+                    outcome -> executionStateService.recordOutputSchemaOutcome(BifrostSession.getCurrentSession(), outcome),
+                    advisorTraceRecorder));
         }
 
         YamlSkillManifest.LinterManifest linter = definition.linter();
@@ -62,8 +87,16 @@ public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver {
                     Pattern.compile(linter.getRegex().getPattern()),
                     detail,
                     linter.getMaxRetries(),
-                    outcome -> executionStateService.recordLinterOutcome(BifrostSession.getCurrentSession(), outcome)));
+                    outcome -> executionStateService.recordLinterOutcome(BifrostSession.getCurrentSession(), outcome),
+                    advisorTraceRecorder));
         }
         return List.copyOf(advisors);
+    }
+
+    private java.util.Map<String, Object> mutationPayload(AdvisorTraceFact fact) {
+        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("kind", fact.kind().name().toLowerCase(java.util.Locale.ROOT));
+        payload.putAll(fact.attributes());
+        return java.util.Map.copyOf(payload);
     }
 }

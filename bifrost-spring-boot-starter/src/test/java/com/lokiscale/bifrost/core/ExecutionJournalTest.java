@@ -38,13 +38,21 @@ class ExecutionJournalTest {
 
     @Test
     void roundTripsExecutionJournalThroughJackson() throws Exception {
-        ExecutionJournal journal = new ExecutionJournal();
-        journal.append(Instant.parse("2026-03-15T12:00:00Z"), JournalLevel.INFO, JournalEntryType.THOUGHT, "draft plan");
-        journal.append(
-                Instant.parse("2026-03-15T12:00:01Z"),
-                JournalLevel.INFO,
-                JournalEntryType.TOOL_CALL,
-                Map.of("route", "tool.run", "arguments", Map.of("id", 42)));
+        ExecutionJournal journal = new ExecutionJournal(List.of(
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.THOUGHT,
+                        OBJECT_MAPPER.getNodeFactory().textNode("draft plan"),
+                        null,
+                        null),
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:01Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.TOOL_CALL,
+                        OBJECT_MAPPER.valueToTree(Map.of("route", "tool.run", "arguments", Map.of("id", 42))),
+                        "frame-1",
+                        "tool.run")));
 
         String json = OBJECT_MAPPER.writeValueAsString(journal);
         ExecutionJournal restored = OBJECT_MAPPER.readValue(json, ExecutionJournal.class);
@@ -53,16 +61,15 @@ class ExecutionJournalTest {
     }
 
     @Test
-    void executionJournalAppendsRetainFrameContext() {
-        ExecutionJournal journal = new ExecutionJournal();
-
-        journal.append(
-                Instant.parse("2026-03-15T12:00:00Z"),
-                JournalLevel.INFO,
-                JournalEntryType.THOUGHT,
-                "draft plan",
-                "frame-1",
-                "route.one");
+    void preservesFrameContextFromProjectedEntries() {
+        ExecutionJournal journal = new ExecutionJournal(List.of(
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.THOUGHT,
+                        OBJECT_MAPPER.getNodeFactory().textNode("draft plan"),
+                        "frame-1",
+                        "route.one")));
 
         assertThat(journal.getEntriesSnapshot()).singleElement().satisfies(entry -> {
             assertThat(entry.frameId()).isEqualTo("frame-1");
@@ -73,14 +80,21 @@ class ExecutionJournalTest {
 
     @Test
     void supportsStructuredPayloadsWithoutCustomFixtureTypes() {
-        ExecutionJournal journal = new ExecutionJournal();
-
-        journal.append(Instant.parse("2026-03-15T12:00:00Z"), JournalLevel.INFO, JournalEntryType.THOUGHT, "draft plan");
-        journal.append(
-                Instant.parse("2026-03-15T12:00:01Z"),
-                JournalLevel.INFO,
-                JournalEntryType.TOOL_RESULT,
-                Map.of("status", "ok", "result", Map.of("count", 2)));
+        ExecutionJournal journal = new ExecutionJournal(List.of(
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.THOUGHT,
+                        OBJECT_MAPPER.getNodeFactory().textNode("draft plan"),
+                        null,
+                        null),
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:01Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.TOOL_RESULT,
+                        OBJECT_MAPPER.valueToTree(Map.of("status", "ok", "result", Map.of("count", 2))),
+                        null,
+                        null)));
 
         assertThat(journal.getEntriesSnapshot().get(0).payload().isTextual()).isTrue();
         assertThat(journal.getEntriesSnapshot().get(0).payload().textValue()).isEqualTo("draft plan");
@@ -91,7 +105,6 @@ class ExecutionJournalTest {
 
     @Test
     void serializesPlanSpecificJournalEntryTypesWithStructuredPayloads() {
-        ExecutionJournal journal = new ExecutionJournal();
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
                 "root.visible.skill",
@@ -99,9 +112,21 @@ class ExecutionJournalTest {
                 List.of(
                         new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null),
                         new PlanTask("task-2", "Execute", PlanTaskStatus.IN_PROGRESS, "started")));
-
-        journal.append(Instant.parse("2026-03-15T12:00:00Z"), JournalLevel.INFO, JournalEntryType.PLAN_CREATED, plan);
-        journal.append(Instant.parse("2026-03-15T12:00:01Z"), JournalLevel.INFO, JournalEntryType.PLAN_UPDATED, plan);
+        ExecutionJournal journal = new ExecutionJournal(List.of(
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.PLAN_CREATED,
+                        OBJECT_MAPPER.valueToTree(plan),
+                        null,
+                        null),
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:01Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.PLAN_UPDATED,
+                        OBJECT_MAPPER.valueToTree(plan),
+                        null,
+                        null)));
 
         assertThat(journal.getEntriesSnapshot()).extracting(JournalEntry::type)
                 .containsExactly(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED);
@@ -113,7 +138,6 @@ class ExecutionJournalTest {
 
     @Test
     void serializesLinterOutcomesWithStableStructuredFields() {
-        ExecutionJournal journal = new ExecutionJournal();
         LinterOutcome outcome = new LinterOutcome(
                 "linted.skill",
                 "regex",
@@ -122,8 +146,14 @@ class ExecutionJournalTest {
                 2,
                 LinterOutcomeStatus.EXHAUSTED,
                 "Return fenced YAML only.");
-
-        journal.append(Instant.parse("2026-03-15T12:00:00Z"), JournalLevel.INFO, JournalEntryType.LINTER, outcome);
+        ExecutionJournal journal = new ExecutionJournal(List.of(
+                new JournalEntry(
+                        Instant.parse("2026-03-15T12:00:00Z"),
+                        JournalLevel.INFO,
+                        JournalEntryType.LINTER,
+                        OBJECT_MAPPER.valueToTree(outcome),
+                        null,
+                        null)));
 
         assertThat(journal.getEntriesSnapshot().getFirst().payload().get("retryCount").intValue()).isEqualTo(2);
         assertThat(journal.getEntriesSnapshot().getFirst().payload().get("status").textValue()).isEqualTo("EXHAUSTED");

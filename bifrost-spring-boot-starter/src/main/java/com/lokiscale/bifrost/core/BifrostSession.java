@@ -1,15 +1,19 @@
 package com.lokiscale.bifrost.core;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
+import com.lokiscale.bifrost.runtime.trace.DefaultExecutionTraceHandle;
+import com.lokiscale.bifrost.runtime.trace.ExecutionJournalProjector;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
-import java.time.Instant;
+import java.io.IOException;
+import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
@@ -19,11 +23,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class BifrostSession {
 
-    private static final SkillThoughtMapper SKILL_THOUGHT_MAPPER = new SkillThoughtMapper();
+    private static final Clock DEFAULT_CLOCK = Clock.systemUTC();
 
     private final String sessionId;
     private final int maxDepth;
@@ -33,7 +39,12 @@ public final class BifrostSession {
     private final Deque<ExecutionFrame> frames;
     @JsonIgnore
     private final Map<String, Integer> toolActivityCountByFrameId;
-    private final ExecutionJournal executionJournal;
+    @JsonIgnore
+    private final @Nullable ExecutionTraceHandle executionTraceHandle;
+    @JsonIgnore
+    private final ExecutionJournalProjector journalProjector;
+    @JsonIgnore
+    private ExecutionJournal finalizedExecutionJournal;
     private ExecutionPlan executionPlan;
     private LinterOutcome lastLinterOutcome;
     private OutputSchemaOutcome lastOutputSchemaOutcome;
@@ -45,41 +56,44 @@ public final class BifrostSession {
         this(UUID.randomUUID().toString(), maxDepth);
     }
 
-    public BifrostSession(String sessionId, int maxDepth) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, null, null);
+    BifrostSession(String sessionId, int maxDepth) {
+        this(sessionId, maxDepth, List.of(), null, null, null, null, null, TracePersistencePolicy.ONERROR, DEFAULT_CLOCK);
     }
 
     public BifrostSession(int maxDepth, @Nullable Authentication authentication) {
-        this(UUID.randomUUID().toString(), maxDepth, List.of(), new ExecutionJournal(), null, null, null, null, authentication);
+        this(UUID.randomUUID().toString(), maxDepth, List.of(), null, null, null, null, authentication, TracePersistencePolicy.ONERROR, DEFAULT_CLOCK);
     }
 
-    public BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication) {
-        this(sessionId, maxDepth, List.of(), new ExecutionJournal(), null, null, null, null, authentication);
+    BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication) {
+        this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, TracePersistencePolicy.ONERROR, DEFAULT_CLOCK);
     }
 
-    @JsonCreator
-    public BifrostSession(
-            @JsonProperty("sessionId") String sessionId,
-            @JsonProperty("maxDepth") int maxDepth,
-            @JsonProperty("frames") List<ExecutionFrame> frames,
-            @JsonProperty("executionJournal") ExecutionJournal executionJournal,
-            @JsonProperty("executionPlan") ExecutionPlan executionPlan,
-            @JsonProperty("lastLinterOutcome") LinterOutcome lastLinterOutcome,
-            @JsonProperty("lastOutputSchemaOutcome") OutputSchemaOutcome lastOutputSchemaOutcome,
-            @JsonProperty("sessionUsage") SessionUsageSnapshot sessionUsage) {
-        this(sessionId, maxDepth, frames, executionJournal, executionPlan, lastLinterOutcome, lastOutputSchemaOutcome, sessionUsage, null);
+    BifrostSession(String sessionId,
+                   int maxDepth,
+                   @Nullable Authentication authentication,
+                   TracePersistencePolicy persistencePolicy) {
+        this(sessionId, maxDepth, authentication, persistencePolicy, DEFAULT_CLOCK);
     }
 
-    public BifrostSession(
+    BifrostSession(String sessionId,
+                   int maxDepth,
+                   @Nullable Authentication authentication,
+                   TracePersistencePolicy persistencePolicy,
+                   Clock clock) {
+        this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, persistencePolicy, clock);
+    }
+
+    BifrostSession(
             String sessionId,
             int maxDepth,
             List<ExecutionFrame> frames,
-            ExecutionJournal executionJournal,
             ExecutionPlan executionPlan,
             @Nullable LinterOutcome lastLinterOutcome,
             @Nullable OutputSchemaOutcome lastOutputSchemaOutcome,
             @Nullable SessionUsageSnapshot sessionUsage,
-            @Nullable Authentication authentication) {
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock) {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         if (maxDepth <= 0) {
             throw new IllegalArgumentException("maxDepth must be greater than zero");
@@ -88,7 +102,10 @@ public final class BifrostSession {
         this.lock = new ReentrantLock();
         this.frames = new ArrayDeque<>(frames == null ? List.of() : List.copyOf(frames));
         this.toolActivityCountByFrameId = new HashMap<>();
-        this.executionJournal = executionJournal == null ? new ExecutionJournal() : executionJournal;
+        // The runtime supports one session lifecycle: a live in-process session with a canonical trace handle.
+        this.journalProjector = new ExecutionJournalProjector();
+        this.executionTraceHandle = new DefaultExecutionTraceHandle(sessionId, persistencePolicy, clock);
+        this.finalizedExecutionJournal = null;
         this.executionPlan = executionPlan;
         this.lastLinterOutcome = lastLinterOutcome;
         this.lastOutputSchemaOutcome = lastOutputSchemaOutcome;
@@ -102,52 +119,6 @@ public final class BifrostSession {
 
     public int getMaxDepth() {
         return maxDepth;
-    }
-
-    public void logThought(Instant timestamp, Object payload) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.THOUGHT, payload);
-    }
-
-    public void logToolExecution(Instant timestamp, Object payload) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.TOOL_CALL, payload);
-    }
-
-    public void logUnplannedToolExecution(Instant timestamp, TaskExecutionEvent event) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.UNPLANNED_TOOL_EXECUTION, event);
-    }
-
-    public void logToolResult(Instant timestamp, Object payload) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.TOOL_RESULT, payload);
-    }
-
-    public void logPlanCreated(Instant timestamp, ExecutionPlan plan) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.PLAN_CREATED, plan);
-    }
-
-    public void logPlanUpdated(Instant timestamp, ExecutionPlan plan) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.PLAN_UPDATED, plan);
-    }
-
-    public void logLinterOutcome(Instant timestamp, LinterOutcome outcome) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.LINTER, outcome);
-    }
-
-    public void logOutputSchemaOutcome(Instant timestamp, OutputSchemaOutcome outcome) {
-        appendJournalEntry(timestamp, JournalLevel.INFO, JournalEntryType.OUTPUT_SCHEMA, outcome);
-    }
-
-    public void logError(Instant timestamp, Object payload) {
-        appendJournalEntry(timestamp, JournalLevel.ERROR, JournalEntryType.ERROR, payload);
-    }
-
-    public SkillThoughtTrace getSkillThoughts(String route) {
-        String normalizedRoute = requireNonBlank(route, "route");
-        lock.lock();
-        try {
-            return SKILL_THOUGHT_MAPPER.toTrace(normalizedRoute, executionJournal.getEntriesSnapshot());
-        } finally {
-            lock.unlock();
-        }
     }
 
     public Optional<ExecutionPlan> getExecutionPlan() {
@@ -249,7 +220,7 @@ public final class BifrostSession {
         Objects.requireNonNull(frame, "frame must not be null");
         lock.lock();
         try {
-            if (frames.size() >= maxDepth) {
+            if (countsTowardMaxDepth(frame) && currentMaxDepthUsage() >= maxDepth) {
                 throw new BifrostStackOverflowException(sessionId, maxDepth, frame.route());
             }
             frames.push(frame);
@@ -296,19 +267,40 @@ public final class BifrostSession {
 
     @JsonIgnore
     public List<JournalEntry> getJournalSnapshot() {
+        return getExecutionJournal().getEntriesSnapshot();
+    }
+
+    @JsonProperty("executionTrace")
+    public ExecutionTrace getExecutionTrace() {
         lock.lock();
         try {
-            return executionJournal.getEntriesSnapshot();
+            return requireExecutionTraceHandle().snapshot();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @JsonIgnore
+    public ExecutionJournal getExecutionJournal() {
+        lock.lock();
+        try {
+            if (finalizedExecutionJournal != null) {
+                return finalizedExecutionJournal;
+            }
+            return journalProjector.project(requireExecutionTraceHandle());
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to project execution journal for session '" + sessionId + "'", ex);
         } finally {
             lock.unlock();
         }
     }
 
     @JsonProperty("executionJournal")
-    public ExecutionJournal getExecutionJournal() {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public ExecutionJournal getSerializedExecutionJournal() {
         lock.lock();
         try {
-            return new ExecutionJournal(executionJournal.getEntriesSnapshot());
+            return finalizedExecutionJournal != null ? finalizedExecutionJournal : getExecutionJournal();
         } finally {
             lock.unlock();
         }
@@ -396,7 +388,7 @@ public final class BifrostSession {
             if (frames.isEmpty()) {
                 return;
             }
-            toolActivityCountByFrameId.merge(frames.peek().frameId(), 1, (current, increment) -> current + increment);
+            toolActivityCountByFrameId.merge(frames.peek().frameId(), 1, Integer::sum);
         } finally {
             lock.unlock();
         }
@@ -415,17 +407,96 @@ public final class BifrostSession {
         }
     }
 
-    private void appendJournalEntry(Instant timestamp, JournalLevel level, JournalEntryType type, Object payload) {
+    public void markTraceErrored() {
         lock.lock();
         try {
+            requireExecutionTraceHandle().markErrored();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void finalizeTrace(Map<String, Object> metadata) {
+        lock.lock();
+        ExecutionJournal projectedJournal = null;
+        IOException projectionFailure = null;
+        IOException finalizationFailure = null;
+        try {
+            ExecutionTraceHandle handle = requireExecutionTraceHandle();
+            if (handle.snapshot().completed() && finalizedExecutionJournal != null) {
+                return;
+            }
+            try {
+                projectedJournal = journalProjector.project(handle);
+            }
+            catch (IOException ex) {
+                projectionFailure = ex;
+            }
+            try {
+                handle.finalizeTrace(metadata == null ? Map.of() : Map.copyOf(metadata));
+            }
+            catch (IOException ex) {
+                finalizationFailure = ex;
+            }
+            if (finalizationFailure == null && projectionFailure == null && projectedJournal != null) {
+                finalizedExecutionJournal = projectedJournal;
+            }
+        } finally {
+            lock.unlock();
+        }
+        if (finalizationFailure != null) {
+            if (projectionFailure != null) {
+                finalizationFailure.addSuppressed(projectionFailure);
+            }
+            throw new IllegalStateException("Failed to finalize execution trace for session '" + sessionId + "'", finalizationFailure);
+        }
+        if (projectionFailure != null) {
+            throw new IllegalStateException("Failed to finalize execution trace for session '" + sessionId + "'", projectionFailure);
+        }
+    }
+
+    public void readTraceRecords(Consumer<TraceRecord> consumer) {
+        Objects.requireNonNull(consumer, "consumer must not be null");
+        lock.lock();
+        try {
+            requireExecutionTraceHandle().readRecords(consumer);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read execution trace for session '" + sessionId + "'", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    void appendTraceRecord(TraceRecordType type, Map<String, Object> metadata, Object payload) {
+        appendTrace(type, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
+    }
+
+    void appendTraceRecord(TraceRecordType type, ExecutionFrame frame, Map<String, Object> metadata, Object payload) {
+        Objects.requireNonNull(frame, "frame must not be null");
+        lock.lock();
+        try {
+            ExecutionTraceHandle handle = requireExecutionTraceHandle();
+            handle.append(type, frame, frame.traceFrameType(), metadata == null ? Map.of() : Map.copyOf(metadata), payload);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to append execution trace record for session '" + sessionId + "'", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void appendTrace(TraceRecordType type, Map<String, Object> metadata, Object payload) {
+        lock.lock();
+        try {
+            ExecutionTraceHandle handle = requireExecutionTraceHandle();
             ExecutionFrame activeFrame = frames.peek();
-            executionJournal.append(
-                    timestamp,
-                    level,
-                    type,
-                    payload,
-                    activeFrame == null ? null : activeFrame.frameId(),
-                    activeFrame == null ? null : activeFrame.route());
+            TraceFrameType frameType = activeFrame == null ? null : activeFrame.traceFrameType();
+            if (activeFrame == null) {
+                handle.append(type, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
+            } else {
+                handle.append(type, activeFrame, frameType, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to append execution trace record for session '" + sessionId + "'", ex);
         } finally {
             lock.unlock();
         }
@@ -437,5 +508,29 @@ public final class BifrostSession {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
+    }
+
+    private int currentMaxDepthUsage() {
+        int depth = 0;
+        for (ExecutionFrame frame : frames) {
+            if (countsTowardMaxDepth(frame)) {
+                depth++;
+            }
+        }
+        return depth;
+    }
+
+    private static boolean countsTowardMaxDepth(ExecutionFrame frame) {
+        return frame != null && switch (frame.traceFrameType()) {
+            case MODEL_CALL, PLANNING, TOOL_INVOCATION -> false;
+            default -> true;
+        };
+    }
+
+    private ExecutionTraceHandle requireExecutionTraceHandle() {
+        if (executionTraceHandle == null) {
+            throw new IllegalStateException("BifrostSession requires a live execution trace handle");
+        }
+        return executionTraceHandle;
     }
 }

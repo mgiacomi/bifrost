@@ -3,7 +3,10 @@ package com.lokiscale.bifrost.runtime.tool;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
+import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
+import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.ToolTraceContext;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
@@ -81,19 +84,26 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
         sessionUsageService.recordToolCall(session, currentSkillName, capability.name());
         var startedPlan = planningService.markToolStarted(session, capability, safeArguments);
         String linkedTaskId = startedPlan.flatMap(plan -> plan.activeTask().map(task -> task.taskId())).orElse(null);
-        if (linkedTaskId == null) {
-            executionStateService.logUnplannedToolCall(session, TaskExecutionEvent.unlinked(
-                    capability.name(),
-                    Map.of("arguments", safeArguments),
-                    "No unique ready task matched this tool call"));
-        } else {
-            executionStateService.logToolCall(session, TaskExecutionEvent.linked(
-                    capability.name(),
-                    linkedTaskId,
-                    Map.of("arguments", safeArguments),
-                    null));
-        }
+        ExecutionFrame toolFrame = executionStateService.openFrame(
+                session,
+                TraceFrameType.TOOL_INVOCATION,
+                capability.name(),
+                toolFrameParameters(safeArguments, linkedTaskId));
+        String toolFrameStatus = "completed";
+        Throwable toolFailure = null;
         try {
+            if (linkedTaskId == null) {
+                executionStateService.logUnplannedToolCall(session, TaskExecutionEvent.unlinked(
+                        capability.name(),
+                        Map.of("arguments", safeArguments),
+                        "No unique ready task matched this tool call"));
+            } else {
+                executionStateService.logToolCall(session, TaskExecutionEvent.linked(
+                        capability.name(),
+                        linkedTaskId,
+                        Map.of("arguments", safeArguments),
+                        null));
+            }
             Object result = capabilityExecutionRouter.execute(capability, safeArguments, session, authentication);
             if (linkedTaskId != null) {
                 planningService.markToolCompleted(session, linkedTaskId, capability.name(), result);
@@ -104,17 +114,60 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                     : TaskExecutionEvent.linked(capability.name(), linkedTaskId, Map.of("result", result), null));
             return result;
         } catch (RuntimeException ex) {
+            toolFailure = ex;
+            toolFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
             if (linkedTaskId != null) {
                 planningService.markToolFailed(session, linkedTaskId, capability.name(), ex);
             }
             usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "failure");
-            executionStateService.logError(session, Map.of(
-                    "tool", capability.name(),
-                    "linkedTaskId", linkedTaskId,
-                    "message", ex.getMessage(),
-                    "exceptionType", ex.getClass().getSimpleName()));
+            java.util.LinkedHashMap<String, Object> failureMetadata = new java.util.LinkedHashMap<>();
+            failureMetadata.put("capabilityName", capability.name());
+            if (linkedTaskId != null) {
+                failureMetadata.put("linkedTaskId", linkedTaskId);
+            }
+            if (ex.getMessage() != null) {
+                failureMetadata.put("message", ex.getMessage());
+            }
+            failureMetadata.put("exceptionType", ex.getClass().getName());
+            executionStateService.logToolFailure(
+                    session,
+                    new ToolTraceContext(capability.name(), linkedTaskId, linkedTaskId == null),
+                    Map.of("arguments", safeArguments, "failure", failureMetadata));
+            java.util.LinkedHashMap<String, Object> errorPayload = new java.util.LinkedHashMap<>();
+            errorPayload.put("tool", capability.name());
+            if (linkedTaskId != null) {
+                errorPayload.put("linkedTaskId", linkedTaskId);
+            }
+            if (ex.getMessage() != null) {
+                errorPayload.put("message", ex.getMessage());
+            }
+            errorPayload.put("exceptionType", ex.getClass().getName());
+            executionStateService.logError(session, errorPayload);
             throw ex;
+        } finally {
+            executionStateService.closeFrame(session, toolFrame, closeMetadata(toolFrameStatus, toolFailure));
         }
+    }
+
+    private Map<String, Object> toolFrameParameters(Map<String, Object> arguments, @Nullable String linkedTaskId) {
+        java.util.LinkedHashMap<String, Object> parameters = new java.util.LinkedHashMap<>();
+        parameters.put("arguments", arguments);
+        if (linkedTaskId != null) {
+            parameters.put("linkedTaskId", linkedTaskId);
+        }
+        return parameters;
+    }
+
+    private Map<String, Object> closeMetadata(String status, @Nullable Throwable failure) {
+        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("status", Thread.currentThread().isInterrupted() ? "aborted" : status);
+        if (failure != null) {
+            metadata.put("exceptionType", failure.getClass().getName());
+            if (failure.getMessage() != null && !failure.getMessage().isBlank()) {
+                metadata.put("message", failure.getMessage());
+            }
+        }
+        return metadata;
     }
 
     private String currentSkillName(BifrostSession session) {

@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.OperationType;
+import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import com.lokiscale.bifrost.runtime.BifrostQuotaExceededException;
@@ -20,7 +21,7 @@ class SessionUsageServiceTest {
     @Test
     void throwsWhenModelCallQuotaExceeded() {
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 10, 1, 100), new NoOpUsageMetricsRecorder());
-        BifrostSession session = new BifrostSession("session-1", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 3);
 
         service.recordMissionStart(session, "root.skill");
         service.recordModelResponse(session, "root.skill", new ModelUsageRecord(1, 2, 3, UsagePrecision.EXACT, null));
@@ -34,7 +35,7 @@ class SessionUsageServiceTest {
     @Test
     void throwsWhenToolInvocationQuotaExceeded() {
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 1, 10, 10, 100), new NoOpUsageMetricsRecorder());
-        BifrostSession session = new BifrostSession("session-2", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-2", 3);
 
         service.recordToolCall(session, "root.skill", "tool.one");
 
@@ -47,7 +48,7 @@ class SessionUsageServiceTest {
     @Test
     void throwsWhenLinterRetryQuotaExceeded() {
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 1, 10, 100), new NoOpUsageMetricsRecorder());
-        BifrostSession session = new BifrostSession("session-3", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-3", 3);
 
         service.recordLinterOutcome(session, outcome(LinterOutcomeStatus.RETRYING, 0, 1));
 
@@ -60,7 +61,7 @@ class SessionUsageServiceTest {
     @Test
     void snapshotsAccumulatedUsage() {
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 10, 10, 100), new NoOpUsageMetricsRecorder());
-        BifrostSession session = new BifrostSession("session-4", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-4", 3);
 
         service.recordMissionStart(session, "root.skill");
         service.recordToolCall(session, "root.skill", "tool.one");
@@ -73,7 +74,7 @@ class SessionUsageServiceTest {
     @Test
     void doesNotEnforceDisabledQuotas() {
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(0, 0, 0, 0, 0), new NoOpUsageMetricsRecorder());
-        BifrostSession session = new BifrostSession("session-5", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-5", 3);
 
         service.recordMissionStart(session, "root.skill");
         service.recordMissionStart(session, "root.skill");
@@ -91,8 +92,8 @@ class SessionUsageServiceTest {
     void recordsToolAccuracyFromTerminalLinterOutcomeForCurrentFrame() {
         RecordingUsageMetricsRecorder recorder = new RecordingUsageMetricsRecorder();
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 10, 10, 100), recorder);
-        BifrostSession session = new BifrostSession("session-6", 3);
-        session.pushFrame(new ExecutionFrame("frame-1", null, OperationType.SKILL, "root.skill", Map.of(), Instant.now()));
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-6", 3);
+        session.pushFrame(new ExecutionFrame("frame-1", null, OperationType.SKILL, TraceFrameType.SKILL_EXECUTION, "root.skill", Map.of(), Instant.now()));
 
         service.recordToolCall(session, "root.skill", "tool.one");
         service.recordLinterOutcome(session, outcome(LinterOutcomeStatus.RETRYING, 0, 1));
@@ -105,8 +106,8 @@ class SessionUsageServiceTest {
     void recordsToolAccuracyForEachToolInvocationInCurrentFrame() {
         RecordingUsageMetricsRecorder recorder = new RecordingUsageMetricsRecorder();
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 10, 10, 100), recorder);
-        BifrostSession session = new BifrostSession("session-6b", 3);
-        session.pushFrame(new ExecutionFrame("frame-1", null, OperationType.SKILL, "root.skill", Map.of(), Instant.now()));
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-6b", 3);
+        session.pushFrame(new ExecutionFrame("frame-1", null, OperationType.SKILL, TraceFrameType.SKILL_EXECUTION, "root.skill", Map.of(), Instant.now()));
 
         service.recordToolCall(session, "root.skill", "tool.one");
         service.recordToolCall(session, "root.skill", "tool.two");
@@ -120,8 +121,8 @@ class SessionUsageServiceTest {
     void doesNotRecordToolAccuracyWithoutToolActivityForCurrentFrame() {
         RecordingUsageMetricsRecorder recorder = new RecordingUsageMetricsRecorder();
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 10, 10, 100), recorder);
-        BifrostSession session = new BifrostSession("session-7", 3);
-        session.pushFrame(new ExecutionFrame("frame-1", null, OperationType.SKILL, "root.skill", Map.of(), Instant.now()));
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-7", 3);
+        session.pushFrame(new ExecutionFrame("frame-1", null, OperationType.SKILL, TraceFrameType.SKILL_EXECUTION, "root.skill", Map.of(), Instant.now()));
 
         service.recordLinterOutcome(session, outcome(LinterOutcomeStatus.PASSED, 0, 1));
 

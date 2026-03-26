@@ -6,7 +6,6 @@ import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.ExecutionJournal;
-import com.lokiscale.bifrost.core.SkillThoughtTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -19,7 +18,6 @@ import org.springframework.util.FileCopyUtils;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -66,29 +64,26 @@ public class SampleController {
 
     @GetMapping(value = "/debug/bifrost/sessions/{sessionId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Object getTrackedSession(@PathVariable String sessionId,
-                                    @RequestParam(defaultValue = "invoiceParser") String route) {
+                                    @RequestParam(defaultValue = "false") boolean includeJournal) {
         BifrostSession session = requireTrackedSession(sessionId);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("sessionId", session.getSessionId());
         response.put("status", activeSessions.containsKey(sessionId) ? "active" : "recent");
         response.put("frames", session.getFramesSnapshot());
+        response.put("executionTrace", session.getExecutionTrace());
         response.put("executionPlan", session.getExecutionPlanSnapshot());
         response.put("lastLinterOutcome", session.getLastLinterOutcomeSnapshot());
         response.put("lastOutputSchemaOutcome", session.getLastOutputSchemaOutcomeSnapshot());
         response.put("sessionUsage", session.getSessionUsageSnapshot());
-        response.put("thoughts", session.getSkillThoughts(route));
+        if (includeJournal) {
+            response.put("executionJournal", session.getExecutionJournal());
+        }
         return response;
     }
 
     @GetMapping(value = "/debug/bifrost/sessions/{sessionId}/journal", produces = MediaType.APPLICATION_JSON_VALUE)
     public ExecutionJournal getTrackedSessionJournal(@PathVariable String sessionId) {
         return requireTrackedSession(sessionId).getExecutionJournal();
-    }
-
-    @GetMapping(value = "/debug/bifrost/sessions/{sessionId}/thoughts", produces = MediaType.APPLICATION_JSON_VALUE)
-    public SkillThoughtTrace getTrackedSessionThoughts(@PathVariable String sessionId,
-                                                       @RequestParam(defaultValue = "invoiceParser") String route) {
-        return requireTrackedSession(sessionId).getSkillThoughts(route);
     }
 
     @GetMapping(value = "/invoice/parse", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -109,8 +104,6 @@ public class SampleController {
         return sessionRunner.callWithNewSession(session -> {
             activeSessions.put(session.getSessionId(), session);
             long startedAtNanos = System.nanoTime();
-            // Log the start of invoice parsing
-            session.logThought(Instant.now(), "Starting invoice parsing from file: " + filePath + " (text length: " + invoiceText.length() + ")");
             log.info("Starting invoiceParser sessionId={} filePath={} textLength={}",
                     session.getSessionId(),
                     filePath,
@@ -119,15 +112,14 @@ public class SampleController {
             try {
                 Object result = executionRouter.execute(metadata, Map.of("payload", invoiceText), session, null);
 
-                // Capture journal for debugging/monitoring
+                // Capture the canonical trace plus an optional journal projection for debugging.
                 ExecutionJournal journal = session.getExecutionJournal();
-                SkillThoughtTrace thoughts = session.getSkillThoughts("invoiceParser");
 
                 // Return result along with journal data
                 Map<String, Object> response = new HashMap<>();
-                response.put("result", result);
+                response.put("result", result); 
+                response.put("executionTrace", session.getExecutionTrace());
                 response.put("journal", journal);
-                response.put("thoughts", thoughts);
                 response.put("sessionId", session.getSessionId());
                 response.put("filePath", filePath);
 
@@ -139,7 +131,6 @@ public class SampleController {
                         journal.getEntriesSnapshot().size());
                 return response;
             } catch (RuntimeException ex) {
-                session.logError(Instant.now(), ex.getClass().getSimpleName() + ": " + ex.getMessage());
                 recentSessions.put(session.getSessionId(), session);
                 log.error("Failed invoiceParser sessionId={} filePath={} elapsedMs={}",
                         session.getSessionId(),

@@ -8,6 +8,7 @@ public enum JournalEntryType {
     OUTPUT_SCHEMA,
     TOOL_CALL,
     UNPLANNED_TOOL_EXECUTION,
+    TOOL_FAILURE,
     TOOL_RESULT,
     ERROR
 }

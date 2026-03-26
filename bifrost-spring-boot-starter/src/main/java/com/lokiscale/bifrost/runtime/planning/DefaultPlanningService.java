@@ -9,15 +9,20 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
+import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
+import com.lokiscale.bifrost.core.ModelTraceResult;
+import com.lokiscale.bifrost.core.ModelTraceContext;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
+import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
+import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -81,6 +86,7 @@ public class DefaultPlanningService implements PlanningService {
     public Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                   String objective,
                                                   String capabilityName,
+                                                  EffectiveSkillExecutionConfiguration executionConfiguration,
                                                   ChatClient chatClient,
                                                   List<ToolCallback> visibleTools) {
         Objects.requireNonNull(session, "session must not be null");
@@ -92,37 +98,102 @@ public class DefaultPlanningService implements PlanningService {
                 capabilityName,
                 chatClient.getClass().getName(),
                 visibleTools == null ? 0 : visibleTools.size());
-        ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                .system(PLANNING_PROMPT)
-                .user(objective)
-                .call();
-        ChatResponse chatResponse;
-        String planPayload;
-        try {
-            ChatClientResponse clientResponse = responseSpec.chatClientResponse();
-            chatResponse = clientResponse.chatResponse();
-            planPayload = extractContent(chatResponse);
-            log.debug(
-                    "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
-                    capabilityName,
-                    preview(planPayload));
-        }
-        catch (UnsupportedOperationException ignored) {
-            chatResponse = null;
-            planPayload = responseSpec.content();
-            log.debug(
-                    "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
-                    capabilityName,
-                    preview(planPayload));
-        }
-        ExecutionPlan plan = parsePlan(planPayload, capabilityName);
-        sessionUsageService.recordModelResponse(
+        ExecutionFrame planningFrame = executionStateService.openFrame(
                 session,
-                capabilityName,
-                modelUsageExtractor.extract(chatResponse, objective, PLANNING_PROMPT, stringifyPlan(plan)));
-        executionStateService.storePlan(session, plan);
-        executionStateService.logPlanCreated(session, plan);
-        return Optional.of(plan);
+                TraceFrameType.PLANNING,
+                capabilityName + "#planning",
+                Map.of(
+                        "provider", executionConfiguration.provider().name(),
+                        "providerModel", executionConfiguration.providerModel()));
+        String planningFrameStatus = "completed";
+        Throwable planningFailure = null;
+        try {
+            ExecutionFrame modelFrame = executionStateService.openFrame(
+                    session,
+                    TraceFrameType.MODEL_CALL,
+                    capabilityName + "#planning-model",
+                    Map.of(
+                            "provider", executionConfiguration.provider().name(),
+                            "providerModel", executionConfiguration.providerModel(),
+                            "segment", "planning"));
+            String modelFrameStatus = "completed";
+            Throwable modelFailure = null;
+            try {
+                ModelTraceContext modelTraceContext = new ModelTraceContext(
+                        executionConfiguration.provider().name(),
+                        executionConfiguration.providerModel(),
+                        capabilityName,
+                        "planning");
+                PlanningTraceResult planningResult = executionStateService.traceModelCall(
+                        session,
+                        modelFrame,
+                        modelTraceContext,
+                        Map.of(
+                                "system", PLANNING_PROMPT,
+                                "user", objective),
+                        markRequestSent -> {
+                            Map<String, Object> sentPayload = Map.of(
+                                    "system", PLANNING_PROMPT,
+                                    "user", objective);
+                            ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
+                                    .system(PLANNING_PROMPT)
+                                    .user(objective)
+                                    .call();
+                            markRequestSent.accept(sentPayload);
+                            ChatResponse chatResponse;
+                            String planPayload;
+                            try {
+                                ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+                                chatResponse = clientResponse.chatResponse();
+                                planPayload = extractContent(chatResponse);
+                                log.debug(
+                                        "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
+                                        capabilityName,
+                                        preview(planPayload));
+                            }
+                            catch (UnsupportedOperationException ignored) {
+                                chatResponse = null;
+                                planPayload = responseSpec.content();
+                                log.debug(
+                                        "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
+                                        capabilityName,
+                                        preview(planPayload));
+                            }
+                            ExecutionPlan plan = parsePlan(planPayload, capabilityName);
+                            return ModelTraceResult.of(
+                                    new PlanningTraceResult(plan, chatResponse),
+                                    Map.of("content", planPayload));
+                        });
+                ExecutionPlan plan = planningResult.plan();
+                sessionUsageService.recordModelResponse(
+                        session,
+                        capabilityName,
+                        modelUsageExtractor.extract(planningResult.chatResponse(), objective, PLANNING_PROMPT, stringifyPlan(plan)));
+                executionStateService.storePlan(session, plan);
+                executionStateService.logPlanCreated(session, plan);
+                return Optional.of(plan);
+            }
+            catch (RuntimeException ex) {
+                modelFailure = ex;
+                planningFailure = ex;
+                modelFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
+                planningFrameStatus = modelFrameStatus;
+                throw ex;
+            }
+            finally {
+                executionStateService.closeFrame(session, modelFrame, closeMetadata(modelFrameStatus, modelFailure));
+            }
+        }
+        catch (RuntimeException ex) {
+            if (planningFailure == null) {
+                planningFailure = ex;
+                planningFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
+            }
+            throw ex;
+        }
+        finally {
+            executionStateService.closeFrame(session, planningFrame, closeMetadata(planningFrameStatus, planningFailure));
+        }
     }
 
     @Override
@@ -152,10 +223,18 @@ public class DefaultPlanningService implements PlanningService {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(taskId, "taskId must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
-        return updatePlan(session, plan -> plan.findTask(taskId)
-                .map(task -> replacePlanTask(plan, taskId, current -> current.complete("Completed tool " + capabilityName))
-                        .clearActiveTask())
-                .orElse(plan))
+        return executionStateService.currentPlan(session)
+                .flatMap(plan -> plan.findTask(taskId)
+                        .map(task -> {
+                            ExecutionPlan updated = replacePlanTask(
+                                    plan,
+                                    taskId,
+                                    current -> current.complete("Completed tool " + capabilityName))
+                                    .clearActiveTask();
+                            executionStateService.storePlan(session, updated);
+                            executionStateService.logPlanUpdated(session, updated);
+                            return updated;
+                        }))
                 .filter(plan -> plan.findTask(taskId)
                         .map(task -> task.status() == PlanTaskStatus.COMPLETED)
                         .orElse(false));
@@ -170,10 +249,19 @@ public class DefaultPlanningService implements PlanningService {
         Objects.requireNonNull(taskId, "taskId must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
         Objects.requireNonNull(ex, "ex must not be null");
-        return updatePlan(session, plan -> replacePlanTask(plan, taskId,
-                current -> current.block("Tool " + capabilityName + " failed: " + ex.getClass().getSimpleName()))
-                .withStatus(PlanStatus.STALE)
-                .clearActiveTask());
+        return executionStateService.currentPlan(session)
+                .flatMap(plan -> plan.findTask(taskId)
+                        .map(task -> {
+                            ExecutionPlan updated = replacePlanTask(
+                                    plan,
+                                    taskId,
+                                    current -> current.block("Tool " + capabilityName + " failed: " + ex.getClass().getSimpleName()))
+                                    .withStatus(PlanStatus.STALE)
+                                    .clearActiveTask();
+                            executionStateService.storePlan(session, updated);
+                            executionStateService.logPlanUpdated(session, updated);
+                            return updated;
+                        }));
     }
 
     private Optional<ExecutionPlan> updatePlan(BifrostSession session,
@@ -184,6 +272,18 @@ public class DefaultPlanningService implements PlanningService {
             executionStateService.logPlanUpdated(session, updated);
             return updated;
         });
+    }
+
+    private Map<String, Object> closeMetadata(String status, @Nullable Throwable failure) {
+        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("status", Thread.currentThread().isInterrupted() ? "aborted" : status);
+        if (failure != null) {
+            metadata.put("exceptionType", failure.getClass().getName());
+            if (failure.getMessage() != null && !failure.getMessage().isBlank()) {
+                metadata.put("message", failure.getMessage());
+            }
+        }
+        return metadata;
     }
 
     private ExecutionPlan replacePlanTask(ExecutionPlan plan,
@@ -335,5 +435,8 @@ public class DefaultPlanningService implements PlanningService {
 
     private String stringifyPlan(ExecutionPlan plan) {
         return plan == null ? "" : plan.toString();
+    }
+
+    private record PlanningTraceResult(ExecutionPlan plan, @Nullable ChatResponse chatResponse) {
     }
 }

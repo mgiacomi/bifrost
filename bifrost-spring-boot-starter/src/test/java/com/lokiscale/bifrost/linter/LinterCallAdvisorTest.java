@@ -4,6 +4,9 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.JournalEntry;
 import com.lokiscale.bifrost.core.JournalEntryType;
+import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceRecord;
+import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -26,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LinterCallAdvisorTest {
 
@@ -118,9 +122,56 @@ class LinterCallAdvisorTest {
         });
     }
 
+    @Test
+    void recordsAdvisorMutationsOnTheActiveFrame() throws Exception {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        LinterCallAdvisor advisor = advisor(1, outcome ->
+                stateService.recordLinterOutcome(BifrostSession.getCurrentSession(), outcome));
+        RecordingChain chain = new RecordingChain(List.of("bad", "OK: corrected"));
+        BifrostSessionRunner runner = new BifrostSessionRunner(3);
+
+        runner.callWithNewSession(session -> {
+            var frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "linted.skill#model", Map.of());
+
+            advisor.adviseCall(request("Write YAML"), chain);
+
+            List<TraceRecord> records = readRecords(session);
+            assertThat(records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.ADVISOR_REQUEST_MUTATION_RECORDED)
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "linted.skill#model".equals(record.route())))
+                    .isTrue();
+            assertThat(records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.ADVISOR_RESPONSE_MUTATION_RECORDED)
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "linted.skill#model".equals(record.route())))
+                    .isTrue();
+
+            stateService.closeFrame(session, frame, Map.of("status", "completed"));
+            return session;
+        });
+    }
+
+    @Test
+    void rethrowsManagedSessionRecorderFailures() {
+        LinterCallAdvisor advisor = advisor(0, outcome -> {
+            throw new IllegalStateException("boom");
+        });
+        RecordingChain chain = new RecordingChain(List.of("bad-1"));
+        BifrostSessionRunner runner = new BifrostSessionRunner(3);
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session -> advisor.adviseCall(request("Write YAML"), chain)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("boom");
+    }
+
     private static LinterCallAdvisor advisor(int maxRetries) {
         return advisor(maxRetries, outcome -> {
         });
+    }
+
+    private static List<TraceRecord> readRecords(BifrostSession session) {
+        List<TraceRecord> records = new ArrayList<>();
+        session.readTraceRecords(records::add);
+        return records;
     }
 
     private static LinterCallAdvisor advisor(int maxRetries, LinterOutcomeRecorder outcomeRecorder) {

@@ -31,7 +31,7 @@ class VirtualFileSystemTest {
             }
         };
 
-        Resource resource = vfs.resolve(new BifrostSession("session-bridge", 2), "ref://artifacts/message.txt");
+        Resource resource = vfs.resolve(com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-bridge", 2), "ref://artifacts/message.txt");
 
         assertThat(readUtf8(resource)).isEqualTo("ref://artifacts/message.txt");
         assertThat(resolvedRef.get()).isEqualTo(new VfsRef("ref://artifacts/message.txt", "artifacts/message.txt"));
@@ -40,8 +40,8 @@ class VirtualFileSystemTest {
     @Test
     void isolatesRefsBySessionNamespace() throws Exception {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession first = new BifrostSession("session-1", 2);
-        BifrostSession second = new BifrostSession("session-2", 2);
+        BifrostSession first = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
+        BifrostSession second = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-2", 2);
 
         Path firstFile = vfs.sessionRoot(first).resolve("artifacts/message.txt");
         Files.createDirectories(firstFile.getParent());
@@ -57,7 +57,7 @@ class VirtualFileSystemTest {
     @Test
     void preservesRawBinaryBytesWithoutTextDecoding() throws Exception {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("session-binary", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-binary", 2);
 
         byte[] expected = new byte[]{0x00, 0x01, (byte) 0xFE, (byte) 0xFF, 0x41};
         Path binaryFile = vfs.sessionRoot(session).resolve("artifacts/payload.bin");
@@ -72,7 +72,7 @@ class VirtualFileSystemTest {
     @Test
     void rejectsRefsThatEscapeSessionNamespace() {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("session-escape", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-escape", 2);
 
         assertThatThrownBy(() -> vfs.resolve(session, "ref://../other-session/secret.txt"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -82,7 +82,7 @@ class VirtualFileSystemTest {
     @Test
     void rejectsInvalidOrMissingRefSyntax() {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("session-invalid", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid", 2);
 
         assertThatThrownBy(() -> vfs.resolve(session, "artifacts/message.txt"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -95,7 +95,7 @@ class VirtualFileSystemTest {
     @Test
     void missingRefsFailWithSessionAwareMessage() {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("session-missing", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-missing", 2);
 
         assertThatThrownBy(() -> vfs.resolve(session, "ref://artifacts/missing.txt"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -106,7 +106,7 @@ class VirtualFileSystemTest {
     @Test
     void traversalDefenseRemainsEnforcedByBackend() {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("session-backend-escape", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-backend-escape", 2);
 
         assertThatThrownBy(() -> vfs.resolve(session, VfsRef.parse("ref://../other-session/secret.txt")))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -116,7 +116,7 @@ class VirtualFileSystemTest {
     @Test
     void rejectsSessionIdsThatEscapeTheConfiguredVfsRoot() {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("../escaped-session", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("../escaped-session", 2);
 
         assertThatThrownBy(() -> vfs.resolve(session, "ref://artifacts/secret.txt"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -126,7 +126,7 @@ class VirtualFileSystemTest {
     @Test
     void resolvesNestedPathsInsideSameSessionNamespace() throws Exception {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = new BifrostSession("session-nested", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-nested", 2);
 
         Path nestedFile = vfs.sessionRoot(session).resolve("artifacts/reports/2026/summary.txt");
         Files.createDirectories(nestedFile.getParent());

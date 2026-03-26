@@ -1,5 +1,8 @@
 package com.lokiscale.bifrost.outputschema;
 
+import com.lokiscale.bifrost.core.AdvisorTraceContext;
+import com.lokiscale.bifrost.core.AdvisorTraceFact;
+import com.lokiscale.bifrost.core.AdvisorTraceRecorder;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +32,7 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
     private final OutputSchemaPromptAugmentor promptAugmentor;
     private final int maxRetries;
     private final OutputSchemaOutcomeRecorder outcomeRecorder;
+    private final AdvisorTraceRecorder advisorTraceRecorder;
 
     public OutputSchemaCallAdvisor(String skillName,
                                    YamlSkillManifest.OutputSchemaManifest schema,
@@ -36,6 +40,16 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
                                    OutputSchemaPromptAugmentor promptAugmentor,
                                    int maxRetries,
                                    OutputSchemaOutcomeRecorder outcomeRecorder) {
+        this(skillName, schema, validator, promptAugmentor, maxRetries, outcomeRecorder, AdvisorTraceRecorder.noOp());
+    }
+
+    public OutputSchemaCallAdvisor(String skillName,
+                                   YamlSkillManifest.OutputSchemaManifest schema,
+                                   OutputSchemaValidator validator,
+                                   OutputSchemaPromptAugmentor promptAugmentor,
+                                   int maxRetries,
+                                   OutputSchemaOutcomeRecorder outcomeRecorder,
+                                   AdvisorTraceRecorder advisorTraceRecorder) {
         this.skillName = Objects.requireNonNull(skillName, "skillName must not be null");
         this.schema = Objects.requireNonNull(schema, "schema must not be null");
         this.validator = Objects.requireNonNull(validator, "validator must not be null");
@@ -45,6 +59,7 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
         }
         this.maxRetries = maxRetries;
         this.outcomeRecorder = Objects.requireNonNull(outcomeRecorder, "outcomeRecorder must not be null");
+        this.advisorTraceRecorder = Objects.requireNonNull(advisorTraceRecorder, "advisorTraceRecorder must not be null");
     }
 
     @Override
@@ -55,6 +70,8 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
         ChatClientRequest currentRequest = chatClientRequest.mutate()
                 .prompt(promptAugmentor.augment(chatClientRequest.prompt(), schema))
                 .build();
+        advisorTraceRecorder.record(AdvisorTraceFact.schemaApplied(
+                new AdvisorTraceContext(getName(), skillName, 1, "schema-applied")));
         CallAdvisorChain downstreamChain = callAdvisorChain.copy(this);
         int attempt = 1;
         while (true) {
@@ -62,6 +79,9 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
             String candidate = extractAssistantText(response);
             OutputSchemaValidationResult result = validator.validate(candidate, schema);
             if (result.valid()) {
+                advisorTraceRecorder.record(AdvisorTraceFact.passed(
+                        new AdvisorTraceContext(getName(), skillName, attempt, "passed"),
+                        candidate));
                 return record(response, outcome(attempt, OutputSchemaOutcomeStatus.PASSED, null, List.of()));
             }
 
@@ -77,6 +97,9 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
                         OutputSchemaOutcomeStatus.EXHAUSTED,
                         result.failureMode(),
                         result.issues());
+                advisorTraceRecorder.record(AdvisorTraceFact.exhausted(
+                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted"),
+                        result.issues()));
                 recordOnSession(exhaustedOutcome);
                 throw new BifrostOutputSchemaValidationException(
                         skillName,
@@ -94,6 +117,9 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
                     result.failureMode(),
                     summarizeIssues(result.issues(), MAX_ISSUES_IN_HINT));
             record(response, outcome(attempt, OutputSchemaOutcomeStatus.RETRYING, result.failureMode(), result.issues()));
+            advisorTraceRecorder.record(AdvisorTraceFact.retryRequested(
+                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying"),
+                    result.issues()));
             currentRequest = currentRequest.mutate()
                     .prompt(appendHint(currentRequest.prompt(), result))
                     .build();
@@ -137,8 +163,22 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
         try {
             outcomeRecorder.record(outcome);
         }
+        catch (IllegalStateException ex) {
+            if (!isManagedSessionBound()) {
+                // Advisor usage outside a managed Bifrost session still exposes outcome via response context.
+                return;
+            }
+            throw ex;
+        }
+    }
+
+    private boolean isManagedSessionBound() {
+        try {
+            com.lokiscale.bifrost.core.BifrostSession.getCurrentSession();
+            return true;
+        }
         catch (IllegalStateException ignored) {
-            // Advisor usage outside a managed Bifrost session still exposes outcome via response context.
+            return false;
         }
     }
 
@@ -201,4 +241,5 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
         }
         return original + "\n\n" + hint;
     }
+
 }

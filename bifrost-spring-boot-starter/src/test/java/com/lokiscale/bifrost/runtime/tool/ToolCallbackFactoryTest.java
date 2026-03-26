@@ -6,11 +6,13 @@ import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
 import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
+import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
+import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.security.DefaultAccessGuard;
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,7 +43,7 @@ class ToolCallbackFactoryTest {
         ExecutionStateService stateService = mock(ExecutionStateService.class);
         DefaultToolCallbackFactory factory = new DefaultToolCallbackFactory(router, planningService, stateService);
 
-        ToolCallback callback = factory.createToolCallbacks(new BifrostSession("session-1", 2), List.of(capability()), null).getFirst();
+        ToolCallback callback = factory.createToolCallbacks(com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2), List.of(capability()), null).getFirst();
 
         assertThat(callback.getToolDefinition().name()).isEqualTo("allowed.visible.skill");
         assertThat(callback.getToolDefinition().description()).isEqualTo("child");
@@ -53,8 +56,16 @@ class ToolCallbackFactoryTest {
         PlanningService planningService = mock(PlanningService.class);
         ExecutionStateService stateService = mock(ExecutionStateService.class);
         DefaultToolCallbackFactory factory = new DefaultToolCallbackFactory(router, planningService, stateService);
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         CapabilityMetadata capability = capability();
+        ExecutionFrame toolFrame = new ExecutionFrame(
+                "tool-frame-1",
+                null,
+                com.lokiscale.bifrost.core.OperationType.SKILL,
+                TraceFrameType.TOOL_INVOCATION,
+                capability.name(),
+                java.util.Map.of(),
+                Instant.parse("2026-03-15T12:00:00Z"));
         ExecutionPlan linkedPlan = new ExecutionPlan(
                 "plan-1",
                 "root.visible.skill",
@@ -64,6 +75,7 @@ class ToolCallbackFactoryTest {
                 List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.IN_PROGRESS, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, "Starting")));
 
         when(planningService.markToolStarted(eq(session), eq(capability), any())).thenReturn(Optional.of(linkedPlan));
+        when(stateService.openFrame(eq(session), eq(TraceFrameType.TOOL_INVOCATION), eq(capability.name()), any())).thenReturn(toolFrame);
         when(router.execute(eq(capability), any(), eq(session), eq(null))).thenReturn("child:hello");
 
         ToolCallback linkedCallback = factory.createToolCallbacks(session, List.of(capability), null).getFirst();
@@ -72,10 +84,13 @@ class ToolCallbackFactoryTest {
         assertThat(linkedResult).isEqualTo("\"child:hello\"");
         verify(planningService).markToolCompleted(session, "task-1", capability.name(), "child:hello");
         org.mockito.InOrder inOrder = inOrder(stateService);
+        inOrder.verify(stateService).openFrame(eq(session), eq(TraceFrameType.TOOL_INVOCATION), eq(capability.name()), any());
         inOrder.verify(stateService).logToolCall(eq(session), any());
         inOrder.verify(stateService).logToolResult(eq(session), any());
+        inOrder.verify(stateService).closeFrame(eq(session), eq(toolFrame), any());
 
         when(planningService.markToolStarted(eq(session), eq(capability), any())).thenReturn(Optional.empty());
+        when(stateService.openFrame(eq(session), eq(TraceFrameType.TOOL_INVOCATION), eq(capability.name()), any())).thenReturn(toolFrame);
         when(router.execute(eq(capability), any(), eq(session), eq(null))).thenReturn("child:again");
 
         ToolCallback unplannedCallback = factory.createToolCallbacks(session, List.of(capability), null).getFirst();
@@ -83,6 +98,7 @@ class ToolCallbackFactoryTest {
 
         assertThat(unplannedResult).isEqualTo("\"child:again\"");
         verify(stateService).logUnplannedToolCall(eq(session), any());
+        verify(stateService, times(2)).closeFrame(eq(session), eq(toolFrame), any());
     }
 
     @Test
@@ -98,7 +114,7 @@ class ToolCallbackFactoryTest {
                 stateService,
                 new DefaultAccessGuard());
         DefaultToolCallbackFactory factory = new DefaultToolCallbackFactory(router, planningService, stateService);
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
 
         ToolCallback callback = factory.createToolCallbacks(session, List.of(capability()), null).getFirst();
         Object result = callback.call("{\"value\":\"ref://artifacts/input.txt\"}");

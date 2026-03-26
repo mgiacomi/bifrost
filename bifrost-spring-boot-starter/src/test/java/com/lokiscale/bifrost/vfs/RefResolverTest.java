@@ -19,7 +19,7 @@ class RefResolverTest {
 
     @Test
     void resolvesOnlyExactRefStrings() {
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
                 new ByteArrayResource(("resolved:" + ref.raw()).getBytes(StandardCharsets.UTF_8)));
 
@@ -37,7 +37,7 @@ class RefResolverTest {
 
     @Test
     void resolvesExactRefStringsInsideNestedMapsAndLists() {
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
                 new ByteArrayResource(("resolved:" + ref.raw()).getBytes(StandardCharsets.UTF_8)));
 
@@ -63,7 +63,7 @@ class RefResolverTest {
 
     @Test
     void preservesBinaryResourcePayloadsForLaterConsumers() throws Exception {
-        BifrostSession session = new BifrostSession("session-binary", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-binary", 2);
         byte[] expected = new byte[]{0x00, 0x01, (byte) 0xFE, (byte) 0xFF, 0x41};
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> new ByteArrayResource(expected));
 
@@ -77,7 +77,7 @@ class RefResolverTest {
 
     @Test
     void leavesNonLeafContainersUntouchedWhenNoExactRefLeafExists() {
-        BifrostSession session = new BifrostSession("session-nonleaf", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-nonleaf", 2);
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
                 new ByteArrayResource(("resolved:" + ref.raw()).getBytes(StandardCharsets.UTF_8)));
 
@@ -98,7 +98,7 @@ class RefResolverTest {
 
     @Test
     void propagatesUnderlyingResolutionFailures() {
-        BifrostSession session = new BifrostSession("session-errors", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-errors", 2);
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) -> {
             throw new IllegalArgumentException("Unknown ref '" + ref.raw() + "'");
         });
@@ -110,7 +110,7 @@ class RefResolverTest {
 
     @Test
     void exactRefLeavesDelegateWithoutDuplicateExistenceChecks() {
-        BifrostSession session = new BifrostSession("session-1", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         Resource resource = new ByteArrayResource("resolved".getBytes(StandardCharsets.UTF_8)) {
             @Override
             public boolean exists() {
@@ -126,7 +126,7 @@ class RefResolverTest {
 
     @Test
     void nestedContainersStillResolveToResourceLeaves() {
-        BifrostSession session = new BifrostSession("session-nested", 2);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-nested", 2);
         DefaultRefResolver resolver = new DefaultRefResolver((ignoredSession, ref) ->
                 new ByteArrayResource(("resolved:" + ref.relativePath()).getBytes(StandardCharsets.UTF_8)));
 

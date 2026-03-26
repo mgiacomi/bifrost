@@ -1,20 +1,37 @@
 package com.lokiscale.bifrost.chat;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.core.AdvisorTraceContext;
+import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClientRequest;
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.core.io.ByteArrayResource;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SkillAdvisorResolverTests {
 
@@ -41,6 +58,27 @@ class SkillAdvisorResolverTests {
                 .element(0).isInstanceOf(OutputSchemaCallAdvisor.class);
         assertThat(resolver.resolve(definition(true, true)))
                 .element(1).isInstanceOf(LinterCallAdvisor.class);
+    }
+
+    @Test
+    void rethrowsManagedSessionAdvisorMutationFailures() {
+        ExecutionStateService failingStateService = new DefaultExecutionStateService(
+                Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC)) {
+            @Override
+            public void recordAdvisorRequestMutation(com.lokiscale.bifrost.core.BifrostSession session,
+                                                     AdvisorTraceContext context,
+                                                     Object payload) {
+                throw new IllegalStateException("boom");
+            }
+        };
+        DefaultSkillAdvisorResolver failingResolver = new DefaultSkillAdvisorResolver(failingStateService);
+        CallAdvisor advisor = (CallAdvisor) failingResolver.resolve(definition(true)).getFirst();
+        BifrostSessionRunner runner = new BifrostSessionRunner(3);
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session ->
+                advisor.adviseCall(request("Write YAML"), new RecordingChain(List.of("bad", "OK")))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("boom");
     }
 
     private YamlSkillDefinition definition(boolean withLinter) {
@@ -77,5 +115,53 @@ class SkillAdvisorResolverTests {
                 new ByteArrayResource(new byte[0]),
                 manifest,
                 new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"));
+    }
+
+    private static ChatClientRequest request(String text) {
+        return new ChatClientRequest(new Prompt(text), Map.of());
+    }
+
+    private static final class RecordingChain implements CallAdvisorChain {
+
+        private final List<String> responses;
+        private final List<ChatClientRequest> requests;
+        private final AtomicInteger index;
+        private final AtomicBoolean consumed;
+
+        private RecordingChain(List<String> responses) {
+            this(responses, new ArrayList<>(), new AtomicInteger(), new AtomicBoolean());
+        }
+
+        private RecordingChain(List<String> responses,
+                               List<ChatClientRequest> requests,
+                               AtomicInteger index,
+                               AtomicBoolean consumed) {
+            this.responses = responses;
+            this.requests = requests;
+            this.index = index;
+            this.consumed = consumed;
+        }
+
+        @Override
+        public ChatClientResponse nextCall(ChatClientRequest chatClientRequest) {
+            if (!consumed.compareAndSet(false, true)) {
+                throw new IllegalStateException("No CallAdvisors available to execute");
+            }
+            requests.add(chatClientRequest.copy());
+            String responseText = responses.get(Math.min(index.getAndIncrement(), responses.size() - 1));
+            return ChatClientResponse.builder()
+                    .chatResponse(new ChatResponse(List.of(new Generation(new AssistantMessage(responseText)))))
+                    .build();
+        }
+
+        @Override
+        public List<CallAdvisor> getCallAdvisors() {
+            return List.of();
+        }
+
+        @Override
+        public CallAdvisorChain copy(CallAdvisor after) {
+            return new RecordingChain(responses, requests, index, new AtomicBoolean());
+        }
     }
 }

@@ -3,11 +3,16 @@ package com.lokiscale.bifrost.runtime.state;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
+import com.lokiscale.bifrost.core.ExecutionTraceRecorder;
 import com.lokiscale.bifrost.core.JournalEntry;
 import com.lokiscale.bifrost.core.JournalEntryType;
+import com.lokiscale.bifrost.core.ModelTraceContext;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
+import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceRecord;
+import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import com.lokiscale.bifrost.outputschema.OutputSchemaFailureMode;
@@ -19,10 +24,12 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ExecutionStateServiceTest {
@@ -32,7 +39,7 @@ class ExecutionStateServiceTest {
     @Test
     void managesFramePlanAndJournalWritesThroughSingleBoundary() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
-        BifrostSession session = new BifrostSession("session-1", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 3);
         ExecutionPlan plan = plan("plan-1");
         LinterOutcome outcome = new LinterOutcome(
                 "linted.skill",
@@ -82,14 +89,14 @@ class ExecutionStateServiceTest {
     void restoresParentPlanAfterNestedMissionAndClearsWhenNoParentExists() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
 
-        BifrostSession sessionWithParent = new BifrostSession("session-parent", 3);
+        BifrostSession sessionWithParent = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-parent", 3);
         ExecutionPlan parentPlan = plan("parent-plan");
         stateService.storePlan(sessionWithParent, parentPlan);
         PlanSnapshot snapshot = stateService.snapshotPlan(sessionWithParent);
         stateService.storePlan(sessionWithParent, plan("child-plan"));
         stateService.restorePlan(sessionWithParent, snapshot);
 
-        BifrostSession sessionWithoutParent = new BifrostSession("session-empty", 3);
+        BifrostSession sessionWithoutParent = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-empty", 3);
         PlanSnapshot emptySnapshot = stateService.snapshotPlan(sessionWithoutParent);
         stateService.storePlan(sessionWithoutParent, plan("child-plan"));
         stateService.restorePlan(sessionWithoutParent, emptySnapshot);
@@ -101,7 +108,7 @@ class ExecutionStateServiceTest {
     @Test
     void rejectsClosingFrameOutOfOrder() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
-        BifrostSession session = new BifrostSession("session-frames", 3);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-frames", 3);
 
         ExecutionFrame parentFrame = stateService.openMissionFrame(session, "root.visible.skill", Map.of());
         ExecutionFrame childFrame = stateService.openMissionFrame(session, "child.visible.skill", Map.of());
@@ -113,11 +120,150 @@ class ExecutionStateServiceTest {
         assertThat(session.getFramesSnapshot()).containsExactly(childFrame, parentFrame);
     }
 
+    @Test
+    void recordsRuntimeTraceEventsAgainstTheActiveFrameAndIncludesRequestedAndRootMissionTyping() throws Exception {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-trace", 3);
+
+        ExecutionFrame rootFrame = stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello"));
+        ExecutionFrame frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "root.visible.skill#model", Map.of("provider", "openai"));
+        stateService.recordModelRequestPrepared(
+                session,
+                frame,
+                new ModelTraceContext("openai", "openai/gpt-5", "root.visible.skill", "unit"),
+                Map.of("user", "hello"));
+        stateService.logToolCall(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
+        stateService.closeFrame(session, frame, Map.of("status", "completed"));
+        stateService.closeMissionFrame(session, rootFrame);
+
+        List<TraceRecord> records = readRecords(session);
+
+        TraceRecord frameOpened = records.stream()
+                .filter(record -> record.recordType() == TraceRecordType.FRAME_OPENED && record.frameId().equals(rootFrame.frameId()))
+                .findFirst()
+                .orElseThrow();
+        TraceRecord modelRequest = records.stream()
+                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED)
+                .findFirst()
+                .orElseThrow();
+        TraceRecord toolRequested = records.stream()
+                .filter(record -> record.recordType() == TraceRecordType.TOOL_CALL_REQUESTED)
+                .findFirst()
+                .orElseThrow();
+        TraceRecord toolStarted = records.stream()
+                .filter(record -> record.recordType() == TraceRecordType.TOOL_CALL_STARTED)
+                .findFirst()
+                .orElseThrow();
+        TraceRecord frameClosed = records.stream()
+                .filter(record -> record.recordType() == TraceRecordType.FRAME_CLOSED)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(frameOpened.frameId()).isEqualTo(rootFrame.frameId());
+        assertThat(frameOpened.parentFrameId()).isNull();
+        assertThat(frameOpened.frameType()).isEqualTo(TraceFrameType.ROOT_MISSION);
+        assertThat(modelRequest.frameId()).isEqualTo(frame.frameId());
+        assertThat(modelRequest.route()).isEqualTo("root.visible.skill#model");
+        assertThat(toolRequested.frameId()).isEqualTo(frame.frameId());
+        assertThat(toolRequested.recordType()).isEqualTo(TraceRecordType.TOOL_CALL_REQUESTED);
+        assertThat(toolStarted.frameId()).isEqualTo(frame.frameId());
+        assertThat(toolStarted.recordType()).isEqualTo(TraceRecordType.TOOL_CALL_STARTED);
+        assertThat(frameClosed.frameId()).isEqualTo(frame.frameId());
+    }
+
+    @Test
+    void rollsBackFramePushWhenRecorderFailsDuringOpen() {
+        ExecutionTraceRecorder failingRecorder = new ExecutionTraceRecorder() {
+            @Override
+            public void recordFrameOpened(BifrostSession session, ExecutionFrame frame) {
+                throw new IllegalStateException("boom");
+            }
+
+            @Override
+            public void recordFrameClosed(BifrostSession session, ExecutionFrame frame, Map<String, Object> metadata) {
+            }
+
+            @Override
+            public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordPlanCreated(BifrostSession session, ExecutionPlan plan) {
+            }
+
+            @Override
+            public void recordPlanUpdated(BifrostSession session, ExecutionPlan plan) {
+            }
+
+            @Override
+            public void recordToolRequested(BifrostSession session, ExecutionFrame frame, com.lokiscale.bifrost.core.ToolTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordToolStarted(BifrostSession session, ExecutionFrame frame, com.lokiscale.bifrost.core.ToolTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordToolCompleted(BifrostSession session, ExecutionFrame frame, com.lokiscale.bifrost.core.ToolTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordToolFailed(BifrostSession session, ExecutionFrame frame, com.lokiscale.bifrost.core.ToolTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordAdvisorRequestMutation(BifrostSession session, com.lokiscale.bifrost.core.AdvisorTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordAdvisorResponseMutation(BifrostSession session, com.lokiscale.bifrost.core.AdvisorTraceContext context, Object payload) {
+            }
+
+            @Override
+            public void recordLinterOutcome(BifrostSession session, LinterOutcome outcome) {
+            }
+
+            @Override
+            public void recordOutputSchemaOutcome(BifrostSession session, OutputSchemaOutcome outcome) {
+            }
+
+            @Override
+            public void recordError(BifrostSession session, Object payload) {
+            }
+
+            @Override
+            public void finalizeTrace(BifrostSession session, com.lokiscale.bifrost.core.TraceCompletion completion) {
+            }
+        };
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK, new com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService(), failingRecorder);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-open-failure", 3);
+
+        assertThatThrownBy(() -> stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("boom");
+
+        assertThat(session.getFramesSnapshot()).isEmpty();
+    }
+
     private static ExecutionPlan plan(String planId) {
         return new ExecutionPlan(
                 planId,
                 "root.visible.skill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, null)));
+    }
+
+    private static List<TraceRecord> readRecords(BifrostSession session) {
+        List<TraceRecord> records = new ArrayList<>();
+        session.readTraceRecords(records::add);
+        return records;
     }
 }

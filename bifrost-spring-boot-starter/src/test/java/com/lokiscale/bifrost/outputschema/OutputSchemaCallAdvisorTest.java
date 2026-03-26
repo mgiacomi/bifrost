@@ -4,6 +4,9 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.JournalEntry;
 import com.lokiscale.bifrost.core.JournalEntryType;
+import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceRecord;
+import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
@@ -215,6 +218,58 @@ class OutputSchemaCallAdvisorTest {
                 .contains("failureMode=INVALID_JSON");
     }
 
+    @Test
+    void recordsAdvisorMutationsOnTheActiveFrame() throws Exception {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
+                "output.schema.skill",
+                schema(),
+                new OutputSchemaValidator(),
+                new OutputSchemaPromptAugmentor(),
+                1,
+                outcome -> stateService.recordOutputSchemaOutcome(BifrostSession.getCurrentSession(), outcome));
+        RecordingChain chain = new RecordingChain(List.of("bad-json", "{\"vendorName\":\"Acme\",\"totalAmount\":42.5}"));
+        BifrostSessionRunner runner = new BifrostSessionRunner(3);
+
+        runner.callWithNewSession(session -> {
+            var frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "output.schema.skill#model", Map.of());
+
+            advisor.adviseCall(request("Extract invoice"), chain);
+
+            List<TraceRecord> records = readRecords(session);
+            assertThat(records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.ADVISOR_REQUEST_MUTATION_RECORDED)
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "output.schema.skill#model".equals(record.route())))
+                    .isTrue();
+            assertThat(records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.ADVISOR_RESPONSE_MUTATION_RECORDED)
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "output.schema.skill#model".equals(record.route())))
+                    .isTrue();
+
+            stateService.closeFrame(session, frame, Map.of("status", "completed"));
+            return session;
+        });
+    }
+
+    @Test
+    void rethrowsManagedSessionRecorderFailures() {
+        OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
+                "output.schema.skill",
+                schema(),
+                new OutputSchemaValidator(),
+                new OutputSchemaPromptAugmentor(),
+                0,
+                outcome -> {
+                    throw new IllegalStateException("boom");
+                });
+        RecordingChain chain = new RecordingChain(List.of("{\"vendorName\":\"Acme\",\"totalAmount\":42.5}"));
+        BifrostSessionRunner runner = new BifrostSessionRunner(3);
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session -> advisor.adviseCall(request("Extract invoice"), chain)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("boom");
+    }
+
     private static OutputSchemaCallAdvisor advisor(int maxRetries) {
         return new OutputSchemaCallAdvisor(
                 "output.schema.skill",
@@ -224,6 +279,12 @@ class OutputSchemaCallAdvisorTest {
                 maxRetries,
                 outcome -> {
                 });
+    }
+
+    private static List<TraceRecord> readRecords(BifrostSession session) {
+        List<TraceRecord> records = new ArrayList<>();
+        session.readTraceRecords(records::add);
+        return records;
     }
 
     private static YamlSkillManifest.OutputSchemaManifest schema() {

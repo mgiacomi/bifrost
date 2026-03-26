@@ -1,91 +1,93 @@
 package com.lokiscale.bifrost.core;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.lokiscale.bifrost.linter.LinterOutcome;
-import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
-import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.AuthorityUtils;
 
+import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BifrostSessionJsonTest {
 
-    private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
+    private static final JsonMapper OBJECT_MAPPER = JsonMapper.builder()
             .findAndAddModules()
             .build();
 
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
+
     @Test
-    void roundTripsSessionWithEmbeddedJournalThroughJackson() throws Exception {
-        BifrostSession session = new BifrostSession("session-1", 4);
-        session.pushFrame(frame("frame-1", "route.one"));
-        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
-        session.logToolExecution(
-                Instant.parse("2026-03-15T12:00:01Z"),
-                Map.of("route", "tool.run", "arguments", Map.of("id", 42)));
-        session.replaceExecutionPlan(new ExecutionPlan(
+    void serializesExecutionTraceAndDerivedJournalForLiveSession() throws Exception {
+        BifrostSession session = TestBifrostSessions.withId(
+                "session-json-live",
+                4,
+                null,
+                TracePersistencePolicy.ALWAYS,
+                FIXED_CLOCK);
+        ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
                 "root.visible.skill",
                 Instant.parse("2026-03-15T12:00:00Z"),
-                List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null))));
-        session.setLastLinterOutcome(new LinterOutcome(
-                "linted.skill",
-                "regex",
-                2,
-                1,
-                2,
-                LinterOutcomeStatus.PASSED,
-                "Return fenced YAML only."));
-        session.setSessionUsage(new SessionUsageSnapshot(1, 2, 1, 3, 10, 20, 30, 2, 1, 0));
-        session.logPlanCreated(Instant.parse("2026-03-15T12:00:02Z"), session.getExecutionPlan().orElseThrow());
+                java.util.List.of());
 
-        String json = OBJECT_MAPPER.writeValueAsString(session);
-        BifrostSession restored = OBJECT_MAPPER.readValue(json, BifrostSession.class);
+        appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:01Z"), Map.of("planId", plan.planId()), plan);
 
-        assertThat(restored.getSessionId()).isEqualTo("session-1");
-        assertThat(restored.getMaxDepth()).isEqualTo(4);
-        assertThat(restored.getFramesSnapshot()).containsExactlyElementsOf(session.getFramesSnapshot());
-        assertThat(restored.getJournalSnapshot()).extracting(JournalEntry::type)
-                .containsExactlyElementsOf(session.getJournalSnapshot().stream().map(JournalEntry::type).toList());
-        assertThat(restored.getJournalSnapshot()).hasSize(session.getJournalSnapshot().size());
-        assertThat(restored.getExecutionPlan()).contains(session.getExecutionPlan().orElseThrow());
-        assertThat(restored.getLastLinterOutcome()).contains(session.getLastLinterOutcome().orElseThrow());
-        assertThat(restored.getSessionUsage()).contains(session.getSessionUsage().orElseThrow());
+        JsonNode json = OBJECT_MAPPER.readTree(OBJECT_MAPPER.writeValueAsString(session));
+
+        assertThat(json.get("sessionId").asText()).isEqualTo("session-json-live");
+        assertThat(json.get("executionTrace").get("sessionId").asText()).isEqualTo("session-json-live");
+        assertThat(json.get("executionTrace").get("traceId").asText()).isNotBlank();
+        assertThat(json.get("executionTrace").get("filePath").asText()).contains("session-json-live");
+        assertThat(json.get("executionTrace").get("persistencePolicy").asText()).isEqualTo("ALWAYS");
+        assertThat(json.get("executionTrace").get("completed").asBoolean()).isFalse();
+        assertThat(json.get("executionJournal").get("entries")).hasSize(1);
+        assertThat(json.get("executionJournal").get("entries").get(0).get("type").asText()).isEqualTo("PLAN_CREATED");
+        assertThat(json.has("executionTraceHandle")).isFalse();
+        assertThat(json.has("authentication")).isFalse();
     }
 
     @Test
-    void rehydratesFreshLockAfterSessionDeserialization() throws Exception {
-        BifrostSession session = new BifrostSession("session-1", 4);
-        session.logThought(Instant.parse("2026-03-15T12:00:00Z"), "plan");
-        session.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-                "user",
-                "pw",
-                AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
+    void preservesDerivedJournalAfterFinalizationDeletesNeverRetainedTraceFile() throws Exception {
+        BifrostSession session = TestBifrostSessions.withId(
+                "session-json-finalized",
+                4,
+                null,
+                TracePersistencePolicy.NEVER,
+                FIXED_CLOCK);
 
-        String json = OBJECT_MAPPER.writeValueAsString(session);
-        BifrostSession restored = OBJECT_MAPPER.readValue(json, BifrostSession.class);
+        appendRecord(
+                session,
+                TraceRecordType.ERROR_RECORDED,
+                Instant.parse("2026-03-15T12:00:02Z"),
+                Map.of("exceptionType", "java.lang.IllegalStateException"),
+                Map.of("message", "boom"));
 
-        restored.logThought(Instant.parse("2026-03-15T12:00:01Z"), "after");
-        restored.pushFrame(frame("frame-1", "route.one"));
+        session.markTraceErrored();
+        session.finalizeTrace(Map.of("status", "failed"));
 
-        assertThat(restored.getJournalSnapshot()).hasSize(2);
-        assertThat(restored.peekFrame().route()).isEqualTo("route.one");
-        assertThat(restored.getAuthentication()).isEmpty();
+        JsonNode json = OBJECT_MAPPER.readTree(OBJECT_MAPPER.writeValueAsString(session));
+
+        assertThat(json.get("executionTrace").get("completed").asBoolean()).isTrue();
+        assertThat(json.get("executionTrace").get("errored").asBoolean()).isTrue();
+        assertThat(json.get("executionTrace").get("filePath").isNull()).isTrue();
+        assertThat(json.get("executionJournal").get("entries")).hasSize(1);
+        assertThat(json.get("executionJournal").get("entries").get(0).get("type").asText()).isEqualTo("ERROR");
+        assertThat(json.get("executionJournal").get("entries").get(0).get("payload").get("message").asText()).isEqualTo("boom");
     }
 
-    private static ExecutionFrame frame(String frameId, String route) {
-        return new ExecutionFrame(
-                frameId,
-                null,
-                OperationType.CAPABILITY,
-                route,
-                Map.of("route", route),
-                Instant.parse("2026-03-15T12:00:00Z"));
+    private static void appendRecord(BifrostSession session,
+                                     TraceRecordType type,
+                                     Instant timestamp,
+                                     Map<String, Object> metadata,
+                                     Object payload) {
+        java.util.LinkedHashMap<String, Object> traceMetadata = new java.util.LinkedHashMap<>();
+        if (metadata != null) {
+            traceMetadata.putAll(metadata);
+        }
+        traceMetadata.put("timestampOverride", timestamp.toString());
+        session.appendTraceRecord(type, traceMetadata, payload);
     }
 }

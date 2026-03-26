@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.runtime.planning;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.ExecutionPlan;
+import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
@@ -17,6 +18,7 @@ public interface PlanningService {
             BifrostSession session,
             String objective,
             String capabilityName,
+            EffectiveSkillExecutionConfiguration executionConfiguration,
             ChatClient chatClient,
             List<ToolCallback> visibleTools);
 

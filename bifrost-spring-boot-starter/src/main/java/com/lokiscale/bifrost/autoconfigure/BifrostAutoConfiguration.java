@@ -68,6 +68,7 @@ import java.util.concurrent.Executors;
 @AutoConfiguration
 @EnableConfigurationProperties({
         BifrostSessionProperties.class,
+        ExecutionTraceProperties.class,
         BifrostModelsProperties.class,
         BifrostSkillProperties.class,
         TaalasChatProperties.class
@@ -101,8 +102,13 @@ public class BifrostAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public BifrostSessionRunner bifrostSessionRunner(BifrostSessionProperties sessionProperties) {
-        return new BifrostSessionRunner(sessionProperties.getMaxDepth());
+    public BifrostSessionRunner bifrostSessionRunner(BifrostSessionProperties sessionProperties,
+                                                     Clock bifrostClock,
+                                                     ExecutionTraceProperties executionTraceProperties) {
+        return new BifrostSessionRunner(
+                sessionProperties.getMaxDepth(),
+                executionTraceProperties.getPersistence(),
+                bifrostClock);
     }
 
     @Bean

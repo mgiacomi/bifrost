@@ -78,6 +78,7 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(BifrostSessionRunner.class);
                     assertThat(context).hasSingleBean(BifrostExceptionTransformer.class);
                     assertThat(context).hasSingleBean(BifrostSessionProperties.class);
+                    assertThat(context).hasSingleBean(ExecutionTraceProperties.class);
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
                     assertThat(context).hasSingleBean(BifrostModelsProperties.class);
                     assertThat(context).hasSingleBean(YamlSkillCatalog.class);

@@ -45,6 +45,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 class ExecutionCoordinatorTest {
 
@@ -364,6 +365,183 @@ class ExecutionCoordinatorTest {
                 .containsExactly(JournalEntryType.UNPLANNED_TOOL_EXECUTION, JournalEntryType.TOOL_RESULT);
         assertThat(chatClient.systemMessagesSeen).containsExactly("Execute the mission using only the visible YAML tools when needed.");
         assertThat(chatClient.toolNamesByCall).containsExactly(List.of("allowed.visible.skill"));
+    }
+
+    @Test
+    void marksTopLevelTraceErroredWhenMissionExecutionThrows() throws Exception {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest("root.visible.skill", List.of()),
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        MissionExecutionEngine failingMissionExecutionEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+            throw new IllegalStateException("boom");
+        };
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                (currentSkillName, sessionState, authentication) -> List.of(),
+                new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "unused", null)),
+                (value, session) -> value,
+                null,
+                failingMissionExecutionEngine,
+                true);
+        BifrostSession session = new BifrostSession("session-top-level-failure", 3);
+
+        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("boom");
+
+        assertThat(session.getExecutionTrace().errored()).isTrue();
+        assertThat(session.getExecutionTrace().completed()).isTrue();
+        java.nio.file.Path tracePath = session.getExecutionTrace().tracePath();
+        try {
+            assertThat(tracePath).isNotNull();
+            assertThat(java.nio.file.Files.exists(tracePath)).isTrue();
+        }
+        finally {
+            if (tracePath != null) {
+                java.nio.file.Files.deleteIfExists(tracePath);
+            }
+        }
+    }
+
+    @Test
+    void recordsTopLevelMissionFrameClosureStatusInTrace() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest("root.visible.skill", List.of()),
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                (currentSkillName, sessionState, authentication) -> List.of(),
+                new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "mission complete", null, false)),
+                (value, session) -> value,
+                null,
+                false);
+
+        BifrostSession session = new BifrostSession("session-1", 3, null, TracePersistencePolicy.ALWAYS);
+        String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
+
+        assertThat(response).isEqualTo("mission complete");
+        TraceRecord rootFrameClosed = readTraceRecords(session).stream()
+                .filter(record -> record.recordType() == TraceRecordType.FRAME_CLOSED)
+                .filter(record -> record.frameType() == TraceFrameType.ROOT_MISSION)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(rootFrameClosed.metadata()).containsEntry("status", "completed");
+    }
+
+    @Test
+    void preservesMissionFailureWhenCleanupAlsoFails() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest("root.visible.skill", List.of()),
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        ExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK) {
+            @Override
+            public void closeFrame(BifrostSession session, ExecutionFrame frame, Map<String, Object> metadata) {
+                throw new IllegalStateException("cleanup-close");
+            }
+
+            @Override
+            public void finalizeTrace(BifrostSession session, Map<String, Object> metadata) {
+                throw new IllegalStateException("cleanup-finalize");
+            }
+        };
+        MissionExecutionEngine failingMissionExecutionEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+            throw new IllegalStateException("mission-failed");
+        };
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                (currentSkillName, sessionState, authentication) -> List.of(),
+                new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "unused", null)),
+                (value, session) -> value,
+                null,
+                stateService,
+                fixedPlanningService(stateService),
+                failingMissionExecutionEngine,
+                true,
+                null);
+        BifrostSession session = new BifrostSession("session-1", 3);
+
+        Throwable thrown = catchThrowable(() ->
+                coordinator.execute("root.visible.skill", "Say hello", session, null));
+
+        assertThat(thrown)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("mission-failed");
+        assertThat(thrown.getSuppressed())
+                .hasSize(1);
+        assertThat(thrown.getSuppressed()[0])
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("cleanup-close");
+        assertThat(thrown.getSuppressed()[0].getSuppressed())
+                .hasSize(1);
+        assertThat(thrown.getSuppressed()[0].getSuppressed()[0])
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("cleanup-finalize");
+        assertThat(readTraceRecords(session)).extracting(TraceRecord::recordType)
+                .contains(TraceRecordType.ERROR_RECORDED);
     }
 
     @Test
@@ -1179,6 +1357,12 @@ class ExecutionCoordinatorTest {
                 List.of(),
                 autoCompletable,
                 null);
+    }
+
+    private static List<TraceRecord> readTraceRecords(BifrostSession session) {
+        java.util.ArrayList<TraceRecord> records = new java.util.ArrayList<>();
+        session.readTraceRecords(records::add);
+        return records;
     }
 
     private static final class StubYamlSkillCatalog extends com.lokiscale.bifrost.skill.YamlSkillCatalog {

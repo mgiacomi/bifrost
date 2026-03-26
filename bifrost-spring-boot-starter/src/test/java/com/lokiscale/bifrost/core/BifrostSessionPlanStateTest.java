@@ -17,6 +17,7 @@ class BifrostSessionPlanStateTest {
                 "frame-1",
                 null,
                 OperationType.SKILL,
+                TraceFrameType.SKILL_EXECUTION,
                 "root.visible.skill",
                 Map.of("objective", "hello"),
                 Instant.parse("2026-03-15T12:00:00Z")));

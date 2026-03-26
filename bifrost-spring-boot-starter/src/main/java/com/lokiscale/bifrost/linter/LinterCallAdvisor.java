@@ -1,5 +1,8 @@
 package com.lokiscale.bifrost.linter;
 
+import com.lokiscale.bifrost.core.AdvisorTraceContext;
+import com.lokiscale.bifrost.core.AdvisorTraceFact;
+import com.lokiscale.bifrost.core.AdvisorTraceRecorder;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
@@ -28,6 +31,7 @@ public final class LinterCallAdvisor implements CallAdvisor {
     private final String failureMessage;
     private final int maxRetries;
     private final LinterOutcomeRecorder outcomeRecorder;
+    private final AdvisorTraceRecorder advisorTraceRecorder;
 
     public LinterCallAdvisor(String skillName,
                              String linterType,
@@ -35,6 +39,16 @@ public final class LinterCallAdvisor implements CallAdvisor {
                              String failureMessage,
                              int maxRetries,
                              LinterOutcomeRecorder outcomeRecorder) {
+        this(skillName, linterType, pattern, failureMessage, maxRetries, outcomeRecorder, AdvisorTraceRecorder.noOp());
+    }
+
+    public LinterCallAdvisor(String skillName,
+                             String linterType,
+                             Pattern pattern,
+                             String failureMessage,
+                             int maxRetries,
+                             LinterOutcomeRecorder outcomeRecorder,
+                             AdvisorTraceRecorder advisorTraceRecorder) {
         this.skillName = Objects.requireNonNull(skillName, "skillName must not be null");
         this.linterType = Objects.requireNonNull(linterType, "linterType must not be null");
         this.pattern = Objects.requireNonNull(pattern, "pattern must not be null");
@@ -44,6 +58,7 @@ public final class LinterCallAdvisor implements CallAdvisor {
         }
         this.maxRetries = maxRetries;
         this.outcomeRecorder = Objects.requireNonNull(outcomeRecorder, "outcomeRecorder must not be null");
+        this.advisorTraceRecorder = Objects.requireNonNull(advisorTraceRecorder, "advisorTraceRecorder must not be null");
     }
 
     @Override
@@ -58,14 +73,24 @@ public final class LinterCallAdvisor implements CallAdvisor {
             ChatClientResponse response = downstreamChain.nextCall(currentRequest);
             String candidate = extractAssistantText(response);
             if (pattern.matcher(candidate).matches()) {
+                advisorTraceRecorder.record(AdvisorTraceFact.passed(
+                        new AdvisorTraceContext(getName(), skillName, attempt, "passed"),
+                        candidate));
                 return record(response, outcome(attempt, LinterOutcomeStatus.PASSED, failureMessage));
             }
 
             if (attempt > maxRetries) {
+                advisorTraceRecorder.record(AdvisorTraceFact.exhausted(
+                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted"),
+                        candidate,
+                        failureMessage));
                 return record(response, outcome(attempt, LinterOutcomeStatus.EXHAUSTED, failureMessage));
             }
 
             record(response, outcome(attempt, LinterOutcomeStatus.RETRYING, failureMessage));
+            advisorTraceRecorder.record(AdvisorTraceFact.retryRequested(
+                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying"),
+                    failureMessage));
             currentRequest = currentRequest.mutate()
                     .prompt(appendHint(currentRequest.prompt(), failureMessage))
                     .build();
@@ -99,8 +124,22 @@ public final class LinterCallAdvisor implements CallAdvisor {
         try {
             outcomeRecorder.record(outcome);
         }
+        catch (IllegalStateException ex) {
+            if (!isManagedSessionBound()) {
+                // Advisor usage outside a managed Bifrost session still exposes the outcome via response context.
+                return;
+            }
+            throw ex;
+        }
+    }
+
+    private boolean isManagedSessionBound() {
+        try {
+            com.lokiscale.bifrost.core.BifrostSession.getCurrentSession();
+            return true;
+        }
         catch (IllegalStateException ignored) {
-            // Advisor usage outside a managed Bifrost session still exposes the outcome via response context.
+            return false;
         }
     }
 
@@ -125,4 +164,5 @@ public final class LinterCallAdvisor implements CallAdvisor {
         }
         return original + "\n\n" + hint;
     }
+
 }
