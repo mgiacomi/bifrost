@@ -7,6 +7,13 @@ spring:
       api-key: ${TAALAS_API_KEY:sample-taalas-api-key}
       base-url: ${TAALAS_BASE_URL:https://api.taalas.com}
       model: ${TAALAS_MODEL:llama3.1-8B}
+    ollama:
+        enabled: true
+        base-url: http://localhost:11434
+        chat:
+          options:
+            model: ibm/granite4:tiny-h
+            temperature: 0.7
 
 server:
   port: 8081
@@ -31,3 +38,6 @@ bifrost:
     default-model:
       provider: taalas
       provider-model: ${TAALAS_MODEL:llama3.1-8B}
+    granite4-tiny:
+      provider: ollama
+      provider-model: ibm/granite4:tiny-h

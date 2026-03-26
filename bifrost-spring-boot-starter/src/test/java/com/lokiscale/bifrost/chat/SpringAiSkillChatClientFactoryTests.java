@@ -5,27 +5,51 @@ import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.core.io.ByteArrayResource;
 
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SpringAiSkillChatClientFactoryTests {
+
+    @Test
+    void selectsChatModelFromResolvedProvider() {
+        ChatModel ollamaChatModel = mock(ChatModel.class);
+        SkillChatModelResolver chatModelResolver = mock(SkillChatModelResolver.class);
+        when(chatModelResolver.resolve("test.skill", AiProvider.OLLAMA)).thenReturn(ollamaChatModel);
+
+        CapturedFactoryResult result = captureFactoryInvocation(
+                definition(new EffectiveSkillExecutionConfiguration(
+                        "ollama-llama3",
+                        AiProvider.OLLAMA,
+                        "llama3.2",
+                        null)),
+                new NoOpSkillAdvisorResolver(),
+                chatModelResolver);
+
+        assertThat(result.resolvedChatModel()).isSameAs(ollamaChatModel);
+        assertThat(result.options()).isInstanceOf(OllamaChatOptions.class);
+        verify(chatModelResolver).resolve("test.skill", AiProvider.OLLAMA);
+    }
 
     @Test
     void createsClientWithProviderModelAndNoThinkingOptionWhenThinkingIsNull() {
@@ -48,9 +72,9 @@ class SpringAiSkillChatClientFactoryTests {
                         AiProvider.OPENAI,
                         "openai/gpt-5",
                         "medium")),
-                new NoOpSkillAdvisorResolver());
+                new NoOpSkillAdvisorResolver(),
+                resolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))));
 
-        assertThat(result.client()).isNotNull();
         assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
         OpenAiChatOptions options = (OpenAiChatOptions) result.options();
         assertThat(options.getModel()).isEqualTo("openai/gpt-5");
@@ -70,9 +94,9 @@ class SpringAiSkillChatClientFactoryTests {
 
         assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
         assertThat(result.advisors()).containsExactly(advisor);
-        verify(result.cloneBuilder()).defaultOptions(any(ChatOptions.class));
-        verify(result.cloneBuilder()).defaultAdvisors(List.of(advisor));
-        verify(result.cloneBuilder()).build();
+        verify(result.builder()).defaultOptions(any(ChatOptions.class));
+        verify(result.builder()).defaultAdvisors(List.of(advisor));
+        verify(result.builder()).build();
     }
 
     @Test
@@ -87,8 +111,8 @@ class SpringAiSkillChatClientFactoryTests {
 
         assertThat(result.client()).isSameAs(result.factoryClient());
         assertThat(result.advisors()).isEmpty();
-        verify(result.cloneBuilder()).defaultOptions(any(ChatOptions.class));
-        verify(result.cloneBuilder(), org.mockito.Mockito.never()).defaultAdvisors(anyList());
+        verify(result.builder()).defaultOptions(any(ChatOptions.class));
+        verify(result.builder(), never()).defaultAdvisors(anyList());
     }
 
     @Test
@@ -135,34 +159,50 @@ class SpringAiSkillChatClientFactoryTests {
         assertThat(taalas.getModel()).isEqualTo("llama3.1-8B");
     }
 
+    @Test
+    void throwsExecutionTimeErrorForUnavailableProvider() {
+        SpringAiSkillChatClientFactory factory = new SpringAiSkillChatClientFactory(
+                new DefaultSkillChatModelResolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))),
+                SpringAiSkillChatClientFactory.defaultAdapters(),
+                new NoOpSkillAdvisorResolver());
+
+        assertThatThrownBy(() -> factory.create(definition(new EffectiveSkillExecutionConfiguration(
+                "ollama-llama3",
+                AiProvider.OLLAMA,
+                "llama3.2",
+                null))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("No ChatModel configured for provider OLLAMA required by skill 'test.skill'");
+    }
+
     private FactoryClient createFactoryBackedClient(YamlSkillDefinition definition) {
         return captureFactoryInvocation(definition, new NoOpSkillAdvisorResolver()).factoryClient();
     }
 
     private CapturedFactoryResult captureFactoryInvocation(YamlSkillDefinition definition, SkillAdvisorResolver skillAdvisorResolver) {
-        ChatClient.Builder rootBuilder = mock(ChatClient.Builder.class);
-        ChatClient.Builder cloneBuilder = mock(ChatClient.Builder.class);
-        FactoryClient client = new FactoryClient();
-        when(rootBuilder.clone()).thenReturn(cloneBuilder);
-        when(cloneBuilder.defaultOptions(any())).thenAnswer(invocation -> {
-            client.setOptions(invocation.getArgument(0));
-            return cloneBuilder;
-        });
-        when(cloneBuilder.defaultAdvisors(anyList())).thenAnswer(invocation -> {
-            client.setAdvisors(List.copyOf(invocation.getArgument(0)));
-            return cloneBuilder;
-        });
-        when(cloneBuilder.build()).thenReturn(client);
+        EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
+        return captureFactoryInvocation(
+                definition,
+                skillAdvisorResolver,
+                resolver(Map.of(executionConfiguration.provider(), mock(ChatModel.class))));
+    }
 
+    private CapturedFactoryResult captureFactoryInvocation(YamlSkillDefinition definition,
+                                                            SkillAdvisorResolver skillAdvisorResolver,
+                                                            SkillChatModelResolver chatModelResolver) {
+        RecordingBuilderFactory builderFactory = new RecordingBuilderFactory();
         SpringAiSkillChatClientFactory factory = new SpringAiSkillChatClientFactory(
-                rootBuilder,
+                chatModelResolver,
                 SpringAiSkillChatClientFactory.defaultAdapters(),
-                skillAdvisorResolver);
+                skillAdvisorResolver,
+                builderFactory);
 
         ChatClient created = factory.create(definition);
-        ArgumentCaptor<ChatOptions> captor = ArgumentCaptor.forClass(ChatOptions.class);
-        verify(cloneBuilder).defaultOptions(captor.capture());
-        return new CapturedFactoryResult(created, client, captor.getValue(), cloneBuilder);
+        return builderFactory.result(created);
+    }
+
+    private SkillChatModelResolver resolver(Map<AiProvider, ChatModel> modelsByProvider) {
+        return new DefaultSkillChatModelResolver(new EnumMap<>(modelsByProvider));
     }
 
     private YamlSkillDefinition definition(EffectiveSkillExecutionConfiguration configuration) {
@@ -174,12 +214,41 @@ class SpringAiSkillChatClientFactoryTests {
     }
 
     private record CapturedFactoryResult(ChatClient client,
-                                         FactoryClient factoryClient,
-                                         ChatOptions options,
-                                         ChatClient.Builder cloneBuilder) {
+                                          FactoryClient factoryClient,
+                                          ChatOptions options,
+                                          ChatClient.Builder builder,
+                                          ChatModel resolvedChatModel) {
 
         List<Advisor> advisors() {
             return factoryClient.advisors();
+        }
+    }
+
+    private static final class RecordingBuilderFactory implements SpringAiSkillChatClientFactory.ChatClientBuilderFactory {
+
+        private ChatModel resolvedChatModel;
+        private ChatClient.Builder builder;
+        private FactoryClient factoryClient;
+
+        @Override
+        public ChatClient.Builder create(ChatModel chatModel) {
+            this.resolvedChatModel = chatModel;
+            this.builder = mock(ChatClient.Builder.class);
+            this.factoryClient = new FactoryClient();
+            when(builder.defaultOptions(any())).thenAnswer(invocation -> {
+                factoryClient.setOptions(invocation.getArgument(0));
+                return builder;
+            });
+            when(builder.defaultAdvisors(anyList())).thenAnswer(invocation -> {
+                factoryClient.setAdvisors(List.copyOf(invocation.getArgument(0)));
+                return builder;
+            });
+            when(builder.build()).thenReturn(factoryClient);
+            return builder;
+        }
+
+        private CapturedFactoryResult result(ChatClient created) {
+            return new CapturedFactoryResult(created, factoryClient, factoryClient.options(), builder, resolvedChatModel);
         }
     }
 

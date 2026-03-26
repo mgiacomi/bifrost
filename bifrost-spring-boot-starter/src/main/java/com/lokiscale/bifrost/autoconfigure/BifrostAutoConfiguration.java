@@ -1,8 +1,10 @@
 package com.lokiscale.bifrost.autoconfigure;
 
 import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
+import com.lokiscale.bifrost.chat.DefaultSkillChatModelResolver;
 import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.chat.SkillChatModelResolver;
 import com.lokiscale.bifrost.chat.SkillChatOptionsAdapter;
 import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
 import com.lokiscale.bifrost.chat.TaalasChatModel;
@@ -43,8 +45,11 @@ import com.lokiscale.bifrost.vfs.RefResolver;
 import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import com.lokiscale.bifrost.vfs.VirtualFileSystem;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -61,7 +66,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.nio.file.Paths;
 import java.time.Clock;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -290,19 +297,27 @@ public class BifrostAutoConfiguration {
     @ConditionalOnProperty(prefix = "spring.ai.taalas", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean(name = "taalasChatModel")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ChatModel taalasChatModel(@Qualifier("taalasHttpClient") HttpClient taalasHttpClient,
-                                     ObjectProvider<ObjectMapper> objectMapperProvider,
-                                     TaalasChatProperties taalasChatProperties) {
+    public TaalasChatModel taalasChatModel(@Qualifier("taalasHttpClient") HttpClient taalasHttpClient,
+                                           ObjectProvider<ObjectMapper> objectMapperProvider,
+                                           TaalasChatProperties taalasChatProperties) {
         return new TaalasChatModel(taalasHttpClient, objectMapperProvider.getIfAvailable(ObjectMapper::new), taalasChatProperties);
     }
 
     @Bean
-    @ConditionalOnBean(ChatModel.class)
-    @ConditionalOnMissingBean(ChatClient.Builder.class)
-    @ConditionalOnProperty(prefix = "spring.ai.taalas", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ChatClient.Builder taalasChatClientBuilder(ChatModel taalasChatModel) {
-        return ChatClient.builder(taalasChatModel);
+    public SkillChatModelResolver skillChatModelResolver(ObjectProvider<OpenAiChatModel> openAiChatModelProvider,
+                                                         ObjectProvider<AnthropicChatModel> anthropicChatModelProvider,
+                                                         ObjectProvider<GoogleGenAiChatModel> googleGenAiChatModelProvider,
+                                                         ObjectProvider<OllamaChatModel> ollamaChatModelProvider,
+                                                         @Qualifier("taalasChatModel") ObjectProvider<TaalasChatModel> taalasChatModelProvider) {
+        Map<AiProvider, ChatModel> modelsByProvider = new EnumMap<>(AiProvider.class);
+        registerChatModel(modelsByProvider, AiProvider.OPENAI, openAiChatModelProvider.getIfAvailable());
+        registerChatModel(modelsByProvider, AiProvider.ANTHROPIC, anthropicChatModelProvider.getIfAvailable());
+        registerChatModel(modelsByProvider, AiProvider.GEMINI, googleGenAiChatModelProvider.getIfAvailable());
+        registerChatModel(modelsByProvider, AiProvider.OLLAMA, ollamaChatModelProvider.getIfAvailable());
+        registerChatModel(modelsByProvider, AiProvider.TAALAS, taalasChatModelProvider.getIfAvailable());
+        return new DefaultSkillChatModelResolver(modelsByProvider);
     }
 
     @Bean
@@ -348,13 +363,13 @@ public class BifrostAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(ChatClient.Builder.class)
+    @ConditionalOnBean(SkillChatModelResolver.class)
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatClientFactory skillChatClientFactory(ChatClient.Builder chatClientBuilder,
+    public SkillChatClientFactory skillChatClientFactory(SkillChatModelResolver chatModelResolver,
                                                          List<SkillChatOptionsAdapter> adapters,
                                                          SkillAdvisorResolver skillAdvisorResolver) {
-        return new SpringAiSkillChatClientFactory(chatClientBuilder, adapters, skillAdvisorResolver);
+        return new SpringAiSkillChatClientFactory(chatModelResolver, adapters, skillAdvisorResolver);
     }
 
     @Bean
@@ -379,5 +394,13 @@ public class BifrostAutoConfiguration {
                 executionStateService,
                 accessGuard,
                 true);
+    }
+
+    private static void registerChatModel(Map<AiProvider, ChatModel> modelsByProvider,
+                                           AiProvider provider,
+                                           ChatModel chatModel) {
+        if (chatModel != null) {
+            modelsByProvider.put(provider, chatModel);
+        }
     }
 }

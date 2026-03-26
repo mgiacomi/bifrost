@@ -1,6 +1,6 @@
 name: invoiceParser
 description: Parses an unstructured invoice payload extracting Date, Amount, and Vendor.
-model: default-model
+model: granite4-tiny
 planning_mode: false
 output_schema:
   type: object

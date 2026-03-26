@@ -2,8 +2,10 @@ package com.lokiscale.bifrost.autoconfigure;
 
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
-import com.lokiscale.bifrost.chat.NoOpSkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
+import com.lokiscale.bifrost.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.chat.SkillChatModelResolver;
+import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
 import com.lokiscale.bifrost.chat.TaalasChatModel;
 import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
@@ -16,6 +18,8 @@ import com.lokiscale.bifrost.vfs.RefResolver;
 import com.lokiscale.bifrost.vfs.VirtualFileSystem;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -93,7 +97,7 @@ class BifrostAutoConfigurationTests {
     @Test
     void autoConfiguresExecutionCoordinatorWhenSkillChatClientFactoryIsAvailable() {
         contextRunner
-                .withBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class,
+                .withBean(SkillChatClientFactory.class,
                         () -> definition -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.class))
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> assertThat(context).hasSingleBean(ExecutionCoordinator.class));
@@ -101,13 +105,14 @@ class BifrostAutoConfigurationTests {
 
     @Test
     void autoConfiguresDefaultSkillAdvisorResolver() {
+        OpenAiChatModel openAiChatModel = Mockito.mock(OpenAiChatModel.class);
         contextRunner
-                .withBean(org.springframework.ai.chat.client.ChatClient.Builder.class,
-                        () -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.Builder.class))
+                .withBean(OpenAiChatModel.class, () -> openAiChatModel)
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> {
                     assertThat(context).hasSingleBean(SkillAdvisorResolver.class);
-                    assertThat(context).hasSingleBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class);
+                    assertThat(context).hasSingleBean(SkillChatModelResolver.class);
+                    assertThat(context).hasSingleBean(SkillChatClientFactory.class);
                     assertThat(context.getBean(SkillAdvisorResolver.class)).isInstanceOf(DefaultSkillAdvisorResolver.class);
                 });
     }
@@ -115,15 +120,15 @@ class BifrostAutoConfigurationTests {
     @Test
     void allowsCustomSkillAdvisorResolverOverride() {
         SkillAdvisorResolver customResolver = definition -> List.of();
+        OpenAiChatModel openAiChatModel = Mockito.mock(OpenAiChatModel.class);
 
         contextRunner
-                .withBean(org.springframework.ai.chat.client.ChatClient.Builder.class,
-                        () -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.Builder.class))
+                .withBean(OpenAiChatModel.class, () -> openAiChatModel)
                 .withBean(SkillAdvisorResolver.class, () -> customResolver)
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> {
                     assertThat(context).hasSingleBean(SkillAdvisorResolver.class);
-                    assertThat(context).hasSingleBean(com.lokiscale.bifrost.chat.SkillChatClientFactory.class);
+                    assertThat(context).hasSingleBean(SkillChatClientFactory.class);
                     assertThat(context.getBean(SkillAdvisorResolver.class)).isSameAs(customResolver);
                 });
     }
@@ -149,7 +154,7 @@ class BifrostAutoConfigurationTests {
     }
 
     @Test
-    void autoConfiguresTaalasChatModelAndBuilderWhenEnabled() {
+    void registersSkillChatModelResolverInsteadOfSharedBuilderWhenEnabled() {
         contextRunner
                 .withPropertyValues(
                         "bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml",
@@ -158,7 +163,40 @@ class BifrostAutoConfigurationTests {
                 .run(context -> {
                     assertThat(context).hasSingleBean(TaalasChatProperties.class);
                     assertThat(context).hasSingleBean(TaalasChatModel.class);
-                    assertThat(context).hasSingleBean(org.springframework.ai.chat.client.ChatClient.Builder.class);
+                    assertThat(context).hasSingleBean(SkillChatModelResolver.class);
+                    assertThat(context).hasSingleBean(SkillChatClientFactory.class);
+                    assertThat(context).doesNotHaveBean(org.springframework.ai.chat.client.ChatClient.Builder.class);
+                });
+    }
+
+    @Test
+    void supportsMultiProviderResolverRegistrationWithoutTypeCollapse() {
+        OpenAiChatModel openAiChatModel = Mockito.mock(OpenAiChatModel.class);
+        OllamaChatModel ollamaChatModel = Mockito.mock(OllamaChatModel.class);
+
+        contextRunner
+                .withBean(OpenAiChatModel.class, () -> openAiChatModel)
+                .withBean(OllamaChatModel.class, () -> ollamaChatModel)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> {
+                    SkillChatModelResolver resolver = context.getBean(SkillChatModelResolver.class);
+
+                    assertThat(resolver.resolve("openaiSkill", AiProvider.OPENAI)).isSameAs(openAiChatModel);
+                    assertThat(resolver.resolve("ollamaSkill", AiProvider.OLLAMA)).isSameAs(ollamaChatModel);
+                });
+    }
+
+    @Test
+    void exposesSkillChatClientFactoryBackedByResolver() {
+        OpenAiChatModel openAiChatModel = Mockito.mock(OpenAiChatModel.class);
+
+        contextRunner
+                .withBean(OpenAiChatModel.class, () -> openAiChatModel)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SkillChatModelResolver.class);
+                    assertThat(context).hasSingleBean(SkillChatClientFactory.class);
+                    assertThat(context.getBean(SkillChatClientFactory.class)).isInstanceOf(SpringAiSkillChatClientFactory.class);
                 });
     }
 

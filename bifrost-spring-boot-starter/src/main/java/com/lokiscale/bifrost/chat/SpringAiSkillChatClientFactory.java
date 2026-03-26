@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
@@ -27,16 +28,25 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
     private static final int MEDIUM_THINKING_BUDGET = 4096;
     private static final int HIGH_THINKING_BUDGET = 8192;
 
-    private final ChatClient.Builder chatClientBuilder;
+    private final SkillChatModelResolver chatModelResolver;
+    private final ChatClientBuilderFactory chatClientBuilderFactory;
     private final Map<AiProvider, SkillChatOptionsAdapter> adaptersByProvider;
     private final SkillAdvisorResolver skillAdvisorResolver;
 
-    public SpringAiSkillChatClientFactory(ChatClient.Builder chatClientBuilder,
+    public SpringAiSkillChatClientFactory(SkillChatModelResolver chatModelResolver,
                                           List<SkillChatOptionsAdapter> adapters,
                                           SkillAdvisorResolver skillAdvisorResolver) {
-        this.chatClientBuilder = Objects.requireNonNull(chatClientBuilder, "chatClientBuilder must not be null");
+        this(chatModelResolver, adapters, skillAdvisorResolver, ChatClient::builder);
+    }
+
+    SpringAiSkillChatClientFactory(SkillChatModelResolver chatModelResolver,
+                                    List<SkillChatOptionsAdapter> adapters,
+                                    SkillAdvisorResolver skillAdvisorResolver,
+                                    ChatClientBuilderFactory chatClientBuilderFactory) {
+        this.chatModelResolver = Objects.requireNonNull(chatModelResolver, "chatModelResolver must not be null");
         Objects.requireNonNull(adapters, "adapters must not be null");
         this.skillAdvisorResolver = Objects.requireNonNull(skillAdvisorResolver, "skillAdvisorResolver must not be null");
+        this.chatClientBuilderFactory = Objects.requireNonNull(chatClientBuilderFactory, "chatClientBuilderFactory must not be null");
         this.adaptersByProvider = new EnumMap<>(AiProvider.class);
         for (SkillChatOptionsAdapter adapter : adapters) {
             this.adaptersByProvider.put(adapter.provider(), adapter);
@@ -47,22 +57,25 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
     public ChatClient create(YamlSkillDefinition definition) {
         Objects.requireNonNull(definition, "definition must not be null");
         EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
+        String skillName = definition.manifest().getName();
         SkillChatOptionsAdapter adapter = adaptersByProvider.get(executionConfiguration.provider());
         if (adapter == null) {
             throw new IllegalStateException("No ChatOptions adapter configured for provider " + executionConfiguration.provider());
         }
+        ChatModel chatModel = chatModelResolver.resolve(skillName, executionConfiguration.provider());
         ChatOptions options = adapter.createOptions(executionConfiguration);
         List<Advisor> advisors = resolvedAdvisors(skillAdvisorResolver.resolve(definition));
-        ChatClient.Builder builder = chatClientBuilder.clone();
+        ChatClient.Builder builder = chatClientBuilderFactory.create(chatModel);
         builder.defaultOptions(options);
         if (!advisors.isEmpty()) {
             builder.defaultAdvisors(advisors);
         }
         ChatClient delegate = builder.build();
         log.debug(
-                "Created skill ChatClient for skill '{}' provider={} delegateType={} advisors={}",
-                definition.manifest().getName(),
+                "Created skill ChatClient for skill '{}' provider={} chatModelType={} delegateType={} advisors={}",
+                skillName,
                 executionConfiguration.provider(),
+                chatModel.getClass().getName(),
                 delegate.getClass().getName(),
                 advisorNames(advisors));
         return delegate;
@@ -70,6 +83,11 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
 
     private List<Advisor> resolvedAdvisors(List<Advisor> advisors) {
         return advisors == null ? List.of() : List.copyOf(advisors);
+    }
+
+    interface ChatClientBuilderFactory {
+
+        ChatClient.Builder create(ChatModel chatModel);
     }
 
     public static List<SkillChatOptionsAdapter> defaultAdapters() {
