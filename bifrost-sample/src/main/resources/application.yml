@@ -41,3 +41,6 @@ bifrost:
     granite4-tiny:
       provider: ollama
       provider-model: ibm/granite4:tiny-h
+
+execution-trace:
+  persistence: ALWAYS
