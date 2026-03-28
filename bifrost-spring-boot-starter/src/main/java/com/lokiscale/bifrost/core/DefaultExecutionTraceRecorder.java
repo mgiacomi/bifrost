@@ -22,10 +22,8 @@ public final class DefaultExecutionTraceRecorder implements ExecutionTraceRecord
     public void recordFrameOpened(BifrostSession session, ExecutionFrame frame) {
         recordAgainstFrame(session, frame, TraceRecordType.FRAME_OPENED, Map.of(
                 "openedAt", frame.openedAt().toString(),
-                "operationType", frame.operationType().name()), frame.parameters());
-        recordAgainstFrame(session, frame, TraceRecordType.FRAME_METADATA_RECORDED, Map.of(
-                "frameType", frame.traceFrameType().name(),
-                "openedAt", frame.openedAt().toString()), frame.parameters());
+                "operationType", frame.operationType().name(),
+                "frameType", frame.traceFrameType().name()), frame.parameters());
     }
 
     @Override
