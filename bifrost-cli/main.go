@@ -113,19 +113,43 @@ type TraceFile struct {
 	StartTime   time.Time
 }
 
+// FrameNode represents a trace frame and its children in a tree
+type FrameNode struct {
+	FrameID   string
+	FrameType string
+	Route     string
+	Status    string
+	Duration  float64
+	Records   []int // indices into model.traceRecords (non-FRAME_OPENED/CLOSED)
+	Children  []*FrameNode
+	Collapsed bool
+	FirstSeq  int
+}
+
+// TreeRow is a flattened row for display — either a frame header or a record
+type TreeRow struct {
+	Depth     int
+	IsFrame   bool
+	Frame     *FrameNode
+	RecordIdx int // index into traceRecords; -1 if IsFrame
+}
+
 // Model holds the application state
 type model struct {
-	state        state
-	tracesDir    string
-	dirInput     string
-	traceFiles   []TraceFile
-	traceCursor  int
-	traceRecords []TraceRecord
-	frameCursor  int
-	detailOffset int
-	width        int
-	height       int
-	errMsg       string
+	state         state
+	tracesDir     string
+	dirInput      string
+	traceFiles    []TraceFile
+	traceCursor   int
+	traceRecords  []TraceRecord
+	rootFrames    []*FrameNode
+	orphanIndices []int
+	treeRows      []TreeRow
+	frameCursor   int
+	detailOffset  int
+	width         int
+	height        int
+	errMsg        string
 }
 
 // initialModel returns the starting model; traces load immediately on Init
@@ -183,6 +207,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.traceRecords = msg.records
+		m.rootFrames, m.orphanIndices = buildFrameTree(msg.records)
+		m.treeRows = flattenTree(m.rootFrames, m.orphanIndices, m.traceRecords)
 		m.frameCursor = 0
 		m.detailOffset = 0
 		m.state = traceDetails
@@ -275,8 +301,17 @@ func (m model) handleDetailsKey(key string) (model, tea.Cmd) {
 			m.detailOffset = 0
 		}
 	case "down", "j":
-		if m.frameCursor < len(m.traceRecords)-1 {
+		if m.frameCursor < len(m.treeRows)-1 {
 			m.frameCursor++
+			m.detailOffset = 0
+		}
+	case "enter", " ":
+		if m.frameCursor < len(m.treeRows) && m.treeRows[m.frameCursor].IsFrame {
+			m.treeRows[m.frameCursor].Frame.Collapsed = !m.treeRows[m.frameCursor].Frame.Collapsed
+			m.treeRows = flattenTree(m.rootFrames, m.orphanIndices, m.traceRecords)
+			if m.frameCursor >= len(m.treeRows) {
+				m.frameCursor = len(m.treeRows) - 1
+			}
 			m.detailOffset = 0
 		}
 	case "ctrl+d", "pgdown":
@@ -322,7 +357,7 @@ func (m model) viewFooter() string {
 	case traceViewer:
 		hints = "↑↓ / jk: navigate  Enter: open  d: change dir  q: quit"
 	case traceDetails:
-		hints = "↑↓ / jk: records  Ctrl+D/U: scroll detail  Esc: back  q: quit"
+		hints = "↑↓ / jk: navigate  Enter: expand/collapse  Ctrl+D/U: scroll detail  Esc: back  q: quit"
 	}
 	if m.errMsg != "" {
 		return errStyle.Render("  Error: "+m.errMsg) + "\n" + footerStyle.Render(hints)
@@ -416,7 +451,7 @@ func (m model) detailPaneHeight() int {
 }
 
 func (m model) viewTraceDetails() string {
-	records := m.traceRecords
+	rows := m.treeRows
 	listH := m.recordListHeight()
 	detailH := m.detailPaneHeight()
 	paneW := m.width - 4
@@ -424,8 +459,16 @@ func (m model) viewTraceDetails() string {
 		paneW = 60
 	}
 
-	// ── Top pane: record list ──────────────────────────────────────────────
-	topContent := paneHeaderStyle.Render(fmt.Sprintf(" RECORDS (%d)", len(records))) + "\n\n"
+	// Count frames for header
+	frameCount := 0
+	for _, row := range rows {
+		if row.IsFrame {
+			frameCount++
+		}
+	}
+
+	// ── Top pane: tree view ────────────────────────────────────────────────
+	topContent := paneHeaderStyle.Render(fmt.Sprintf(" TRACE TREE (%d frames, %d records)", frameCount, len(m.traceRecords))) + "\n\n"
 
 	visible := listH - 4
 	if visible < 1 {
@@ -436,54 +479,25 @@ func (m model) viewTraceDetails() string {
 		start = m.frameCursor - visible + 1
 	}
 	end := start + visible
-	if end > len(records) {
-		end = len(records)
+	if end > len(rows) {
+		end = len(rows)
 	}
 
 	// Track trace start for Δtime
 	var traceStart float64
-	if len(records) > 0 {
-		traceStart = records[0].Timestamp
+	if len(m.traceRecords) > 0 {
+		traceStart = m.traceRecords[0].Timestamp
 	}
 
-	// Column widths (content only, no ANSI)
-	const seqW = 5
-	const dtimeW = 9
-	const typeW = 12
-
 	for i := start; i < end; i++ {
-		r := records[i]
+		row := rows[i]
 		isSelected := m.frameCursor == i
+		indent := strings.Repeat("  ", row.Depth)
 
-		// [seq]
-		seqStr := fmt.Sprintf("%-*s", seqW, fmt.Sprintf("[%d]", r.Sequence))
-
-		// +Δtime
-		deltaMs := (r.Timestamp - traceStart) * 1000
-		dtimeStr := fmt.Sprintf("%-*s", dtimeW, fmt.Sprintf("+%.0fms", deltaMs))
-
-		// Type abbreviation (colorized only when not selected)
-		abbrev, color := typeAbbrevColor(r.RecordType)
-		paddedAbbrev := fmt.Sprintf("%-*s", typeW, abbrev)
-		var typeStr string
-		if isSelected {
-			typeStr = paddedAbbrev
+		if row.IsFrame {
+			topContent += m.renderFrameRow(row, indent, isSelected) + "\n"
 		} else {
-			typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(paddedAbbrev)
-		}
-
-		// Smart info
-		infoMaxLen := paneW - seqW - dtimeW - typeW - 8
-		if infoMaxLen < 10 {
-			infoMaxLen = 10
-		}
-		info := truncate(smartInfo(r), infoMaxLen)
-
-		row := seqStr + " " + dtimeStr + " " + typeStr + " " + info
-		if isSelected {
-			topContent += "→" + selectedRowStyle.Render(row) + "\n"
-		} else {
-			topContent += " " + row + "\n"
+			topContent += m.renderRecordRow(row, indent, isSelected, traceStart, paneW) + "\n"
 		}
 	}
 
@@ -494,10 +508,15 @@ func (m model) viewTraceDetails() string {
 		Height(listH).
 		Render(topContent)
 
-	// ── Bottom pane: record detail ─────────────────────────────────────────
+	// ── Bottom pane: detail ────────────────────────────────────────────────
 	var detailContent string
-	if m.frameCursor < len(records) {
-		detailContent = m.renderDetailPane(records[m.frameCursor], detailH)
+	if m.frameCursor < len(rows) {
+		row := rows[m.frameCursor]
+		if row.IsFrame {
+			detailContent = m.renderFrameDetailPane(row.Frame, detailH)
+		} else if row.RecordIdx >= 0 && row.RecordIdx < len(m.traceRecords) {
+			detailContent = m.renderDetailPane(m.traceRecords[row.RecordIdx], detailH)
+		}
 	}
 
 	bottomPane := lipgloss.NewStyle().
@@ -508,6 +527,146 @@ func (m model) viewTraceDetails() string {
 		Render(detailContent)
 
 	return "\n" + topPane + "\n" + bottomPane + "\n"
+}
+
+func (m model) renderFrameRow(row TreeRow, indent string, isSelected bool) string {
+	f := row.Frame
+
+	// Toggle icon
+	hasContent := len(f.Children) > 0 || len(f.Records) > 0
+	toggle := "·"
+	if hasContent {
+		if f.Collapsed {
+			toggle = "▶"
+		} else {
+			toggle = "▼"
+		}
+	}
+
+	// Frame type
+	ft := f.FrameType
+	if ft == "" {
+		ft = "FRAME"
+	}
+
+	// Route
+	route := f.Route
+	if route == "" {
+		route = shortID(f.FrameID)
+	}
+
+	// Duration
+	dur := ""
+	if f.Duration > 0 {
+		dur = formatDuration(f.Duration)
+	}
+
+	// Status badge
+	status := ""
+	if f.Status == "completed" {
+		status = "✓"
+	} else if f.Status == "failed" {
+		status = "✗"
+	}
+
+	// Build the line
+	ftPadded := fmt.Sprintf("%-16s", ft)
+	routePadded := fmt.Sprintf("%-40s", truncate(route, 40))
+	durPadded := fmt.Sprintf("%8s", dur)
+
+	if isSelected {
+		line := fmt.Sprintf("%s %s %s %s %s %s", indent, toggle, ftPadded, routePadded, durPadded, status)
+		return "→" + selectedRowStyle.Render(line)
+	}
+
+	// Colorize frame type
+	ftColor := frameTypeColor(f.FrameType)
+	coloredFt := lipgloss.NewStyle().Foreground(lipgloss.Color(ftColor)).Bold(true).Render(ftPadded)
+
+	// Colorize status
+	coloredStatus := status
+	if f.Status == "failed" {
+		coloredStatus = errStyle.Render(status)
+	} else if f.Status == "completed" {
+		coloredStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Render(status)
+	}
+
+	return fmt.Sprintf(" %s %s %s %s %s %s", indent, toggle, coloredFt, routePadded, dimStyle.Render(durPadded), coloredStatus)
+}
+
+func (m model) renderRecordRow(row TreeRow, indent string, isSelected bool, traceStart float64, paneW int) string {
+	r := m.traceRecords[row.RecordIdx]
+
+	const seqW = 5
+	const dtimeW = 9
+	const typeW = 12
+
+	seqStr := fmt.Sprintf("%-*s", seqW, fmt.Sprintf("[%d]", r.Sequence))
+	deltaMs := (r.Timestamp - traceStart) * 1000
+	dtimeStr := fmt.Sprintf("%-*s", dtimeW, fmt.Sprintf("+%.0fms", deltaMs))
+
+	abbrev, color := typeAbbrevColor(r.RecordType)
+	paddedAbbrev := fmt.Sprintf("%-*s", typeW, abbrev)
+
+	indentLen := len(indent)
+	infoMaxLen := paneW - seqW - dtimeW - typeW - indentLen - 10
+	if infoMaxLen < 10 {
+		infoMaxLen = 10
+	}
+	info := truncate(smartInfo(r), infoMaxLen)
+
+	if isSelected {
+		line := fmt.Sprintf("%s %s %s %s %s", indent, seqStr, dtimeStr, paddedAbbrev, info)
+		return "→" + selectedRowStyle.Render(line)
+	}
+
+	typeStr := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(paddedAbbrev)
+	return fmt.Sprintf(" %s %s %s %s %s", indent, dimStyle.Render(seqStr), dimStyle.Render(dtimeStr), typeStr, info)
+}
+
+func frameTypeColor(ft string) string {
+	switch ft {
+	case "ROOT_MISSION":
+		return "39"
+	case "PLANNING":
+		return "51"
+	case "MODEL_CALL":
+		return "82"
+	case "TOOL_INVOCATION":
+		return "214"
+	case "RETRY":
+		return "220"
+	case "SKILL_EXECUTION":
+		return "135"
+	}
+	return "252"
+}
+
+func (m model) renderFrameDetailPane(f *FrameNode, maxHeight int) string {
+	var lines []string
+
+	lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "frameId")), valStyle.Render(f.FrameID)))
+	lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "frameType")), valStyle.Render(f.FrameType)))
+	lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "route")), valStyle.Render(f.Route)))
+	lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "status")), valStyle.Render(f.Status)))
+	if f.Duration > 0 {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "duration")), valStyle.Render(formatDuration(f.Duration))))
+	}
+	lines = append(lines, "")
+	lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "children")), valStyle.Render(fmt.Sprintf("%d", len(f.Children)))))
+	lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-22s", "directRecords")), valStyle.Render(fmt.Sprintf("%d", len(f.Records)))))
+
+	offset := m.detailOffset
+	if offset >= len(lines) {
+		offset = 0
+	}
+	endIdx := offset + maxHeight - 3
+	if endIdx > len(lines) {
+		endIdx = len(lines)
+	}
+
+	title := paneHeaderStyle.Render(fmt.Sprintf(" ► %s  %s", f.FrameType, f.Route))
+	return title + "\n" + strings.Join(lines[offset:endIdx], "\n")
 }
 
 func (m model) renderDetailPane(r TraceRecord, maxHeight int) string {
@@ -878,6 +1037,142 @@ func calculateFrameDurations(records []TraceRecord) {
 				records[i].Duration = dur
 				delete(opened, *r.FrameID)
 			}
+		}
+	}
+}
+
+// ── Frame tree building ───────────────────────────────────────────────────
+
+func buildFrameTree(records []TraceRecord) ([]*FrameNode, []int) {
+	frameMap := make(map[string]*FrameNode)
+	var orphanIndices []int
+
+	// First pass: create frame nodes from FRAME_OPENED records
+	for _, r := range records {
+		if r.RecordType == "FRAME_OPENED" && r.FrameID != nil {
+			fid := *r.FrameID
+			node := &FrameNode{
+				FrameID:  fid,
+				FirstSeq: r.Sequence,
+				Duration: r.Duration,
+			}
+			if r.FrameType != nil {
+				node.FrameType = *r.FrameType
+			}
+			if r.Route != nil {
+				node.Route = *r.Route
+			}
+			frameMap[fid] = node
+		}
+	}
+
+	// Second pass: assign records to frames, capture status from FRAME_CLOSED
+	for i, r := range records {
+		if r.FrameID == nil {
+			orphanIndices = append(orphanIndices, i)
+			continue
+		}
+		fid := *r.FrameID
+		node, ok := frameMap[fid]
+		if !ok {
+			orphanIndices = append(orphanIndices, i)
+			continue
+		}
+		if r.RecordType == "FRAME_CLOSED" {
+			if meta, ok := r.Metadata.(map[string]interface{}); ok {
+				node.Status = strVal(meta["status"])
+			}
+			if r.Duration > 0 {
+				node.Duration = r.Duration
+			}
+			continue
+		}
+		if r.RecordType == "FRAME_OPENED" {
+			continue
+		}
+		node.Records = append(node.Records, i)
+	}
+
+	// Third pass: build parent-child from FRAME_OPENED parentFrameId
+	var rootNodes []*FrameNode
+	for _, r := range records {
+		if r.RecordType != "FRAME_OPENED" || r.FrameID == nil {
+			continue
+		}
+		fid := *r.FrameID
+		node := frameMap[fid]
+		if node == nil {
+			continue
+		}
+		if r.ParentFrameID != nil {
+			if parent, ok := frameMap[*r.ParentFrameID]; ok {
+				parent.Children = append(parent.Children, node)
+				continue
+			}
+		}
+		rootNodes = append(rootNodes, node)
+	}
+
+	return rootNodes, orphanIndices
+}
+
+func flattenTree(rootFrames []*FrameNode, orphanIndices []int, records []TraceRecord) []TreeRow {
+	var rows []TreeRow
+
+	// Interleave orphans and root frames by sequence
+	type seqItem struct {
+		seq     int
+		isFrame bool
+		frame   *FrameNode
+		recIdx  int
+	}
+	var items []seqItem
+	for _, idx := range orphanIndices {
+		items = append(items, seqItem{seq: records[idx].Sequence, recIdx: idx})
+	}
+	for _, f := range rootFrames {
+		items = append(items, seqItem{seq: f.FirstSeq, isFrame: true, frame: f})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].seq < items[j].seq })
+
+	for _, item := range items {
+		if item.isFrame {
+			flattenFrame(&rows, item.frame, 0, records)
+		} else {
+			rows = append(rows, TreeRow{Depth: 0, RecordIdx: item.recIdx})
+		}
+	}
+	return rows
+}
+
+func flattenFrame(rows *[]TreeRow, frame *FrameNode, depth int, records []TraceRecord) {
+	*rows = append(*rows, TreeRow{Depth: depth, IsFrame: true, Frame: frame, RecordIdx: -1})
+
+	if frame.Collapsed {
+		return
+	}
+
+	// Interleave child records and child frames by sequence
+	type seqItem struct {
+		seq     int
+		isFrame bool
+		frame   *FrameNode
+		recIdx  int
+	}
+	var items []seqItem
+	for _, idx := range frame.Records {
+		items = append(items, seqItem{seq: records[idx].Sequence, recIdx: idx})
+	}
+	for _, child := range frame.Children {
+		items = append(items, seqItem{seq: child.FirstSeq, isFrame: true, frame: child})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].seq < items[j].seq })
+
+	for _, item := range items {
+		if item.isFrame {
+			flattenFrame(rows, item.frame, depth+1, records)
+		} else {
+			*rows = append(*rows, TreeRow{Depth: depth + 1, RecordIdx: item.recIdx})
 		}
 	}
 }
