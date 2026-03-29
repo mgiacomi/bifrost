@@ -29,7 +29,7 @@ logging:
 
 bifrost:
   session:
-    mission-timeout: 25s
+    mission-timeout: 6000s
   skills:
     locations:
       - classpath:/skills/**/*.yml

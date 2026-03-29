@@ -134,10 +134,8 @@ class MissionExecutionEngineTest {
                     .isEqualTo("Execute the mission using only the visible YAML tools when needed.");
             assertThat(sentRecord.data().get("user").asText()).isEqualTo("hello");
             assertThat(sentRecord.data().get("toolCallbackCount").asInt()).isEqualTo(1);
-            assertThat(sentRecord.data().get("toolCallbackTypes").isArray()).isTrue();
-            assertThat(sentRecord.data().get("toolCallbackTypes")).hasSize(1);
-            assertThat(sentRecord.data().get("toolCallbackTypes").get(0).asText())
-                    .contains("ToolCallback");
+            assertThat(sentRecord.data().get("toolNames").isArray()).isTrue();
+            assertThat(sentRecord.data().get("toolNames")).hasSize(1);
         }
     }
 

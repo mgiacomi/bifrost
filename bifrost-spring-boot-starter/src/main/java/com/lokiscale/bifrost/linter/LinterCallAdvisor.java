@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.linter;
 import com.lokiscale.bifrost.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.core.AdvisorTraceFact;
 import com.lokiscale.bifrost.core.AdvisorTraceRecorder;
+import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
@@ -65,6 +66,10 @@ public final class LinterCallAdvisor implements CallAdvisor {
     public ChatClientResponse adviseCall(ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
         Objects.requireNonNull(chatClientRequest, "chatClientRequest must not be null");
         Objects.requireNonNull(callAdvisorChain, "callAdvisorChain must not be null");
+
+        if (Boolean.TRUE.equals(chatClientRequest.context().get(OutputSchemaCallAdvisor.PLANNING_CALL_KEY))) {
+            return callAdvisorChain.nextCall(chatClientRequest);
+        }
 
         ChatClientRequest currentRequest = chatClientRequest;
         CallAdvisorChain downstreamChain = callAdvisorChain.copy(this);

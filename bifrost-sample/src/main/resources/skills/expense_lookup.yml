@@ -1,0 +1,6 @@
+name: expenseLookup
+description: Retrieves the most recent expenses including category, amount, and date.
+model: granite4-tiny
+planning_mode: false
+mapping:
+  target_id: expenseService#getLatestExpenses

@@ -25,6 +25,7 @@ import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -34,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class PlanningServiceTest {
 
@@ -219,6 +222,57 @@ class PlanningServiceTest {
 
         assertThat(planningService.markToolCompleted(session, "missing-task", "allowed.visible.skill", "done")).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
+    }
+
+    @Test
+    void planningPromptIncludesVisibleToolNames() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-tool-names", 3);
+        SimpleChatClient chatClient = new SimpleChatClient(plan("plan-tools", PlanTaskStatus.PENDING), "done");
+
+        ToolCallback tool1 = toolCallbackWithName("invoiceParser");
+        ToolCallback tool2 = toolCallbackWithName("expenseLookup");
+
+        planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of(tool1, tool2));
+
+        String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
+        assertThat(systemPrompt).contains("invoiceParser");
+        assertThat(systemPrompt).contains("expenseLookup");
+        assertThat(systemPrompt).contains("Available sub-skills");
+    }
+
+    @Test
+    void planningPromptShowsNoneWhenNoToolsProvided() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-no-tools", 3);
+        SimpleChatClient chatClient = new SimpleChatClient(plan("plan-no-tools", PlanTaskStatus.PENDING), "done");
+
+        planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of());
+
+        String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
+        assertThat(systemPrompt).contains("(none)");
+    }
+
+    @Test
+    void planningPromptHardcodesTopLevelCapabilityName() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-cap-name", 3);
+        SimpleChatClient chatClient = new SimpleChatClient(plan("plan-cap", PlanTaskStatus.PENDING), "done");
+
+        planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of());
+
+        String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
+        assertThat(systemPrompt).contains("\"capabilityName\": \"duplicateInvoiceChecker\"");
+    }
+
+    private static ToolCallback toolCallbackWithName(String name) {
+        ToolCallback callback = mock(ToolCallback.class);
+        ToolDefinition definition = ToolDefinition.builder().name(name).description(name).inputSchema("{}").build();
+        when(callback.getToolDefinition()).thenReturn(definition);
+        return callback;
     }
 
     private static CapabilityMetadata capability(String name) {

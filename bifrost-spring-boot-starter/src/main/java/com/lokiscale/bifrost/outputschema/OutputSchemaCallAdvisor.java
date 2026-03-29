@@ -23,6 +23,8 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
 
     public static final String CONTEXT_KEY = "bifrost.output-schema.outcome";
 
+    public static final String PLANNING_CALL_KEY = "bifrost.advisor.planning-call";
+
     private static final int MAX_ISSUES_IN_HINT = 4;
     private static final int MAX_ISSUES_IN_OUTCOME = 4;
 
@@ -66,6 +68,10 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
     public ChatClientResponse adviseCall(ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
         Objects.requireNonNull(chatClientRequest, "chatClientRequest must not be null");
         Objects.requireNonNull(callAdvisorChain, "callAdvisorChain must not be null");
+
+        if (Boolean.TRUE.equals(chatClientRequest.context().get(PLANNING_CALL_KEY))) {
+            return callAdvisorChain.nextCall(chatClientRequest);
+        }
 
         ChatClientRequest currentRequest = chatClientRequest.mutate()
                 .prompt(promptAugmentor.augment(chatClientRequest.prompt(), schema))
@@ -185,7 +191,9 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor {
     private Prompt appendHint(Prompt prompt, OutputSchemaValidationResult result) {
         StringBuilder hint = new StringBuilder("""
                 Output schema validation failed for the previous response.
-                Return JSON only and satisfy the configured output_schema.
+                Do NOT call any tools again. Use the data you already have from previous tool calls.
+                Return ONLY corrected raw JSON that satisfies the configured output_schema.
+                Do not include any explanation, markdown, or code fences — just the JSON object.
                 Issues:
                 """);
         result.issues().stream()

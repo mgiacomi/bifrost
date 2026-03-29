@@ -269,8 +269,12 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
         payload.put("system", executionPrompt);
         payload.put("user", objective);
         payload.put("toolCallbackCount", visibleTools.size());
-        payload.put("toolCallbackTypes", visibleTools.stream()
-                .map(callback -> callback == null ? "<null>" : callback.getClass().getName())
+        payload.put("toolNames", visibleTools.stream()
+                .map(callback -> {
+                    if (callback == null) return "<null>";
+                    var def = callback.getToolDefinition();
+                    return def != null ? def.name() : "<unknown>";
+                })
                 .toList());
         return Map.copyOf(payload);
     }

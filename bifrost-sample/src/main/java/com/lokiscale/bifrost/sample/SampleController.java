@@ -144,6 +144,56 @@ public class SampleController {
         });
     }
 
+    @GetMapping(value = "/invoice/check-duplicate", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Object checkDuplicateInvoice(@RequestParam String filePath) throws IOException {
+        File file = new File(filePath);
+        if (!file.exists()) {
+            throw new IllegalArgumentException("File not found: " + filePath);
+        }
+        
+        String invoiceText = FileCopyUtils.copyToString(new FileReader(file));
+        
+        CapabilityMetadata metadata = capabilityRegistry.getCapability("duplicateInvoiceChecker");
+        if (metadata == null) {
+            throw new IllegalArgumentException("Skill 'duplicateInvoiceChecker' not found");
+        }
+
+        return sessionRunner.callWithNewSession(session -> {
+            activeSessions.put(session.getSessionId(), session);
+            long startedAtNanos = System.nanoTime();
+            log.info("Starting duplicateInvoiceChecker sessionId={} filePath={}",
+                    session.getSessionId(),
+                    filePath);
+
+            try {
+                Object result = executionRouter.execute(metadata, Map.of("payload", invoiceText), session, null);
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("result", result);
+                response.put("executionTrace", session.getExecutionTrace());
+                response.put("sessionId", session.getSessionId());
+                response.put("filePath", filePath);
+
+                recentSessions.put(session.getSessionId(), session);
+                log.info("Completed duplicateInvoiceChecker sessionId={} filePath={} elapsedMs={}",
+                        session.getSessionId(),
+                        filePath,
+                        elapsedMillis(startedAtNanos));
+                return response;
+            } catch (RuntimeException ex) {
+                recentSessions.put(session.getSessionId(), session);
+                log.error("Failed duplicateInvoiceChecker sessionId={} filePath={} elapsedMs={}",
+                        session.getSessionId(),
+                        filePath,
+                        elapsedMillis(startedAtNanos),
+                        ex);
+                throw ex;
+            } finally {
+                activeSessions.remove(session.getSessionId());
+            }
+        });
+    }
+
     private BifrostSession requireTrackedSession(String sessionId) {
         BifrostSession session = activeSessions.get(sessionId);
         if (session != null) {

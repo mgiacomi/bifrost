@@ -1,0 +1,37 @@
+name: duplicateInvoiceChecker
+description: >
+  Checks whether a given invoice already exists in the expense system.
+  First, parses the raw invoice text to extract vendor, amount, and date.
+  Then, retrieves existing expenses and compares them to determine
+  if the invoice is a duplicate.
+model: granite4-tiny
+planning_mode: true
+allowed_skills:
+  - invoiceParser
+  - expenseLookup
+output_schema:
+  type: object
+  properties:
+    isDuplicate:
+      type: boolean
+      description: True if a matching expense was found in the system
+    vendorName:
+      type: string
+      description: Vendor name extracted from the invoice
+    totalAmount:
+      type: number
+      description: Total amount extracted from the invoice
+    invoiceDate:
+      type: string
+      description: Invoice date in ISO-8601 format (YYYY-MM-DD)
+    reasoning:
+      type: string
+      description: Brief explanation of why the invoice was or was not considered a duplicate
+  required:
+    - isDuplicate
+    - vendorName
+    - totalAmount
+    - invoiceDate
+    - reasoning
+  additionalProperties: false
+output_schema_max_retries: 2

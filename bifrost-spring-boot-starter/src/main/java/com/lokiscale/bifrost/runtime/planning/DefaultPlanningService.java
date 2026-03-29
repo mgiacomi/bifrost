@@ -22,6 +22,7 @@ import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
+import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,13 +46,49 @@ public class DefaultPlanningService implements PlanningService {
 
     private static final ObjectMapper YAML_OBJECT_MAPPER = YAMLMapper.builder().findAndAddModules().build();
 
-    private static final String PLANNING_PROMPT = """
-            Create an ordered flight plan for this mission before execution.
-            Return only valid JSON matching the ExecutionPlan structure with these fields:
-            planId, capabilityName, createdAt, status, activeTaskId, tasks.
-            Each task must include:
-            taskId, title, status, capabilityName, intent, dependsOn, expectedOutputs, autoCompletable, note.
-            """;
+    private static String buildPlanningPrompt(String capabilityName, List<ToolCallback> visibleTools) {
+        String toolList = (visibleTools == null || visibleTools.isEmpty())
+                ? "(none)"
+                : visibleTools.stream()
+                        .filter(t -> t != null && t.getToolDefinition() != null)
+                        .map(t -> "- " + t.getToolDefinition().name())
+                        .collect(java.util.stream.Collectors.joining("\n"));
+        return """
+                Create an ordered flight plan for this mission before execution.
+                Return ONLY valid JSON — no markdown, no explanation, no code fences.
+                The JSON must match this exact structure:
+                {
+                  "planId": "<unique string>",
+                  "capabilityName": "%s",
+                  "createdAt": "<ISO-8601 timestamp, e.g. 2024-01-01T00:00:00Z>",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {
+                      "taskId": "<unique string>",
+                      "title": "<short title>",
+                      "status": "PENDING",
+                      "capabilityName": "<one of the available sub-skills listed below>",
+                      "intent": "<what this task must accomplish>",
+                      "dependsOn": [],
+                      "expectedOutputs": ["<output description>"],
+                      "autoCompletable": false,
+                      "note": "<optional note or empty string>"
+                    }
+                  ]
+                }
+                Available sub-skills (use these exact names for task capabilityName):
+                %s
+                Constraints:
+                - plan status must be exactly: VALID
+                - task status must be exactly: PENDING
+                - autoCompletable must be a boolean (true or false)
+                - dependsOn must be a JSON array of taskId strings (empty array if no dependencies)
+                - expectedOutputs must be a JSON array of strings
+                - activeTaskId must be null
+                - Return raw JSON only — no additional text before or after
+                """.formatted(capabilityName, toolList);
+    }
 
     private final PlanTaskLinker planTaskLinker;
     private final ExecutionStateService executionStateService;
@@ -124,20 +161,22 @@ public class DefaultPlanningService implements PlanningService {
                         executionConfiguration.providerModel(),
                         capabilityName,
                         "planning");
+                String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools);
                 PlanningTraceResult planningResult = executionStateService.traceModelCall(
                         session,
                         modelFrame,
                         modelTraceContext,
                         Map.of(
-                                "system", PLANNING_PROMPT,
+                                "system", planningPrompt,
                                 "user", objective),
                         markRequestSent -> {
                             Map<String, Object> sentPayload = Map.of(
-                                    "system", PLANNING_PROMPT,
+                                    "system", planningPrompt,
                                     "user", objective);
                             ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                                    .system(PLANNING_PROMPT)
+                                    .system(planningPrompt)
                                     .user(objective)
+                                    .advisors(spec -> spec.param(OutputSchemaCallAdvisor.PLANNING_CALL_KEY, true))
                                     .call();
                             markRequestSent.accept(sentPayload);
                             ChatResponse chatResponse;
@@ -168,7 +207,7 @@ public class DefaultPlanningService implements PlanningService {
                 sessionUsageService.recordModelResponse(
                         session,
                         capabilityName,
-                        modelUsageExtractor.extract(planningResult.chatResponse(), objective, PLANNING_PROMPT, stringifyPlan(plan)));
+                        modelUsageExtractor.extract(planningResult.chatResponse(), objective, planningPrompt, stringifyPlan(plan)));
                 executionStateService.storePlan(session, plan);
                 executionStateService.logPlanCreated(session, plan);
                 return Optional.of(plan);
@@ -264,15 +303,6 @@ public class DefaultPlanningService implements PlanningService {
                         }));
     }
 
-    private Optional<ExecutionPlan> updatePlan(BifrostSession session,
-                                               java.util.function.Function<ExecutionPlan, ExecutionPlan> updater) {
-        return executionStateService.currentPlan(session).map(plan -> {
-            ExecutionPlan updated = Objects.requireNonNull(updater.apply(plan), "updated plan must not be null");
-            executionStateService.storePlan(session, updated);
-            executionStateService.logPlanUpdated(session, updated);
-            return updated;
-        });
-    }
 
     private Map<String, Object> closeMetadata(String status, @Nullable Throwable failure) {
         java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
@@ -376,7 +406,8 @@ public class DefaultPlanningService implements PlanningService {
         return switch (normalized) {
             case "VALID", "STALE", "INVALID" -> normalized;
             case "EXECUTED", "EXECUTING", "COMPLETED", "COMPLETE", "SUCCESS", "SUCCEEDED", "DONE",
-                    "READY", "PENDING", "IN_PROGRESS", "INPROGRESS" -> PlanStatus.VALID.name();
+                    "READY", "PENDING", "IN_PROGRESS", "INPROGRESS",
+                    "ACTIVE", "RUNNING", "OPEN", "NEW", "CURRENT", "ONGOING", "STARTED" -> PlanStatus.VALID.name();
             case "FAILED", "FAILURE", "ERROR", "BLOCKED" -> PlanStatus.INVALID.name();
             default -> null;
         };
@@ -389,7 +420,7 @@ public class DefaultPlanningService implements PlanningService {
             case "PENDING", "IN_PROGRESS", "COMPLETED", "BLOCKED" -> normalized;
             case "SUCCESS", "SUCCEEDED", "DONE", "COMPLETE", "EXECUTED" -> PlanTaskStatus.COMPLETED.name();
             case "RUNNING", "ACTIVE", "EXECUTING", "INPROGRESS" -> PlanTaskStatus.IN_PROGRESS.name();
-            case "WAITING", "READY", "TODO" -> PlanTaskStatus.PENDING.name();
+            case "WAITING", "READY", "TODO", "NEW", "OPEN", "QUEUED", "NOT_STARTED" -> PlanTaskStatus.PENDING.name();
             case "FAILED", "FAILURE", "ERROR", "INVALID", "STALE" -> PlanTaskStatus.BLOCKED.name();
             default -> null;
         };
