@@ -1,5 +1,14 @@
 ## Bifrost: The Agentic LLM-OS Framework (Master Spec)
 
+## Phase Documents
+- [Phase 1](C:/opendev/code/bifrost/ai/thoughts/phases/phase1.md)
+- [Phase 2](C:/opendev/code/bifrost/ai/thoughts/phases/phase2.md)
+- [Phase 3](C:/opendev/code/bifrost/ai/thoughts/phases/phase3.md)
+- [Phase 4](C:/opendev/code/bifrost/ai/thoughts/phases/phase4.md)
+- [Phase 5](C:/opendev/code/bifrost/ai/thoughts/phases/phase5.md)
+- [Phase 6](C:/opendev/code/bifrost/ai/thoughts/phases/phase6.md)
+- [Phase 7](C:/opendev/code/bifrost/ai/thoughts/phases/phase7.md)
+
 ### 1. The Core Paradigm: LLM-as-CPU
 Bifrost treats the LLM as a reasoning CPU and the surrounding application as an operating system (kernel). This shifts the focus from "chatbots" to agentic computing.  
 Bifrost is the bridge between the LLM and the Spring Boot application. It leverages Spring AI as the foundation for model interactions. It is part of a suite of products created by lokiscale.com
