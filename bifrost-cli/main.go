@@ -638,6 +638,8 @@ func frameTypeColor(ft string) string {
 		return "220"
 	case "SKILL_EXECUTION":
 		return "135"
+	case "STEP_EXECUTION":
+		return "177"
 	}
 	return "252"
 }
@@ -782,6 +784,17 @@ func typeAbbrevColor(rt string) (string, string) {
 		return "TOOL_DONE", "214"
 	case "TOOL_CALL_FAILED":
 		return "TOOL_FAIL", "196"
+	// Steps — purple/magenta
+	case "STEP_STARTED":
+		return "STEP_BGN", "177"
+	case "STEP_ACTION_PROPOSED":
+		return "STEP_ACT", "177"
+	case "STEP_ACTION_VALIDATED":
+		return "STEP_OK", "82"
+	case "STEP_ACTION_REJECTED":
+		return "STEP_REJ", "196"
+	case "STEP_COMPLETED":
+		return "STEP_END", "177"
 	// Errors — red
 	case "ERROR_RECORDED":
 		return "ERROR", "196"
@@ -890,6 +903,44 @@ func smartInfo(r TraceRecord) string {
 	case "TOOL_CALL_REQUESTED", "TOOL_CALL_STARTED", "TOOL_CALL_COMPLETED", "TOOL_CALL_FAILED":
 		if meta != nil {
 			return strVal(meta["toolName"])
+		}
+
+	case "STEP_STARTED":
+		if meta != nil {
+			return fmt.Sprintf("step:%v ready:%v", strVal(meta["stepNumber"]), strVal(meta["readyTasks"]))
+		}
+
+	case "STEP_ACTION_PROPOSED":
+		if meta != nil {
+			parts := []string{strVal(meta["stepAction"])}
+			if tid := strVal(meta["taskId"]); tid != "" {
+				parts = append(parts, "task:"+tid)
+			}
+			if tn := strVal(meta["toolName"]); tn != "" {
+				parts = append(parts, tn)
+			}
+			return strings.Join(parts, " │ ")
+		}
+
+	case "STEP_ACTION_VALIDATED":
+		if meta != nil {
+			return "✓ " + strVal(meta["stepAction"])
+		}
+		return "✓"
+
+	case "STEP_ACTION_REJECTED":
+		if meta != nil {
+			return "✗ " + truncate(strVal(meta["reason"]), 60)
+		}
+		return "✗"
+
+	case "STEP_COMPLETED":
+		if meta != nil {
+			info := strVal(meta["stepAction"])
+			if tid := strVal(meta["taskId"]); tid != "" {
+				info += " task:" + tid
+			}
+			return info
 		}
 
 	case "ERROR_RECORDED":

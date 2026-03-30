@@ -6,5 +6,6 @@ public enum TraceFrameType {
     MODEL_CALL,
     TOOL_INVOCATION,
     RETRY,
-    PLANNING
+    PLANNING,
+    STEP_EXECUTION
 }

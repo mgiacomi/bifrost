@@ -21,6 +21,7 @@ import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -58,9 +59,10 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
+        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                manifest,
                 executionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -126,9 +128,10 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
+        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                manifest,
                 executionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -199,9 +202,10 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
+        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                manifest,
                 executionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -236,9 +240,7 @@ class ExecutionCoordinatorTest {
                         "plan-1",
                         "root.visible.skill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(
-                                toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false),
-                                new PlanTask("task-2", "Prepare context", PlanTaskStatus.PENDING, null))),
+                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false))),
                 "mission complete",
                 "{\"value\":\"ref://artifacts/input.txt\"}");
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
@@ -270,7 +272,7 @@ class ExecutionCoordinatorTest {
         assertThat(factory.lastDefinition.executionConfiguration()).isEqualTo(executionConfiguration);
         assertThat(session.getExecutionPlan()).isPresent();
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
-                .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
+                .containsExactly(PlanTaskStatus.COMPLETED);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
@@ -368,6 +370,167 @@ class ExecutionCoordinatorTest {
     }
 
     @Test
+    void usesStepExecutionChatClientWhenStepLoopEngineIsSelected() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        manifest.setPlanningMode(true);
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest,
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        FakeCoordinatorChatClient defaultChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
+        FakeCoordinatorChatClient stepChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
+        RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(defaultChatClient, stepChatClient);
+        ExecutionStateService stateService = fixedStateService();
+        MissionExecutionEngine defaultEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+            throw new AssertionError("Default engine should not be selected");
+        };
+        MissionExecutionEngine stepEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+            assertThat(chatClient).isSameAs(stepChatClient);
+            return "step loop complete";
+        };
+
+        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+                catalog,
+                registry,
+                factory,
+                new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
+                (session, capabilities, authentication) -> List.of(),
+                defaultEngine,
+                stepEngine,
+                stateService,
+                new DefaultAccessGuard());
+
+        String response = coordinator.execute("root.visible.skill", "Say hello", new BifrostSession("session-1", 3), null);
+
+        assertThat(response).isEqualTo("step loop complete");
+        assertThat(factory.stepExecutionRequested).isTrue();
+    }
+
+    @Test
+    void doesNotSelectStepLoopWhenPlanningModeIsNotExplicitlyEnabled() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest,
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        FakeCoordinatorChatClient defaultChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
+        FakeCoordinatorChatClient stepChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
+        RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(defaultChatClient, stepChatClient);
+        ExecutionStateService stateService = fixedStateService();
+        MissionExecutionEngine defaultEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+            assertThat(chatClient).isSameAs(defaultChatClient);
+            return "one shot complete";
+        };
+        MissionExecutionEngine stepEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+            throw new AssertionError("Step loop should not be selected without explicit planning_mode: true");
+        };
+
+        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+                catalog,
+                registry,
+                factory,
+                new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
+                (session, capabilities, authentication) -> List.of(),
+                defaultEngine,
+                stepEngine,
+                stateService,
+                new DefaultAccessGuard());
+
+        String response = coordinator.execute("root.visible.skill", "Say hello", new BifrostSession("session-1", 3), null);
+
+        assertThat(response).isEqualTo("one shot complete");
+        assertThat(factory.stepExecutionRequested).isFalse();
+    }
+
+    @Test
+    void failsFastWhenStepLoopFactoryDoesNotImplementStepExecutionClientCreation() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        manifest.setPlanningMode(true);
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest,
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        SkillChatClientFactory factory = new SkillChatClientFactory() {
+            @Override
+            public ChatClient create(YamlSkillDefinition definition) {
+                return new FakeCoordinatorChatClient(null, "unused", null, false);
+            }
+        };
+
+        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+                catalog,
+                registry,
+                factory,
+                new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
+                (session, capabilities, authentication) -> List.of(),
+                (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
+                (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
+                fixedStateService(),
+                new DefaultAccessGuard());
+
+        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", new BifrostSession("session-1", 3), null))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("createForStepExecution");
+    }
+
+    @Test
     void marksTopLevelTraceErroredWhenMissionExecutionThrows() throws Exception {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
@@ -402,8 +565,7 @@ class ExecutionCoordinatorTest {
                 new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "unused", null)),
                 (value, session) -> value,
                 null,
-                failingMissionExecutionEngine,
-                true);
+                failingMissionExecutionEngine);
         BifrostSession session = new BifrostSession("session-top-level-failure", 3);
 
         assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
@@ -455,8 +617,7 @@ class ExecutionCoordinatorTest {
                 (currentSkillName, sessionState, authentication) -> List.of(),
                 new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "mission complete", null, false)),
                 (value, session) -> value,
-                null,
-                false);
+                null);
 
         BifrostSession session = new BifrostSession("session-1", 3, null, TracePersistencePolicy.ALWAYS);
         String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
@@ -520,7 +681,6 @@ class ExecutionCoordinatorTest {
                 stateService,
                 fixedPlanningService(stateService),
                 failingMissionExecutionEngine,
-                true,
                 null);
         BifrostSession session = new BifrostSession("session-1", 3);
 
@@ -626,9 +786,10 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
+        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                manifest,
                 executionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -665,9 +826,7 @@ class ExecutionCoordinatorTest {
                         "plan-2",
                         "root.visible.skill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(
-                                toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false),
-                                new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null))),
+                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false))),
                 "unused",
                 "{\"value\":\"ref://artifacts/input.txt\"}");
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
@@ -691,7 +850,7 @@ class ExecutionCoordinatorTest {
                 .hasMessageContaining("tool exploded");
         assertThat(session.getExecutionPlan()).isPresent();
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
-                .containsExactly(PlanTaskStatus.BLOCKED, PlanTaskStatus.PENDING);
+                .containsExactly(PlanTaskStatus.BLOCKED);
         assertThat(session.getExecutionPlan().orElseThrow().status()).isEqualTo(PlanStatus.STALE);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.ERROR);
@@ -709,10 +868,12 @@ class ExecutionCoordinatorTest {
                 AiProvider.ANTHROPIC,
                 "anthropic/claude-sonnet-4",
                 "medium");
+        YamlSkillManifest rootManifest = plannedManifest("root.visible.skill", List.of("child.llm.skill"));
+        YamlSkillManifest childManifest = plannedManifest("child.llm.skill", List.of("mars.analyzer"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(
-                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("root.visible.skill", List.of("child.llm.skill")),
+                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), rootManifest,
                         rootExecutionConfiguration),
-                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("child.llm.skill", List.of()),
+                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), childManifest,
                         childExecutionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -739,19 +900,29 @@ class ExecutionCoordinatorTest {
                 CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic("child.llm.skill", "child llm"),
                 null);
+        CapabilityMetadata marsAnalyzerMetadata = new CapabilityMetadata(
+                "yaml:mars-analyzer",
+                "mars.analyzer",
+                "mars analyzer",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(childExecutionConfiguration),
+                java.util.Set.of(),
+                arguments -> "analysis:" + arguments.get("topic"),
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("mars.analyzer", "mars analyzer"),
+                "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
         registry.register(childMetadata.name(), childMetadata);
+        registry.register(marsAnalyzerMetadata.name(), marsAnalyzerMetadata);
 
         FakeCoordinatorChatClient rootChatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-root",
                         "root.visible.skill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(
-                                toolTask("task-1", "Use child.llm.skill", "child.llm.skill", false),
-                                new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null))),
+                        List.of(toolTask("task-1", "Use child.llm.skill", "child.llm.skill", false))),
                 "root mission complete",
                 "{\"topic\":\"ref://artifacts/topic.txt\"}");
         FakeCoordinatorChatClient childChatClient = new FakeCoordinatorChatClient(
@@ -759,15 +930,17 @@ class ExecutionCoordinatorTest {
                         "plan-child",
                         "child.llm.skill",
                         Instant.parse("2026-03-15T12:01:00Z"),
-                        List.of(new PlanTask("child-task-1", "Analyze mars topic", PlanTaskStatus.PENDING, null))),
+                        List.of(toolTask("child-task-1", "Use mars.analyzer", "mars.analyzer", false))),
                 "child mission complete",
-                null);
+                "{\"topic\":\"mars\"}");
         MultiClientSkillChatClientFactory factory = new MultiClientSkillChatClientFactory(
                 java.util.Map.of(
                         rootExecutionConfiguration.frameworkModel(), rootChatClient,
                         childExecutionConfiguration.frameworkModel(), childChatClient));
         SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
-                "root.visible.skill".equals(currentSkillName) ? List.of(childMetadata) : List.of();
+                "root.visible.skill".equals(currentSkillName)
+                        ? List.of(childMetadata)
+                        : "child.llm.skill".equals(currentSkillName) ? List.of(marsAnalyzerMetadata) : List.of();
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
                 ? "resolved-content"
                 : value;
@@ -802,7 +975,7 @@ class ExecutionCoordinatorTest {
         assertThat(session.getExecutionPlan()).isPresent();
         assertThat(session.getExecutionPlan().orElseThrow().planId()).isEqualTo("plan-root");
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
-                .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
+                .containsExactly(PlanTaskStatus.COMPLETED);
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .containsSubsequence(
                         JournalEntryType.PLAN_CREATED,
@@ -823,9 +996,10 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
+        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                manifest,
                 executionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -896,10 +1070,12 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5-mini",
                 "low");
+        YamlSkillManifest rootManifest = plannedManifest("root.visible.skill", List.of("child.llm.skill"));
+        YamlSkillManifest childManifest = plannedManifest("child.llm.skill", List.of("mars.analyzer"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(
-                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("root.visible.skill", List.of("child.llm.skill")),
+                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), rootManifest,
                         rootExecutionConfiguration),
-                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("child.llm.skill", List.of()),
+                new YamlSkillDefinition(new ByteArrayResource(new byte[0]), childManifest,
                         childExecutionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -926,10 +1102,22 @@ class ExecutionCoordinatorTest {
                 CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic("child.llm.skill", "child llm"),
                 null);
+        CapabilityMetadata marsAnalyzerMetadata = new CapabilityMetadata(
+                "yaml:mars-analyzer",
+                "mars.analyzer",
+                "mars analyzer",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(childExecutionConfiguration),
+                java.util.Set.of("ROLE_ALLOWED"),
+                arguments -> "analysis:" + arguments.get("topic"),
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("mars.analyzer", "mars analyzer"),
+                "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
         registry.register(childMetadata.name(), childMetadata);
+        registry.register(marsAnalyzerMetadata.name(), marsAnalyzerMetadata);
 
         FakeCoordinatorChatClient rootChatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
@@ -944,15 +1132,17 @@ class ExecutionCoordinatorTest {
                         "plan-child",
                         "child.llm.skill",
                         Instant.parse("2026-03-15T12:01:00Z"),
-                        List.of(new PlanTask("child-task-1", "Analyze mars topic", PlanTaskStatus.PENDING, null))),
+                        List.of(toolTask("child-task-1", "Use mars.analyzer", "mars.analyzer", false))),
                 "child mission complete",
-                null);
+                "{\"topic\":\"mars\"}");
         MultiClientSkillChatClientFactory factory = new MultiClientSkillChatClientFactory(
                 java.util.Map.of(
                         rootExecutionConfiguration.frameworkModel(), rootChatClient,
                         childExecutionConfiguration.frameworkModel(), childChatClient));
         SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
-                "root.visible.skill".equals(currentSkillName) ? List.of(childMetadata) : List.of();
+                "root.visible.skill".equals(currentSkillName)
+                        ? List.of(childMetadata)
+                        : "child.llm.skill".equals(currentSkillName) ? List.of(marsAnalyzerMetadata) : List.of();
 
         ExecutionStateService stateService = fixedStateService();
         PlanningService planningService = fixedPlanningService(stateService);
@@ -974,9 +1164,9 @@ class ExecutionCoordinatorTest {
                 toolSurfaceService,
                 toolCallbackFactory,
                 missionExecutionEngine,
+                missionExecutionEngine,
                 stateService,
-                new DefaultAccessGuard(),
-                true);
+                new DefaultAccessGuard());
         ExecutionCoordinator coordinator = coordinatorHolder[0];
 
         BifrostSession session = new BifrostSession("session-1", 4);
@@ -1044,7 +1234,6 @@ class ExecutionCoordinatorTest {
                     stateService,
                     planningService,
                     missionExecutionEngine,
-                    true,
                     null);
 
             BifrostSession session = new BifrostSession("session-timeout", 3);
@@ -1094,9 +1283,10 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
+        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of("allowed.visible.skill")),
+                manifest,
                 executionConfiguration));
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
@@ -1169,14 +1359,19 @@ class ExecutionCoordinatorTest {
         return manifest;
     }
 
+    private static YamlSkillManifest plannedManifest(String name, List<String> allowedSkills) {
+        YamlSkillManifest manifest = manifest(name, allowedSkills);
+        manifest.setPlanningMode(true);
+        return manifest;
+    }
+
     private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
-                                                   InMemoryCapabilityRegistry registry,
-                                                   SkillVisibilityResolver visibilityResolver,
-                                                   SkillChatClientFactory factory,
-                                                   RefResolver refResolver,
-                                                   ExecutionCoordinator routedCoordinator,
-                                                   boolean planningModeEnabled) {
-        return coordinator(catalog, registry, visibilityResolver, factory, refResolver, routedCoordinator, planningModeEnabled, null);
+                                                    InMemoryCapabilityRegistry registry,
+                                                    SkillVisibilityResolver visibilityResolver,
+                                                    SkillChatClientFactory factory,
+                                                    RefResolver refResolver,
+                                                    ExecutionCoordinator routedCoordinator) {
+        return coordinator(catalog, registry, visibilityResolver, factory, refResolver, routedCoordinator, (Boolean) null);
     }
 
     private static ExecutionCoordinator coordinator(StubYamlSkillCatalog catalog,
@@ -1185,7 +1380,6 @@ class ExecutionCoordinatorTest {
                                                     SkillChatClientFactory factory,
                                                     RefResolver refResolver,
                                                     ExecutionCoordinator routedCoordinator,
-                                                    boolean planningModeEnabled,
                                                     @Nullable Boolean dropInvocationAuthenticationForCallbacks) {
         ExecutionStateService stateService = fixedStateService();
         PlanningService planningService = fixedPlanningService(stateService);
@@ -1200,7 +1394,6 @@ class ExecutionCoordinatorTest {
                 stateService,
                 planningService,
                 missionExecutionEngine,
-                planningModeEnabled,
                 dropInvocationAuthenticationForCallbacks);
     }
 
@@ -1210,8 +1403,7 @@ class ExecutionCoordinatorTest {
                                                     SkillChatClientFactory factory,
                                                     RefResolver refResolver,
                                                     ExecutionCoordinator routedCoordinator,
-                                                    MissionExecutionEngine missionExecutionEngine,
-                                                    boolean planningModeEnabled) {
+                                                    MissionExecutionEngine missionExecutionEngine) {
         ExecutionStateService stateService = fixedStateService();
         PlanningService planningService = fixedPlanningService(stateService);
         return coordinator(
@@ -1224,7 +1416,6 @@ class ExecutionCoordinatorTest {
                 stateService,
                 planningService,
                 missionExecutionEngine,
-                planningModeEnabled,
                 null);
     }
 
@@ -1237,7 +1428,6 @@ class ExecutionCoordinatorTest {
                                                     ExecutionStateService stateService,
                                                     PlanningService planningService,
                                                     MissionExecutionEngine missionExecutionEngine,
-                                                    boolean planningModeEnabled,
                                                     @Nullable Boolean dropInvocationAuthenticationForCallbacks) {
         ToolSurfaceService toolSurfaceService = new DefaultToolSurfaceService(visibilityResolver);
         ToolCallbackFactory toolCallbackFactory = toolCallbackFactory(
@@ -1254,9 +1444,9 @@ class ExecutionCoordinatorTest {
                 toolSurfaceService,
                 toolCallbackFactory,
                 missionExecutionEngine,
+                missionExecutionEngine,
                 stateService,
-                accessGuard,
-                planningModeEnabled);
+                accessGuard);
     }
 
     private static ToolCallbackFactory toolCallbackFactory(RefResolver refResolver,
@@ -1385,16 +1575,31 @@ class ExecutionCoordinatorTest {
     private static final class RecordingSkillChatClientFactory implements SkillChatClientFactory {
 
         private final FakeCoordinatorChatClient chatClient;
+        private final FakeCoordinatorChatClient stepChatClient;
         private YamlSkillDefinition lastDefinition;
+        private boolean stepExecutionRequested;
 
         private RecordingSkillChatClientFactory(FakeCoordinatorChatClient chatClient) {
+            this(chatClient, chatClient);
+        }
+
+        private RecordingSkillChatClientFactory(FakeCoordinatorChatClient chatClient,
+                                                FakeCoordinatorChatClient stepChatClient) {
             this.chatClient = chatClient;
+            this.stepChatClient = stepChatClient;
         }
 
         @Override
         public org.springframework.ai.chat.client.ChatClient create(YamlSkillDefinition definition) {
             this.lastDefinition = definition;
             return chatClient;
+        }
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient createForStepExecution(YamlSkillDefinition definition) {
+            this.lastDefinition = definition;
+            this.stepExecutionRequested = true;
+            return stepChatClient;
         }
     }
 
@@ -1416,6 +1621,11 @@ class ExecutionCoordinatorTest {
                 throw new IllegalStateException("No chat client configured for " + executionConfiguration.frameworkModel());
             }
             return chatClient;
+        }
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient createForStepExecution(YamlSkillDefinition definition) {
+            return create(definition);
         }
     }
 

@@ -149,9 +149,9 @@ class ExecutionCoordinatorLinterIntegrationTest {
                 toolSurfaceService,
                 toolCallbackFactory,
                 missionExecutionEngine,
+                missionExecutionEngine,
                 stateService,
-                new DefaultAccessGuard(),
-                true);
+                new DefaultAccessGuard());
     }
 
     private static final class StubYamlSkillCatalog extends com.lokiscale.bifrost.skill.YamlSkillCatalog {

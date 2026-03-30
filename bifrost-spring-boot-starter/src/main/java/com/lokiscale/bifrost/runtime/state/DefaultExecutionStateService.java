@@ -12,6 +12,7 @@ import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.OperationType;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.core.ToolTraceContext;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
@@ -290,6 +291,17 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
+    public void recordStepEvent(BifrostSession session, ExecutionFrame frame, TraceRecordType recordType,
+                                 Map<String, Object> metadata, Object payload) {
+        Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(frame, "frame must not be null");
+        Objects.requireNonNull(recordType, "recordType must not be null");
+        session.appendTraceRecord(recordType, frame,
+                metadata == null ? Map.of() : Map.copyOf(metadata),
+                payload == null ? Map.of() : payload);
+    }
+
+    @Override
     public void finalizeTrace(BifrostSession session, Map<String, Object> metadata) {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.finalizeTrace(session, com.lokiscale.bifrost.core.TraceCompletion.of(metadata));
@@ -306,7 +318,7 @@ public class DefaultExecutionStateService implements ExecutionStateService {
         }
         return switch (traceFrameType) {
             case ROOT_MISSION -> OperationType.CAPABILITY;
-            case SKILL_EXECUTION, PLANNING, MODEL_CALL, TOOL_INVOCATION -> OperationType.SKILL;
+            case SKILL_EXECUTION, PLANNING, MODEL_CALL, TOOL_INVOCATION, STEP_EXECUTION -> OperationType.SKILL;
             case RETRY -> OperationType.SUB_AGENT;
         };
     }

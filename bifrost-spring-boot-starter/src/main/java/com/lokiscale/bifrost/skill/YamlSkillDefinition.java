@@ -39,4 +39,12 @@ public record YamlSkillDefinition(
     public boolean planningModeEnabled(boolean defaultValue) {
         return manifest.getPlanningMode() == null ? defaultValue : manifest.getPlanningMode();
     }
+
+    public boolean planningModeExplicitlyEnabled() {
+        return Boolean.TRUE.equals(manifest.getPlanningMode());
+    }
+
+    public int maxSteps(int defaultValue) {
+        return manifest.getMaxSteps() == null ? defaultValue : manifest.getMaxSteps();
+    }
 }

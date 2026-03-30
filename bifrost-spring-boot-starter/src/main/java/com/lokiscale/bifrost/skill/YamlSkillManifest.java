@@ -6,9 +6,9 @@ import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Collections;
+import java.util.Locale;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
 public class YamlSkillManifest {
@@ -28,6 +28,9 @@ public class YamlSkillManifest {
 
     @JsonProperty("planning_mode")
     private Boolean planningMode;
+
+    @JsonProperty("max_steps")
+    private Integer maxSteps;
 
     private LinterManifest linter;
 
@@ -93,6 +96,14 @@ public class YamlSkillManifest {
 
     public void setPlanningMode(Boolean planningMode) {
         this.planningMode = planningMode;
+    }
+
+    public Integer getMaxSteps() {
+        return maxSteps;
+    }
+
+    public void setMaxSteps(Integer maxSteps) {
+        this.maxSteps = maxSteps;
     }
 
     public LinterManifest getLinter() {

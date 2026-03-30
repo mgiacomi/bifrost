@@ -126,6 +126,17 @@ public class DefaultPlanningService implements PlanningService {
                                                   EffectiveSkillExecutionConfiguration executionConfiguration,
                                                   ChatClient chatClient,
                                                   List<ToolCallback> visibleTools) {
+        return initializePlan(session, objective, capabilityName, executionConfiguration, chatClient, visibleTools, false);
+    }
+
+    @Override
+    public Optional<ExecutionPlan> initializePlan(BifrostSession session,
+                                                  String objective,
+                                                  String capabilityName,
+                                                  EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                  ChatClient chatClient,
+                                                  List<ToolCallback> visibleTools,
+                                                  boolean strictPlanContract) {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
@@ -198,7 +209,7 @@ public class DefaultPlanningService implements PlanningService {
                                         capabilityName,
                                         preview(planPayload));
                             }
-                            ExecutionPlan plan = parsePlan(planPayload, capabilityName);
+                            ExecutionPlan plan = parsePlan(planPayload, capabilityName, strictPlanContract);
                             return ModelTraceResult.of(
                                     new PlanningTraceResult(plan, chatResponse),
                                     Map.of("content", planPayload));
@@ -255,6 +266,29 @@ public class DefaultPlanningService implements PlanningService {
     }
 
     @Override
+    public Optional<ExecutionPlan> markTaskStarted(BifrostSession session,
+                                                   String taskId,
+                                                   String capabilityName,
+                                                   @Nullable Map<String, Object> arguments) {
+        Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(taskId, "taskId must not be null");
+        Objects.requireNonNull(capabilityName, "capabilityName must not be null");
+        return executionStateService.currentPlan(session)
+                .flatMap(plan -> plan.findTask(taskId)
+                        .map(task -> {
+                            requireBoundCapability(task, capabilityName);
+                            ExecutionPlan updated = replacePlanTask(
+                                    plan,
+                                    taskId,
+                                    current -> current.bindInProgress("Starting tool " + capabilityName))
+                                    .withActiveTask(taskId);
+                            executionStateService.storePlan(session, updated);
+                            executionStateService.logPlanUpdated(session, updated);
+                            return updated;
+                        }));
+    }
+
+    @Override
     public Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                      String taskId,
                                                      String capabilityName,
@@ -265,6 +299,7 @@ public class DefaultPlanningService implements PlanningService {
         return executionStateService.currentPlan(session)
                 .flatMap(plan -> plan.findTask(taskId)
                         .map(task -> {
+                            requireBoundCapability(task, capabilityName);
                             ExecutionPlan updated = replacePlanTask(
                                     plan,
                                     taskId,
@@ -291,6 +326,7 @@ public class DefaultPlanningService implements PlanningService {
         return executionStateService.currentPlan(session)
                 .flatMap(plan -> plan.findTask(taskId)
                         .map(task -> {
+                            requireBoundCapability(task, capabilityName);
                             ExecutionPlan updated = replacePlanTask(
                                     plan,
                                     taskId,
@@ -331,7 +367,7 @@ public class DefaultPlanningService implements PlanningService {
                 .orElse(null);
     }
 
-    private ExecutionPlan parsePlan(String payload, String capabilityName) {
+    private ExecutionPlan parsePlan(String payload, String capabilityName, boolean strictPlanContract) {
         String unwrapped = unwrapFencedBlock(payload);
         log.debug(
                 "Parsing plan for capability='{}' looksLikeJson={} payloadPreview={}...",
@@ -341,12 +377,68 @@ public class DefaultPlanningService implements PlanningService {
         try {
             JsonNode tree = parsePlanTree(unwrapped, capabilityName);
             normalizePlanTree(tree);
-            return objectMapper.treeToValue(tree, ExecutionPlan.class);
+            ExecutionPlan plan = objectMapper.treeToValue(tree, ExecutionPlan.class);
+            if (strictPlanContract) {
+                validateStepLoopPlanShape(plan, capabilityName);
+            }
+            return plan;
         }
         catch (JsonProcessingException ex) {
             throw new IllegalStateException(
                     "Failed to parse planning response for capability '" + capabilityName
                             + "' as JSON or YAML. Payload preview: " + preview(unwrapped), ex);
+        }
+    }
+
+    private void validateStepLoopPlanShape(ExecutionPlan plan, String capabilityName) {
+        List<String> duplicateTaskIds = duplicateTaskIds(plan);
+        List<String> autoCompletableTaskIds = plan.tasks().stream()
+                .filter(PlanTask::autoCompletable)
+                .map(PlanTask::taskId)
+                .toList();
+        List<String> unboundTaskIds = plan.tasks().stream()
+                .filter(task -> !task.autoCompletable())
+                .filter(task -> task.capabilityName() == null || task.capabilityName().isBlank())
+                .map(PlanTask::taskId)
+                .toList();
+        if (duplicateTaskIds.isEmpty() && autoCompletableTaskIds.isEmpty() && unboundTaskIds.isEmpty()) {
+            return;
+        }
+
+        StringBuilder message = new StringBuilder(
+                "Planning response for capability '" + capabilityName + "' violated the step-loop plan contract.");
+        if (!duplicateTaskIds.isEmpty()) {
+            message.append(" Task IDs must be unique. Duplicates: ").append(duplicateTaskIds).append(".");
+        }
+        if (!autoCompletableTaskIds.isEmpty()) {
+            message.append(" autoCompletable tasks are not supported: ").append(autoCompletableTaskIds).append(".");
+        }
+        if (!unboundTaskIds.isEmpty()) {
+            message.append(" Every non-auto-completable task must declare a capabilityName. Missing: ")
+                    .append(unboundTaskIds)
+                    .append(".");
+        }
+        throw new IllegalStateException(message.toString());
+    }
+
+    private List<String> duplicateTaskIds(ExecutionPlan plan) {
+        return plan.tasks().stream()
+                .map(PlanTask::taskId)
+                .collect(java.util.stream.Collectors.groupingBy(
+                        java.util.function.Function.identity(),
+                        java.util.LinkedHashMap::new,
+                        java.util.stream.Collectors.counting()))
+                .entrySet().stream()
+                .filter(entry -> entry.getValue() > 1)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    private void requireBoundCapability(PlanTask task, String capabilityName) {
+        if (!Objects.equals(task.capabilityName(), capabilityName)) {
+            throw new IllegalStateException(
+                    "Task '%s' is bound to capability '%s' but received '%s'."
+                            .formatted(task.taskId(), task.capabilityName(), capabilityName));
         }
     }
 

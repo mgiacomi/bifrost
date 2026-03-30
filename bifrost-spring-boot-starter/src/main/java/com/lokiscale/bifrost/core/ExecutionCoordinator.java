@@ -25,9 +25,9 @@ public class ExecutionCoordinator {
     private final ToolSurfaceService toolSurfaceService;
     private final ToolCallbackFactory toolCallbackFactory;
     private final MissionExecutionEngine missionExecutionEngine;
+    private final MissionExecutionEngine stepLoopMissionExecutionEngine;
     private final ExecutionStateService executionStateService;
     private final AccessGuard accessGuard;
-    private final boolean planningModeEnabled;
 
     public ExecutionCoordinator(YamlSkillCatalog yamlSkillCatalog,
                                 CapabilityRegistry capabilityRegistry,
@@ -35,18 +35,20 @@ public class ExecutionCoordinator {
                                 ToolSurfaceService toolSurfaceService,
                                 ToolCallbackFactory toolCallbackFactory,
                                 MissionExecutionEngine missionExecutionEngine,
+                                MissionExecutionEngine stepLoopMissionExecutionEngine,
                                 ExecutionStateService executionStateService,
-                                AccessGuard accessGuard,
-                                boolean planningModeEnabled) {
+                                AccessGuard accessGuard) {
         this.yamlSkillCatalog = Objects.requireNonNull(yamlSkillCatalog, "yamlSkillCatalog must not be null");
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
         this.skillChatClientFactory = Objects.requireNonNull(skillChatClientFactory, "skillChatClientFactory must not be null");
         this.toolSurfaceService = Objects.requireNonNull(toolSurfaceService, "toolSurfaceService must not be null");
         this.toolCallbackFactory = Objects.requireNonNull(toolCallbackFactory, "toolCallbackFactory must not be null");
         this.missionExecutionEngine = Objects.requireNonNull(missionExecutionEngine, "missionExecutionEngine must not be null");
+        this.stepLoopMissionExecutionEngine = Objects.requireNonNull(
+                stepLoopMissionExecutionEngine,
+                "stepLoopMissionExecutionEngine must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.accessGuard = Objects.requireNonNull(accessGuard, "accessGuard must not be null");
-        this.planningModeEnabled = planningModeEnabled;
     }
 
     public String execute(String skillName, String objective, BifrostSession session, @Nullable Authentication authentication) {
@@ -64,19 +66,23 @@ public class ExecutionCoordinator {
         Throwable failure = null;
         try {
             return BifrostSessionHolder.callWithSession(session, () -> {
-                ChatClient chatClient = skillChatClientFactory.create(definition);
+                boolean stepExecutionEnabled = definition.planningModeExplicitlyEnabled();
+                MissionExecutionEngine engine = stepExecutionEnabled ? stepLoopMissionExecutionEngine : missionExecutionEngine;
+                ChatClient chatClient = stepExecutionEnabled
+                        ? skillChatClientFactory.createForStepExecution(definition)
+                        : skillChatClientFactory.create(definition);
                 List<ToolCallback> visibleTools = toolCallbackFactory.createToolCallbacks(
                         session,
                         toolSurfaceService.visibleToolsFor(skillName, session, authentication),
                         authentication);
-                return missionExecutionEngine.executeMission(
+                return engine.executeMission(
                         session,
                         skillName,
                         objective,
                         definition.executionConfiguration(),
                         chatClient,
                         visibleTools,
-                        definition.planningModeEnabled(planningModeEnabled),
+                        definition.planningModeExplicitlyEnabled(),
                         authentication);
             });
         }

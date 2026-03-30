@@ -1,7 +1,6 @@
 package com.lokiscale.bifrost.vfs;
 
 import com.lokiscale.bifrost.core.BifrostSession;
-import org.springframework.core.io.Resource;
 import java.util.Objects;
 
 public class DefaultRefResolver implements RefResolver {

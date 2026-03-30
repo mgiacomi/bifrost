@@ -7,20 +7,16 @@ import com.lokiscale.bifrost.core.CapabilityRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-class SampleControllerTest {
-
-    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
-
+class SampleControllerTest
+{
     @Test
-    void trackedSessionDebugPayloadExposesExecutionTraceAndOptionalJournal() {
+    void trackedSessionDebugPayloadExposesExecutionTraceAndOptionalJournal()
+    {
         SampleController controller = new SampleController(
                 mock(CapabilityRegistry.class),
                 mock(CapabilityExecutionRouter.class),

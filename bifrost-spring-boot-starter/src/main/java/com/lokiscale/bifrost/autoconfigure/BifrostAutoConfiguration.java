@@ -373,6 +373,29 @@ public class BifrostAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(name = "stepLoopMissionExecutionEngine")
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine stepLoopMissionExecutionEngine(
+            PlanningService planningService,
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            YamlSkillCatalog yamlSkillCatalog,
+            BifrostSessionProperties sessionProperties,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor,
+            @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor) {
+        return new com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine(
+                planningService,
+                executionStateService,
+                capabilityRegistry,
+                yamlSkillCatalog,
+                sessionProperties.getMissionTimeout(),
+                bifrostMissionExecutor,
+                sessionUsageService,
+                modelUsageExtractor);
+    }
+
+    @Bean
     @ConditionalOnBean(SkillChatClientFactory.class)
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
@@ -382,6 +405,7 @@ public class BifrostAutoConfiguration {
                                                      ToolSurfaceService toolSurfaceService,
                                                      ToolCallbackFactory toolCallbackFactory,
                                                      MissionExecutionEngine missionExecutionEngine,
+                                                     com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine stepLoopMissionExecutionEngine,
                                                      ExecutionStateService executionStateService,
                                                      AccessGuard accessGuard) {
         return new ExecutionCoordinator(
@@ -391,9 +415,9 @@ public class BifrostAutoConfiguration {
                 toolSurfaceService,
                 toolCallbackFactory,
                 missionExecutionEngine,
+                stepLoopMissionExecutionEngine,
                 executionStateService,
-                accessGuard,
-                true);
+                accessGuard);
     }
 
     private static void registerChatModel(Map<AiProvider, ChatModel> modelsByProvider,

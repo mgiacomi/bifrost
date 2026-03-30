@@ -50,10 +50,10 @@ public record PlanTask(
         if (status != PlanTaskStatus.PENDING) {
             return false;
         }
-        return dependsOn.stream()
-                .map(tasksById::get)
-                .filter(java.util.Objects::nonNull)
-                .allMatch(task -> task.status() == PlanTaskStatus.COMPLETED);
+        return dependsOn.stream().allMatch(dependencyId -> {
+            PlanTask dependency = tasksById.get(dependencyId);
+            return dependency != null && dependency.status() == PlanTaskStatus.COMPLETED;
+        });
     }
 
     private static String requireNonBlank(String value, String fieldName) {

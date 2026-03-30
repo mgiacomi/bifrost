@@ -1,0 +1,290 @@
+package com.lokiscale.bifrost.runtime.step;
+
+import com.lokiscale.bifrost.core.ExecutionPlan;
+import com.lokiscale.bifrost.core.PlanTask;
+import com.lokiscale.bifrost.core.PlanTaskStatus;
+import com.lokiscale.bifrost.skill.YamlSkillManifest;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.lang.Nullable;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+/**
+ * Builds a concise, task-focused system prompt for each iteration of the plan-step execution loop.
+ */
+public final class StepPromptBuilder {
+
+    private static final int MAX_LAST_RESULT_CHARS = 1000;
+
+    private StepPromptBuilder() {
+    }
+
+    public static String buildStepPrompt(ExecutionPlan plan,
+                                         String objective,
+                                         int stepNumber,
+                                         @Nullable String lastToolResult,
+                                         @Nullable String executionSummary,
+                                         List<ToolCallback> visibleTools,
+                                         boolean finalResponseOnly,
+                                         @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+        Objects.requireNonNull(plan, "plan must not be null");
+        Objects.requireNonNull(objective, "objective must not be null");
+
+        String readyTaskLines = formatTasks(plan.readyTasks(), plan);
+        String waitingTaskLines = formatWaitingTasks(plan);
+        String blockedTaskLines = formatTasksByStatus(plan, PlanTaskStatus.BLOCKED);
+        String completedTaskLines = formatTasksByStatus(plan, PlanTaskStatus.COMPLETED);
+        String activeTaskLine = plan.activeTask()
+                .map(task -> task.taskId() + ": " + task.title())
+                .orElse("(none)");
+
+        String toolNameList = (visibleTools == null || visibleTools.isEmpty())
+                ? "(none)"
+                : visibleTools.stream()
+                        .filter(t -> t != null && t.getToolDefinition() != null)
+                        .map(t -> "- " + t.getToolDefinition().name())
+                        .reduce((a, b) -> a + "\n" + b)
+                        .orElse("(none)");
+        String currentStepInstructions = formatCurrentStepInstructions(plan.readyTasks());
+        String missionContext = sanitizeObjective(objective, plan.capabilityName());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                You are executing a planned mission step by step.
+                Mission context:
+                %s
+                Step: %d
+                Plan: %s (status: %s)
+                """.formatted(missionContext, stepNumber, plan.planId(), plan.status()));
+
+        sb.append("\nActive task: ").append(activeTaskLine);
+        sb.append("\n\n--- COMPLETED TASKS ---\n").append(completedTaskLines);
+        sb.append("\n\n--- READY TASKS (you should work on one of these) ---\n").append(readyTaskLines);
+        sb.append("\n\n--- PENDING TASKS WAITING ON DEPENDENCIES ---\n").append(waitingTaskLines);
+        sb.append("\n\n--- BLOCKED TASKS (failed or cannot continue) ---\n").append(blockedTaskLines);
+        if (currentStepInstructions != null) {
+            sb.append("\n\n--- CURRENT EXECUTABLE TASK ---\n").append(currentStepInstructions);
+        }
+
+        if (executionSummary != null && !executionSummary.isBlank()) {
+            sb.append("\n\n--- EXECUTION SUMMARY ---\n").append(executionSummary);
+        }
+
+        if (lastToolResult != null && !lastToolResult.isBlank()) {
+            String trimmedResult = lastToolResult.length() > MAX_LAST_RESULT_CHARS
+                    ? lastToolResult.substring(0, MAX_LAST_RESULT_CHARS) + "... (truncated)"
+                    : lastToolResult;
+            sb.append("\n\n--- LAST TOOL RESULT ---\n").append(trimmedResult);
+        }
+
+        sb.append("\n\n--- AVAILABLE TOOLS ---\n").append(toolNameList);
+
+        if (finalResponseOnly) {
+            sb.append("""
+
+
+                    --- YOUR TASK ---
+                    All required plan tasks are already COMPLETE.
+                    Return ONLY valid JSON - no markdown, no explanation, no code fences.
+                    You must return a FINAL_RESPONSE action. CALL_TOOL is not allowed anymore.
+
+                    {
+                      "stepAction": "FINAL_RESPONSE",
+                      "finalResponse": { <your complete response to the mission objective> }
+                    }
+                    """);
+            appendOutputSchemaGuidance(sb, outputSchema);
+            sb.append("""
+
+                    Rules:
+                    - Do NOT call any tool.
+                    - finalResponse should be the mission payload itself, not string-encoded JSON.
+                    - Return raw JSON only.
+                    """);
+        } else {
+            sb.append("""
+
+
+                    --- YOUR TASK ---
+                    Return ONLY valid JSON - no markdown, no explanation, no code fences.
+                    Choose exactly ONE action:
+
+                    Option 1 - Call a tool for a ready task:
+                    {
+                      "stepAction": "CALL_TOOL",
+                      "taskId": "<taskId of the ready task>",
+                      "toolName": "<exact tool name from the list above>",
+                      "toolArguments": { <arguments for this tool> }
+                    }
+
+                    Option 2 - Provide the final mission response (only if ALL tasks are complete):
+                    {
+                      "stepAction": "FINAL_RESPONSE",
+                      "finalResponse": { <your complete response to the mission objective> }
+                    }
+
+                    Rules:
+                    - You MUST pick a task from the READY list. Do NOT pick waiting, blocked, or completed tasks.
+                    - The ready task is already bound to a specific tool. Do not use the mission skill name as toolName.
+                    - Use the exact toolName and taskId values shown above.
+                    - finalResponse should be the mission payload itself, not string-encoded JSON.
+                    - Return raw JSON only.
+                    """);
+        }
+
+        return sb.toString();
+    }
+
+    public static String buildStepUserMessage(ExecutionPlan plan, String objective) {
+        Objects.requireNonNull(plan, "plan must not be null");
+        Objects.requireNonNull(objective, "objective must not be null");
+        return sanitizeObjective(objective, plan.capabilityName());
+    }
+
+    private static String formatTasks(List<PlanTask> tasks, ExecutionPlan plan) {
+        if (tasks.isEmpty()) {
+            return "  (none)";
+        }
+        return tasks.stream()
+                .sorted(Comparator.comparingInt(plan.tasks()::indexOf))
+                .map(task -> "  - [%s] %s: %s (tool: %s)%s".formatted(
+                        task.status(),
+                        task.taskId(),
+                        task.title(),
+                        task.capabilityName() == null ? "unspecified" : task.capabilityName(),
+                        task.note() == null ? "" : " - " + task.note()))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("  (none)");
+    }
+
+    private static String formatTasksByStatus(ExecutionPlan plan, PlanTaskStatus status) {
+        List<PlanTask> matching = plan.tasks().stream()
+                .filter(task -> task.status() == status)
+                .toList();
+        if (matching.isEmpty()) {
+            return "  (none)";
+        }
+        return matching.stream()
+                .map(task -> "  - %s: %s%s".formatted(
+                        task.taskId(),
+                        task.title(),
+                        task.note() == null ? "" : " - " + task.note()))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("  (none)");
+    }
+
+    private static String formatWaitingTasks(ExecutionPlan plan) {
+        java.util.Map<String, PlanTask> tasksById = plan.tasks().stream()
+                .collect(Collectors.toMap(PlanTask::taskId, task -> task, (left, right) -> left));
+        List<PlanTask> waiting = plan.tasks().stream()
+                .filter(task -> task.status() == PlanTaskStatus.PENDING)
+                .filter(task -> !task.isReady(tasksById))
+                .toList();
+        if (waiting.isEmpty()) {
+            return "  (none)";
+        }
+        return waiting.stream()
+                .map(task -> "  - %s: %s (waiting on: %s)%s".formatted(
+                        task.taskId(),
+                        task.title(),
+                        task.dependsOn().isEmpty() ? "unknown" : String.join(", ", task.dependsOn()),
+                        task.note() == null ? "" : " - " + task.note()))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("  (none)");
+    }
+
+    private static String sanitizeObjective(String objective, @Nullable String capabilityName) {
+        if (objective == null || objective.isBlank()) {
+            return "(none)";
+        }
+        String sanitized = objective;
+        if (capabilityName != null && !capabilityName.isBlank()) {
+            String exactPrefix = "Execute YAML skill '" + capabilityName + "' using these tool arguments:";
+            if (sanitized.startsWith(exactPrefix)) {
+                String argumentsOnly = sanitized.substring(exactPrefix.length()).trim();
+                return argumentsOnly.isBlank() ? "Use the provided mission inputs." : "Use these mission inputs:\n" + argumentsOnly;
+            }
+            sanitized = sanitized.replace("YAML skill '" + capabilityName + "'", "the mission");
+            sanitized = sanitized.replace("'" + capabilityName + "'", "the mission");
+            sanitized = sanitized.replace(capabilityName, "the mission");
+        }
+        return sanitized;
+    }
+
+    private static void appendOutputSchemaGuidance(StringBuilder sb,
+                                                   @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+        if (outputSchema == null) {
+            return;
+        }
+        sb.append("\n\n--- REQUIRED FINAL RESPONSE SHAPE ---\n");
+        sb.append(renderSchemaExample(outputSchema, 0));
+        if (outputSchema.getRequired() != null && !outputSchema.getRequired().isEmpty()) {
+            sb.append("\nRequired top-level fields: ")
+                    .append(String.join(", ", outputSchema.getRequired()))
+                    .append("\n");
+        }
+        sb.append("Do not add fields that are not in this schema.\n");
+    }
+
+    private static String renderSchemaExample(YamlSkillManifest.OutputSchemaManifest schema, int depth) {
+        String indent = "  ".repeat(depth);
+        if ("object".equals(schema.getType())) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\n");
+            List<String> propertyNames = schema.getProperties().keySet().stream().sorted().toList();
+            for (int i = 0; i < propertyNames.size(); i++) {
+                String propertyName = propertyNames.get(i);
+                YamlSkillManifest.OutputSchemaManifest child = schema.getProperties().get(propertyName);
+                sb.append(indent)
+                        .append("  \"")
+                        .append(propertyName)
+                        .append("\": ")
+                        .append(renderSchemaExample(child, depth + 1));
+                if (i < propertyNames.size() - 1) {
+                    sb.append(",");
+                }
+                sb.append("\n");
+            }
+            sb.append(indent).append("}");
+            return sb.toString();
+        }
+        if ("array".equals(schema.getType())) {
+            String items = schema.getItems() == null ? "\"<value>\"" : renderSchemaExample(schema.getItems(), depth + 1);
+            return "[ " + items + " ]";
+        }
+        if (schema.getEnumValues() != null && !schema.getEnumValues().isEmpty()) {
+            return "\"<one of: " + String.join(", ", schema.getEnumValues()) + ">\"";
+        }
+        return switch (schema.getType() == null ? "" : schema.getType()) {
+            case "string" -> "\"<string>\"";
+            case "number", "integer" -> "<number>";
+            case "boolean" -> "<boolean>";
+            default -> "\"<value>\"";
+        };
+    }
+
+    @Nullable
+    private static String formatCurrentStepInstructions(List<PlanTask> readyTasks) {
+        if (readyTasks == null || readyTasks.isEmpty()) {
+            return null;
+        }
+        if (readyTasks.size() == 1) {
+            PlanTask task = readyTasks.getFirst();
+            String toolName = task.capabilityName() == null ? "unspecified" : task.capabilityName();
+            return """
+                    Use taskId %s.
+                    The only valid toolName for this step is %s.
+                    Do not call the parent mission skill or invent a new tool name.
+                    """.formatted(task.taskId(), toolName);
+        }
+        return readyTasks.stream()
+                .map(task -> "  - taskId %s must use toolName %s".formatted(
+                        task.taskId(),
+                        task.capabilityName() == null ? "unspecified" : task.capabilityName()))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse(null);
+    }
+}

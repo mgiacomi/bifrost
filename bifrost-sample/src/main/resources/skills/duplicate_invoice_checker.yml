@@ -6,6 +6,7 @@ description: >
   if the invoice is a duplicate.
 model: granite4-tiny
 planning_mode: true
+max_steps: 10
 allowed_skills:
   - invoiceParser
   - expenseLookup

@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -114,6 +115,117 @@ class PlanningServiceTest {
         assertThat(plan.status()).isEqualTo(PlanStatus.VALID);
         assertThat(plan.findTask("67890")).isPresent();
         assertThat(plan.findTask("67890").orElseThrow().status()).isEqualTo(PlanTaskStatus.COMPLETED);
+    }
+
+    @Test
+    void rejectsPlanningResponseWithUnboundNonAutoCompletableTask() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid-unbound", 3);
+
+        ExecutionPlan invalidPlan = new ExecutionPlan(
+                "plan-invalid-unbound",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(
+                        new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING,
+                                "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
+                        new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null)));
+
+        assertThatThrownBy(() -> planningService.initializePlan(
+                session,
+                "hello",
+                "root.visible.skill",
+                EXECUTION_CONFIGURATION,
+                new SimpleChatClient(invalidPlan, "done"),
+                List.of(),
+                true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("violated the step-loop plan contract")
+                .hasMessageContaining("Missing: [task-2]");
+        assertThat(session.getExecutionPlan()).isEmpty();
+    }
+
+    @Test
+    void rejectsPlanningResponseWithAutoCompletableTask() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid-auto", 3);
+
+        ExecutionPlan invalidPlan = new ExecutionPlan(
+                "plan-invalid-auto",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Summarize", PlanTaskStatus.PENDING,
+                        null, "Summarize results", List.of(), List.of("summary"), true, null)));
+
+        assertThatThrownBy(() -> planningService.initializePlan(
+                session,
+                "hello",
+                "root.visible.skill",
+                EXECUTION_CONFIGURATION,
+                new SimpleChatClient(invalidPlan, "done"),
+                List.of(),
+                true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("violated the step-loop plan contract")
+                .hasMessageContaining("autoCompletable tasks are not supported: [task-1]");
+        assertThat(session.getExecutionPlan()).isEmpty();
+    }
+
+    @Test
+    void rejectsPlanningResponseWithDuplicateTaskIds() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid-duplicate-task-id", 3);
+
+        ExecutionPlan invalidPlan = new ExecutionPlan(
+                "plan-invalid-duplicate-task-id",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(
+                        new PlanTask("task-1", "Use first tool", PlanTaskStatus.PENDING,
+                                "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
+                        new PlanTask("task-1", "Use second tool", PlanTaskStatus.PENDING,
+                                "allowed.visible.skill", "Use tool again", List.of(), List.of(), false, null)));
+
+        assertThatThrownBy(() -> planningService.initializePlan(
+                session,
+                "hello",
+                "root.visible.skill",
+                EXECUTION_CONFIGURATION,
+                new SimpleChatClient(invalidPlan, "done"),
+                List.of(),
+                true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("violated the step-loop plan contract")
+                .hasMessageContaining("Task IDs must be unique")
+                .hasMessageContaining("task-1");
+        assertThat(session.getExecutionPlan()).isEmpty();
+    }
+
+    @Test
+    void allowsLegacyPlanningResponsesWithoutStepLoopContract() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-legacy-plan", 3);
+
+        ExecutionPlan legacyPlan = new ExecutionPlan(
+                "plan-legacy",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Summarize", PlanTaskStatus.PENDING,
+                        null, "Summarize results", List.of(), List.of("summary"), true, null)));
+
+        assertThat(planningService.initializePlan(
+                session,
+                "hello",
+                "root.visible.skill",
+                EXECUTION_CONFIGURATION,
+                new SimpleChatClient(legacyPlan, "done"),
+                List.of()))
+                .isPresent();
+        assertThat(session.getExecutionPlan()).isPresent();
     }
 
     @Test
@@ -209,6 +321,92 @@ class PlanningServiceTest {
     }
 
     @Test
+    void marksExplicitTaskStartedWithoutRelinking() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-explicit-task", 3);
+
+        stateService.storePlan(session, new ExecutionPlan(
+                "plan-explicit",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(
+                        new PlanTask("task-1", "Use tool once", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
+                        new PlanTask("task-2", "Use tool twice", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool again", List.of(), List.of(), false, null))));
+
+        ExecutionPlan started = planningService.markTaskStarted(session, "task-2", "allowed.visible.skill", Map.of("value", "hello"))
+                .orElseThrow();
+
+        assertThat(started.activeTaskId()).isEqualTo("task-2");
+        assertThat(started.findTask("task-2").orElseThrow().status()).isEqualTo(PlanTaskStatus.IN_PROGRESS);
+        assertThat(started.findTask("task-1").orElseThrow().status()).isEqualTo(PlanTaskStatus.PENDING);
+    }
+
+    @Test
+    void rejectsStartingTaskWithMismatchedCapabilityBinding() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-mismatched-start", 3);
+
+        stateService.storePlan(session, new ExecutionPlan(
+                "plan-explicit",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.PENDING,
+                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+
+        assertThatThrownBy(() -> planningService.markTaskStarted(session, "task-1", "different.visible.skill", Map.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("task-1")
+                .hasMessageContaining("allowed.visible.skill")
+                .hasMessageContaining("different.visible.skill");
+    }
+
+    @Test
+    void rejectsCompletingTaskWithMismatchedCapabilityBinding() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-mismatched-complete", 3);
+
+        stateService.storePlan(session, new ExecutionPlan(
+                "plan-explicit",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.IN_PROGRESS,
+                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+
+        assertThatThrownBy(() -> planningService.markToolCompleted(session, "task-1", "different.visible.skill", "done"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("task-1")
+                .hasMessageContaining("allowed.visible.skill")
+                .hasMessageContaining("different.visible.skill");
+    }
+
+    @Test
+    void rejectsFailingTaskWithMismatchedCapabilityBinding() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-mismatched-fail", 3);
+
+        stateService.storePlan(session, new ExecutionPlan(
+                "plan-explicit",
+                "root.visible.skill",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.IN_PROGRESS,
+                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+
+        assertThatThrownBy(() -> planningService.markToolFailed(
+                session,
+                "task-1",
+                "different.visible.skill",
+                new IllegalStateException("boom")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("task-1")
+                .hasMessageContaining("allowed.visible.skill")
+                .hasMessageContaining("different.visible.skill");
+    }
+
+    @Test
     void doesNotLogPlanUpdateWhenCompletedTaskIsMissing() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
@@ -298,7 +496,8 @@ class PlanningServiceTest {
                 id,
                 "root.visible.skill",
                 Instant.parse("2026-03-15T12:00:00Z"),
-                List.of(new PlanTask("task-1", "Use tool", status, null)));
+                List.of(new PlanTask("task-1", "Use tool", status,
+                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null)));
     }
 
     private static List<TraceRecord> readRecords(BifrostSession session) {

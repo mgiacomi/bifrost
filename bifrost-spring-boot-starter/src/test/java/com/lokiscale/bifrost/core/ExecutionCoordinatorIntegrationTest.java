@@ -3,7 +3,6 @@ package com.lokiscale.bifrost.core;
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
 import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
-import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import org.junit.jupiter.api.Test;
@@ -25,7 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,20 +84,17 @@ class ExecutionCoordinatorIntegrationTest {
             assertThat(content).isEqualTo("integration complete");
             assertThat(session.getExecutionPlan()).isPresent();
             assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
-                    .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
+                    .containsExactly(PlanTaskStatus.COMPLETED);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .containsSubsequence(
                             JournalEntryType.PLAN_CREATED,
-                            JournalEntryType.TOOL_CALL,
                             JournalEntryType.PLAN_UPDATED,
+                            JournalEntryType.TOOL_CALL,
                             JournalEntryType.TOOL_RESULT);
-            assertThat(factory.chatClient.toolNamesSeen).containsExactly("allowed.visible.skill");
-            assertThat(factory.chatClient.toolNamesByCall).containsExactly(List.of(), List.of("allowed.visible.skill"));
-            assertThat(factory.chatClient.systemMessagesSeen).hasSize(2);
-            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("plan-1", "VALID", "Use allowed.visible.skill");
-            assertThat(factory.chatClient.lastToolResult).isEqualTo("\"child:hello from ref\"");
+            assertThat(factory.chatClient.systemMessagesSeen).hasSize(3);
+            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("READY TASKS", "allowed.visible.skill", "task-1");
             com.fasterxml.jackson.databind.JsonNode loggedArguments = session.getJournalSnapshot().stream()
                     .filter(entry -> entry.type() == JournalEntryType.TOOL_CALL)
                     .findFirst()
@@ -230,18 +228,17 @@ class ExecutionCoordinatorIntegrationTest {
             assertThat(content).isEqualTo("binary integration complete");
             assertThat(session.getExecutionPlan()).isPresent();
             assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
-                    .containsExactly(PlanTaskStatus.COMPLETED, PlanTaskStatus.PENDING);
+                    .containsExactly(PlanTaskStatus.COMPLETED);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .containsSubsequence(
                             JournalEntryType.PLAN_CREATED,
-                            JournalEntryType.TOOL_CALL,
                             JournalEntryType.PLAN_UPDATED,
+                            JournalEntryType.TOOL_CALL,
                             JournalEntryType.TOOL_RESULT);
-            assertThat(factory.chatClient.toolNamesSeen).containsExactly("binary.visible.skill");
-            assertThat(factory.chatClient.toolNamesByCall).containsExactly(List.of(), List.of("binary.visible.skill"));
-            assertThat(factory.chatClient.lastToolResult).isEqualTo("\"binary:00ff41\"");
+            assertThat(factory.chatClient.systemMessagesSeen).hasSize(3);
+            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("READY TASKS", "binary.visible.skill", "task-1");
             com.fasterxml.jackson.databind.JsonNode loggedArguments = session.getJournalSnapshot().stream()
                     .filter(entry -> entry.type() == JournalEntryType.TOOL_CALL)
                     .findFirst()
@@ -325,42 +322,50 @@ class ExecutionCoordinatorIntegrationTest {
 
     static final class RecordingSkillChatClientFactory implements SkillChatClientFactory {
 
-        private final FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
+        private final StepLoopIntegrationChatClient chatClient = new StepLoopIntegrationChatClient(
                 new ExecutionPlan(
                         "plan-1",
                         "root.visible.skill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(
-                                new PlanTask("task-1", "Use allowed.visible.skill", PlanTaskStatus.PENDING,
-                                        "allowed.visible.skill", "Use allowed.visible.skill", List.of(), List.of(), false, null),
-                                new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null))),
-                "integration complete",
-                "{\"" + getDeclaredMethod(TargetBean.class, "deterministicTarget", String.class).getParameters()[0].getName()
-                        + "\":\"ref://artifacts/message.txt\"}");
+                        List.of(new PlanTask("task-1", "Use allowed.visible.skill", PlanTaskStatus.PENDING,
+                                "allowed.visible.skill", "Use allowed.visible.skill", List.of(), List.of(), false, null))),
+                Map.of(getDeclaredMethod(TargetBean.class, "deterministicTarget", String.class).getParameters()[0].getName(),
+                        "ref://artifacts/message.txt"),
+                "integration complete");
 
         @Override
         public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
+            return chatClient;
+        }
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient createForStepExecution(
+                com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             return chatClient;
         }
     }
 
     static final class BinaryRecordingSkillChatClientFactory implements SkillChatClientFactory {
 
-        private final FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
+        private final StepLoopIntegrationChatClient chatClient = new StepLoopIntegrationChatClient(
                 new ExecutionPlan(
                         "plan-binary",
                         "root.binary.skill",
                         Instant.parse("2026-03-15T12:05:00Z"),
-                        List.of(
-                                new PlanTask("task-1", "Use binary.visible.skill", PlanTaskStatus.PENDING,
-                                        "binary.visible.skill", "Use binary.visible.skill", List.of(), List.of(), false, null),
-                                new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null))),
-                "binary integration complete",
-                "{\"" + getDeclaredMethod(TargetBean.class, "binaryTarget", byte[].class).getParameters()[0].getName()
-                        + "\":\"ref://artifacts/payload.bin\"}");
+                        List.of(new PlanTask("task-1", "Use binary.visible.skill", PlanTaskStatus.PENDING,
+                                "binary.visible.skill", "Use binary.visible.skill", List.of(), List.of(), false, null))),
+                Map.of(getDeclaredMethod(TargetBean.class, "binaryTarget", byte[].class).getParameters()[0].getName(),
+                        "ref://artifacts/payload.bin"),
+                "binary integration complete");
 
         @Override
         public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
+            return chatClient;
+        }
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient createForStepExecution(
+                com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             return chatClient;
         }
     }
@@ -371,6 +376,12 @@ class ExecutionCoordinatorIntegrationTest {
         public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             return new BlockingIntegrationChatClient();
         }
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient createForStepExecution(
+                com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
+            return create(definition);
+        }
     }
 
     static final class RecursiveSkillChatClientFactory implements SkillChatClientFactory {
@@ -378,7 +389,7 @@ class ExecutionCoordinatorIntegrationTest {
         @Override
         public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
             if ("root.recursive.skill".equals(definition.manifest().getName())) {
-                return new FakeCoordinatorChatClient(
+                return new StepLoopIntegrationChatClient(
                         new ExecutionPlan(
                                 "plan-root",
                                 "root.recursive.skill",
@@ -386,10 +397,10 @@ class ExecutionCoordinatorIntegrationTest {
                                 List.of(
                                         new PlanTask("task-1", "Use child.recursive.skill", PlanTaskStatus.PENDING,
                                                 "child.recursive.skill", "Use child.recursive.skill", List.of(), List.of(), false, null))),
-                        "root mission complete",
-                        "{\"topic\":\"mars\"}");
+                        Map.of("topic", "mars"),
+                        "root mission complete");
             }
-            return new FakeCoordinatorChatClient(
+            return new StepLoopIntegrationChatClient(
                     new ExecutionPlan(
                             "plan-child",
                             "child.recursive.skill",
@@ -397,8 +408,261 @@ class ExecutionCoordinatorIntegrationTest {
                             List.of(
                                     new PlanTask("task-1", "Use root.recursive.skill", PlanTaskStatus.PENDING,
                                             "root.recursive.skill", "Use root.recursive.skill", List.of(), List.of(), false, null))),
-                    "child mission complete",
-                    "{\"topic\":\"mars\"}");
+                    Map.of("topic", "mars"),
+                    "child mission complete");
+        }
+
+        @Override
+        public org.springframework.ai.chat.client.ChatClient createForStepExecution(
+                com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
+            return create(definition);
+        }
+    }
+
+    static final class StepLoopIntegrationChatClient implements org.springframework.ai.chat.client.ChatClient {
+
+        private static final com.fasterxml.jackson.databind.ObjectMapper OBJECT_MAPPER =
+                com.fasterxml.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
+        final List<String> systemMessagesSeen = new ArrayList<>();
+        final List<String> userMessagesSeen = new ArrayList<>();
+        private final ExecutionPlan plan;
+        private final String callToolActionJson;
+        private final String finalResponseActionJson;
+        private int callCount;
+
+        StepLoopIntegrationChatClient(ExecutionPlan plan, Map<String, Object> toolArguments, String finalResponse) {
+            this.plan = plan;
+            PlanTask firstTask = plan.tasks().getFirst();
+            this.callToolActionJson = """
+                    {"stepAction":"CALL_TOOL","taskId":"%s","toolName":"%s","toolArguments":%s}
+                    """.formatted(
+                    firstTask.taskId(),
+                    firstTask.capabilityName(),
+                    serialize(toolArguments));
+            this.finalResponseActionJson = """
+                    {"stepAction":"FINAL_RESPONSE","finalResponse":"%s"}
+                    """.formatted(finalResponse);
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt() {
+            return new RequestSpec();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(String content) {
+            return prompt();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(org.springframework.ai.chat.prompt.Prompt prompt) {
+            return prompt();
+        }
+
+        @Override
+        public Builder mutate() {
+            throw new UnsupportedOperationException();
+        }
+
+        private final class RequestSpec implements ChatClientRequestSpec {
+
+            @Override
+            public Builder mutate() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(java.util.function.Consumer<AdvisorSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(org.springframework.ai.chat.client.advisor.api.Advisor... advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(List<org.springframework.ai.chat.client.advisor.api.Advisor> advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(org.springframework.ai.chat.messages.Message... messages) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(List<org.springframework.ai.chat.messages.Message> messages) {
+                return this;
+            }
+
+            @Override
+            public <T extends org.springframework.ai.chat.prompt.ChatOptions> ChatClientRequestSpec options(T options) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolNames(String... toolNames) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec tools(Object... tools) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallback... toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(List<org.springframework.ai.tool.ToolCallback> toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallbackProvider... providers) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolContext(Map<String, Object> toolContext) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(String text) {
+                systemMessagesSeen.add(text);
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(java.util.function.Consumer<PromptSystemSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(String text) {
+                userMessagesSeen.add(text);
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec templateRenderer(org.springframework.ai.template.TemplateRenderer renderer) {
+                return this;
+            }
+
+            @Override
+            public CallResponseSpec call() {
+                callCount++;
+                if (callCount == 1) {
+                    return new ResponseSpec(plan);
+                }
+                if (callCount == 2) {
+                    return new ResponseSpec(callToolActionJson);
+                }
+                return new ResponseSpec(finalResponseActionJson);
+            }
+
+            @Override
+            public StreamResponseSpec stream() {
+                throw new UnsupportedOperationException();
+            }
+        }
+
+        private static String serialize(Map<String, Object> payload) {
+            try {
+                return OBJECT_MAPPER.writeValueAsString(payload);
+            }
+            catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+                throw new IllegalStateException("Failed to serialize step-loop tool arguments", ex);
+            }
+        }
+
+        private record ResponseSpec(Object payload) implements CallResponseSpec {
+
+            @Override
+            public <T> T entity(org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public <T> T entity(Class<T> type) {
+                return (T) payload;
+            }
+
+            @Override
+            public org.springframework.ai.chat.client.ChatClientResponse chatClientResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.model.ChatResponse chatResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String content() {
+                if (payload instanceof ExecutionPlan executionPlan) {
+                    try {
+                        return OBJECT_MAPPER.writeValueAsString(executionPlan);
+                    }
+                    catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+                        throw new IllegalStateException("Failed to serialize execution plan", ex);
+                    }
+                }
+                return String.valueOf(payload);
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
         }
     }
 

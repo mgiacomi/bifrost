@@ -13,6 +13,7 @@ import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.NoOpUsageMetricsRecorder;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.UsageMetricsRecorder;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.core.ParameterizedTypeReference;
@@ -24,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 
 public class DefaultToolCallbackFactory implements ToolCallbackFactory {
+
+    public static final String STEP_LOOP_TASK_ID_CONTEXT_KEY = "bifrost.stepLoop.taskId";
 
     private final CapabilityExecutionRouter capabilityExecutionRouter;
     private final PlanningService planningService;
@@ -67,7 +70,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                                         @Nullable Authentication authentication) {
         return FunctionToolCallback.<Map<String, Object>, Object>builder(
                         capability.tool().name(),
-                        arguments -> invokeCapability(capability, arguments, session, authentication))
+                        (arguments, toolContext) -> invokeCapability(capability, arguments, session, authentication, toolContext))
                 .description(capability.tool().description())
                 .inputType(new ParameterizedTypeReference<Map<String, Object>>() {
                 })
@@ -78,12 +81,17 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
     private Object invokeCapability(CapabilityMetadata capability,
                                     Map<String, Object> arguments,
                                     BifrostSession session,
-                                    @Nullable Authentication authentication) {
+                                    @Nullable Authentication authentication,
+                                    @Nullable ToolContext toolContext) {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         String currentSkillName = currentSkillName(session);
+        String boundTaskId = stepLoopTaskId(toolContext);
         sessionUsageService.recordToolCall(session, currentSkillName, capability.name());
-        var startedPlan = planningService.markToolStarted(session, capability, safeArguments);
-        String linkedTaskId = startedPlan.flatMap(plan -> plan.activeTask().map(task -> task.taskId())).orElse(null);
+        String linkedTaskId = boundTaskId;
+        if (linkedTaskId == null) {
+            var startedPlan = planningService.markToolStarted(session, capability, safeArguments);
+            linkedTaskId = startedPlan.flatMap(plan -> plan.activeTask().map(task -> task.taskId())).orElse(null);
+        }
         ExecutionFrame toolFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.TOOL_INVOCATION,
@@ -105,7 +113,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                         null));
             }
             Object result = capabilityExecutionRouter.execute(capability, safeArguments, session, authentication);
-            if (linkedTaskId != null) {
+            if (linkedTaskId != null && boundTaskId == null) {
                 planningService.markToolCompleted(session, linkedTaskId, capability.name(), result);
             }
             usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "success");
@@ -116,7 +124,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
         } catch (RuntimeException ex) {
             toolFailure = ex;
             toolFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
-            if (linkedTaskId != null) {
+            if (linkedTaskId != null && boundTaskId == null) {
                 planningService.markToolFailed(session, linkedTaskId, capability.name(), ex);
             }
             usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "failure");
@@ -147,6 +155,15 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
         } finally {
             executionStateService.closeFrame(session, toolFrame, closeMetadata(toolFrameStatus, toolFailure));
         }
+    }
+
+    @Nullable
+    private String stepLoopTaskId(@Nullable ToolContext toolContext) {
+        if (toolContext == null) {
+            return null;
+        }
+        Object taskId = toolContext.getContext().get(STEP_LOOP_TASK_ID_CONTEXT_KEY);
+        return taskId instanceof String value && !value.isBlank() ? value : null;
     }
 
     private Map<String, Object> toolFrameParameters(Map<String, Object> arguments, @Nullable String linkedTaskId) {

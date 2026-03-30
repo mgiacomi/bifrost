@@ -168,9 +168,9 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
                 toolSurfaceService,
                 toolCallbackFactory,
                 missionExecutionEngine,
+                missionExecutionEngine,
                 stateService,
-                new DefaultAccessGuard(),
-                true);
+                new DefaultAccessGuard());
     }
 
     private static YamlSkillDefinition definition(boolean withLinter) {
@@ -255,6 +255,11 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
 
         @Override
         public ChatClient create(YamlSkillDefinition definition) {
+            return this;
+        }
+
+        @Override
+        public ChatClient createForStepExecution(YamlSkillDefinition definition) {
             return this;
         }
 

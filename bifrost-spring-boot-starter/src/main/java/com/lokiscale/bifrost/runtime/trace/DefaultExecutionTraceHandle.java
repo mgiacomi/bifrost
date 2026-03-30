@@ -305,17 +305,6 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle {
         return UUID.randomUUID().toString();
     }
 
-    private static long maxSequence(Path path) {
-        AtomicLong maxSequence = new AtomicLong();
-        try {
-            new NdjsonExecutionTraceReader().read(path, record -> maxSequence.set(Math.max(maxSequence.get(), record.sequence())));
-        }
-        catch (IOException ignored) {
-            return 0L;
-        }
-        return maxSequence.get();
-    }
-
     private static String requireNonBlank(String value, String fieldName) {
         Objects.requireNonNull(value, fieldName + " must not be null");
         if (value.isBlank()) {

@@ -1,6 +1,8 @@
 package com.lokiscale.bifrost.chat;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.linter.LinterCallAdvisor;
+import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.slf4j.Logger;
@@ -55,6 +57,15 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
 
     @Override
     public ChatClient create(YamlSkillDefinition definition) {
+        return create(definition, true);
+    }
+
+    @Override
+    public ChatClient createForStepExecution(YamlSkillDefinition definition) {
+        return create(definition, false);
+    }
+
+    private ChatClient create(YamlSkillDefinition definition, boolean includeFinalResponseValidators) {
         Objects.requireNonNull(definition, "definition must not be null");
         EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
         String skillName = definition.manifest().getName();
@@ -64,7 +75,7 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
         }
         ChatModel chatModel = chatModelResolver.resolve(skillName, executionConfiguration.provider());
         ChatOptions options = adapter.createOptions(executionConfiguration);
-        List<Advisor> advisors = resolvedAdvisors(skillAdvisorResolver.resolve(definition));
+        List<Advisor> advisors = resolvedAdvisors(skillAdvisorResolver.resolve(definition), includeFinalResponseValidators);
         ChatClient.Builder builder = chatClientBuilderFactory.create(chatModel);
         builder.defaultOptions(options);
         if (!advisors.isEmpty()) {
@@ -77,12 +88,21 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
                 executionConfiguration.provider(),
                 chatModel.getClass().getName(),
                 delegate.getClass().getName(),
-                advisorNames(advisors));
+                includeFinalResponseValidators ? advisorNames(advisors) : advisorNames(advisors) + " (step execution)");
         return delegate;
     }
 
-    private List<Advisor> resolvedAdvisors(List<Advisor> advisors) {
-        return advisors == null ? List.of() : List.copyOf(advisors);
+    private List<Advisor> resolvedAdvisors(List<Advisor> advisors, boolean includeFinalResponseValidators) {
+        if (advisors == null) {
+            return List.of();
+        }
+        if (includeFinalResponseValidators) {
+            return List.copyOf(advisors);
+        }
+        return advisors.stream()
+                .filter(advisor -> !(advisor instanceof OutputSchemaCallAdvisor))
+                .filter(advisor -> !(advisor instanceof LinterCallAdvisor))
+                .toList();
     }
 
     interface ChatClientBuilderFactory {

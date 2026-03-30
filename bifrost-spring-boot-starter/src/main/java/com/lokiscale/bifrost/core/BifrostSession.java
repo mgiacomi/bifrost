@@ -471,7 +471,7 @@ public final class BifrostSession {
         appendTrace(type, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
     }
 
-    void appendTraceRecord(TraceRecordType type, ExecutionFrame frame, Map<String, Object> metadata, Object payload) {
+    public void appendTraceRecord(TraceRecordType type, ExecutionFrame frame, Map<String, Object> metadata, Object payload) {
         Objects.requireNonNull(frame, "frame must not be null");
         lock.lock();
         try {
@@ -522,7 +522,7 @@ public final class BifrostSession {
 
     private static boolean countsTowardMaxDepth(ExecutionFrame frame) {
         return frame != null && switch (frame.traceFrameType()) {
-            case MODEL_CALL, PLANNING, TOOL_INVOCATION -> false;
+            case MODEL_CALL, PLANNING, TOOL_INVOCATION, STEP_EXECUTION -> false;
             default -> true;
         };
     }

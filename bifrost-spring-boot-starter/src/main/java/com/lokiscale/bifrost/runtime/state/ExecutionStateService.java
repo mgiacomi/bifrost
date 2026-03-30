@@ -6,10 +6,10 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceCallback;
 import com.lokiscale.bifrost.core.ModelTraceContext;
-import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.core.TraceCompletion;
+import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.core.ToolTraceContext;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
@@ -70,6 +70,9 @@ public interface ExecutionStateService {
     void recordAdvisorResponseMutation(BifrostSession session, AdvisorTraceContext context, Object payload);
 
     void logError(BifrostSession session, Map<String, Object> payload);
+
+    void recordStepEvent(BifrostSession session, ExecutionFrame frame, TraceRecordType recordType,
+                         Map<String, Object> metadata, Object payload);
 
     void finalizeTrace(BifrostSession session, Map<String, Object> metadata);
 

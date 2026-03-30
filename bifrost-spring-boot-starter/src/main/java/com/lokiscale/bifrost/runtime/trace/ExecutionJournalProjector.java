@@ -8,7 +8,6 @@ import com.lokiscale.bifrost.core.JournalEntry;
 import com.lokiscale.bifrost.core.JournalEntryType;
 import com.lokiscale.bifrost.core.JournalLevel;
 import com.lokiscale.bifrost.core.TraceRecord;
-import com.lokiscale.bifrost.core.TraceRecordType;
 
 import java.util.ArrayList;
 import java.util.List;

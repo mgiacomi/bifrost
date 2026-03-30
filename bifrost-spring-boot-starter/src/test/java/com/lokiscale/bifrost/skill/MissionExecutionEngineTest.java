@@ -643,6 +643,14 @@ class MissionExecutionEngineTest {
         }
 
         @Override
+        public java.util.Optional<ExecutionPlan> markTaskStarted(BifrostSession session,
+                                                                 String taskId,
+                                                                 String capabilityName,
+                                                                 java.util.Map<String, Object> arguments) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public java.util.Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                                    String taskId,
                                                                    String capabilityName,

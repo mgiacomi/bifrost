@@ -22,7 +22,20 @@ public interface PlanningService {
             ChatClient chatClient,
             List<ToolCallback> visibleTools);
 
+    default Optional<ExecutionPlan> initializePlan(
+            BifrostSession session,
+            String objective,
+            String capabilityName,
+            EffectiveSkillExecutionConfiguration executionConfiguration,
+            ChatClient chatClient,
+            List<ToolCallback> visibleTools,
+            boolean strictPlanContract) {
+        return initializePlan(session, objective, capabilityName, executionConfiguration, chatClient, visibleTools);
+    }
+
     Optional<ExecutionPlan> markToolStarted(BifrostSession session, CapabilityMetadata capability, Map<String, Object> arguments);
+
+    Optional<ExecutionPlan> markTaskStarted(BifrostSession session, String taskId, String capabilityName, @Nullable Map<String, Object> arguments);
 
     Optional<ExecutionPlan> markToolCompleted(BifrostSession session, String taskId, String capabilityName, @Nullable Object result);
 

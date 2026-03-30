@@ -1,6 +1,10 @@
 package com.lokiscale.bifrost.chat;
 
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.core.AdvisorTraceRecorder;
+import com.lokiscale.bifrost.linter.LinterCallAdvisor;
+import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
+import com.lokiscale.bifrost.outputschema.OutputSchemaValidator;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
@@ -19,6 +23,7 @@ import org.springframework.core.io.ByteArrayResource;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -113,6 +118,32 @@ class SpringAiSkillChatClientFactoryTests {
         assertThat(result.advisors()).isEmpty();
         verify(result.builder()).defaultOptions(any(ChatOptions.class));
         verify(result.builder(), never()).defaultAdvisors(anyList());
+    }
+
+    @Test
+    void createForStepExecutionOmitsResolvedAdvisors() {
+        YamlSkillDefinition definition = definition(new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium"));
+        Advisor passthroughAdvisor = mock(Advisor.class);
+        RecordingBuilderFactory builderFactory = new RecordingBuilderFactory();
+        SpringAiSkillChatClientFactory factory = new SpringAiSkillChatClientFactory(
+                resolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))),
+                SpringAiSkillChatClientFactory.defaultAdapters(),
+                ignored -> List.of(
+                        passthroughAdvisor,
+                        outputSchemaAdvisor(),
+                        linterAdvisor()),
+                builderFactory);
+
+        ChatClient created = factory.createForStepExecution(definition);
+        CapturedFactoryResult result = builderFactory.result(created);
+
+        assertThat(result.advisors()).containsExactly(passthroughAdvisor);
+        verify(result.builder()).defaultOptions(any(ChatOptions.class));
+        verify(result.builder()).defaultAdvisors(anyList());
     }
 
     @Test
@@ -211,6 +242,30 @@ class SpringAiSkillChatClientFactoryTests {
         manifest.setDescription("test.skill");
         manifest.setModel(configuration.frameworkModel());
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, configuration);
+    }
+
+    private OutputSchemaCallAdvisor outputSchemaAdvisor() {
+        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
+        schema.setType("object");
+        return new OutputSchemaCallAdvisor(
+                "test.skill",
+                schema,
+                new OutputSchemaValidator(),
+                new com.lokiscale.bifrost.outputschema.OutputSchemaPromptAugmentor(),
+                1,
+                outcome -> { },
+                AdvisorTraceRecorder.noOp());
+    }
+
+    private LinterCallAdvisor linterAdvisor() {
+        return new LinterCallAdvisor(
+                "test.skill",
+                "regex",
+                Pattern.compile("^ok$"),
+                "must match",
+                1,
+                outcome -> { },
+                AdvisorTraceRecorder.noOp());
     }
 
     private record CapturedFactoryResult(ChatClient client,
