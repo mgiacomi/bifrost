@@ -14,16 +14,21 @@ import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 
+import java.util.ArrayDeque;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ExecutionTraceContractTest {
 
@@ -108,6 +113,67 @@ class ExecutionTraceContractTest {
         assertThat(planCreated.route()).isEqualTo("root.visible.skill#planning");
     }
 
+    @Test
+    void planningQualityEventsStayUnderThePlanningFrame() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("planning-quality-trace", 3);
+
+        planningService.initializePlan(
+                session,
+                "check invoice duplicates",
+                "duplicateInvoiceChecker",
+                EXECUTION_CONFIGURATION,
+                new SequencePlanningChatClient(weakPlanJson(), correctedPlanJson()),
+                List.of(tool("invoiceParser", "Extract invoice fields from source documents"),
+                        tool("expenseLookup", "Look up related expenses for comparison")),
+                true);
+
+        List<TraceRecord> records = readRecords(session);
+        assertThat(records).anyMatch(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED
+                && record.frameType() == TraceFrameType.PLANNING
+                && record.metadata().containsKey("severity")
+                && record.metadata().containsKey("issueCodes")
+                && record.metadata().containsKey("retryCount"));
+        assertThat(records).anyMatch(record -> record.recordType() == TraceRecordType.PLAN_RETRY_REQUESTED
+                && record.frameType() == TraceFrameType.PLANNING);
+    }
+
+    @Test
+    void exhaustedPlanQualityRetriesDegradeToPlanningWarningUnderPlanningFrame() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("planning-quality-retry-cap-trace", 3);
+
+        planningService.initializePlan(
+                session,
+                "check invoice duplicates",
+                "duplicateInvoiceChecker",
+                EXECUTION_CONFIGURATION,
+                new SequencePlanningChatClient(weakPlanJson(), weakPlanJson()),
+                List.of(tool("invoiceParser", "Extract invoice fields from source documents"),
+                        tool("expenseLookup", "Look up related expenses for comparison")),
+                true);
+
+        List<TraceRecord> records = readRecords(session);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED)
+                .hasSize(1);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_RETRY_REQUESTED)
+                .hasSize(1);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_QUALITY_WARNING)
+                .hasSize(2);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_QUALITY_WARNING)
+                .filteredOn(record -> "ERROR".equals(record.metadata().get("severity")))
+                .hasSize(1)
+                .first()
+                .satisfies(record -> {
+                    assertThat(record.frameType()).isEqualTo(TraceFrameType.PLANNING);
+                    assertThat(record.metadata()).containsEntry("retryCount", 1);
+                    assertThat(record.metadata()).containsEntry("severity", "ERROR");
+                    assertThat(record.metadata()).containsKey("issueCodes");
+                });
+    }
+
     private static void assertEquivalentEnvelope(TraceRecord planningRecord, TraceRecord missionRecord) {
         assertThat(planningRecord.metadata().keySet()).containsExactlyElementsOf(missionRecord.metadata().keySet());
         assertThat(planningRecord.metadata()).containsEntry("provider", AiProvider.OPENAI.name());
@@ -138,5 +204,214 @@ class ExecutionTraceContractTest {
         List<TraceRecord> records = new ArrayList<>();
         session.readTraceRecords(records::add);
         return records;
+    }
+
+    private static ToolCallback tool(String name, String description) {
+        ToolCallback callback = mock(ToolCallback.class);
+        ToolDefinition definition = ToolDefinition.builder().name(name).description(description).inputSchema("{}").build();
+        when(callback.getToolDefinition()).thenReturn(definition);
+        return callback;
+    }
+
+    private static String weakPlanJson() {
+        return """
+                {
+                  "planId": "plan-weak",
+                  "capabilityName": "duplicateInvoiceChecker",
+                  "createdAt": "2026-03-15T12:00:00Z",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {"taskId": "t-1", "title": "Parse invoice", "status": "PENDING", "capabilityName": "invoiceParser", "intent": "Extract invoice fields", "dependsOn": [], "expectedOutputs": ["parsed"], "autoCompletable": false, "note": ""},
+                    {"taskId": "t-2", "title": "Check duplicates", "status": "PENDING", "capabilityName": "invoiceParser", "intent": "Check for matching expenses", "dependsOn": ["t-1"], "expectedOutputs": ["matches"], "autoCompletable": false, "note": ""},
+                    {"taskId": "t-3", "title": "Final report", "status": "PENDING", "capabilityName": "invoiceParser", "intent": "Summarize duplicate findings", "dependsOn": ["t-2"], "expectedOutputs": ["report"], "autoCompletable": false, "note": ""}
+                  ]
+                }
+                """;
+    }
+
+    private static String correctedPlanJson() {
+        return """
+                {
+                  "planId": "plan-corrected",
+                  "capabilityName": "duplicateInvoiceChecker",
+                  "createdAt": "2026-03-15T12:00:00Z",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {"taskId": "t-1", "title": "Parse invoice", "status": "PENDING", "capabilityName": "invoiceParser", "intent": "Extract invoice fields", "dependsOn": [], "expectedOutputs": ["parsed"], "autoCompletable": false, "note": ""},
+                    {"taskId": "t-2", "title": "Look up matches", "status": "PENDING", "capabilityName": "expenseLookup", "intent": "Find matching expenses", "dependsOn": ["t-1"], "expectedOutputs": ["matches"], "autoCompletable": false, "note": ""},
+                    {"taskId": "t-3", "title": "Compare evidence", "status": "PENDING", "capabilityName": "expenseLookup", "intent": "Compare invoice and expenses", "dependsOn": ["t-2"], "expectedOutputs": ["decision"], "autoCompletable": false, "note": ""}
+                  ]
+                }
+                """;
+    }
+
+    private static final class SequencePlanningChatClient implements org.springframework.ai.chat.client.ChatClient {
+
+        private final Deque<String> responses = new ArrayDeque<>();
+
+        private SequencePlanningChatClient(String... responses) {
+            this.responses.addAll(List.of(responses));
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt() {
+            return new SequenceRequestSpec();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(String content) {
+            return prompt();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(org.springframework.ai.chat.prompt.Prompt prompt) {
+            return prompt();
+        }
+
+        @Override
+        public Builder mutate() {
+            throw new UnsupportedOperationException();
+        }
+
+        private final class SequenceRequestSpec implements ChatClientRequestSpec {
+
+            @Override
+            public Builder mutate() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(java.util.function.Consumer<AdvisorSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(org.springframework.ai.chat.client.advisor.api.Advisor... advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(List<org.springframework.ai.chat.client.advisor.api.Advisor> advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(org.springframework.ai.chat.messages.Message... messages) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(List<org.springframework.ai.chat.messages.Message> messages) {
+                return this;
+            }
+
+            @Override
+            public <T extends org.springframework.ai.chat.prompt.ChatOptions> ChatClientRequestSpec options(T options) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolNames(String... toolNames) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec tools(Object... tools) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(ToolCallback... toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(List<ToolCallback> toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallbackProvider... providers) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolContext(java.util.Map<String, Object> toolContext) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(java.util.function.Consumer<PromptSystemSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec templateRenderer(org.springframework.ai.template.TemplateRenderer renderer) {
+                return this;
+            }
+
+            @Override
+            public CallResponseSpec call() {
+                String next = responses.pollFirst();
+                if (next == null) {
+                    throw new IllegalStateException("No more queued chat responses");
+                }
+                return new ResponseSpec(next);
+            }
+
+            @Override
+            public StreamResponseSpec stream() {
+                throw new UnsupportedOperationException();
+            }
+        }
+
+        private record ResponseSpec(String content) implements CallResponseSpec {
+            @Override public <T> T entity(org.springframework.core.ParameterizedTypeReference<T> type) { throw new UnsupportedOperationException(); }
+            @Override public <T> T entity(org.springframework.ai.converter.StructuredOutputConverter<T> converter) { throw new UnsupportedOperationException(); }
+            @Override public <T> T entity(Class<T> type) { throw new UnsupportedOperationException(); }
+            @Override public org.springframework.ai.chat.client.ChatClientResponse chatClientResponse() { throw new UnsupportedOperationException(); }
+            @Override public org.springframework.ai.chat.model.ChatResponse chatResponse() { throw new UnsupportedOperationException(); }
+            @Override public String content() { return content; }
+            @Override public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(Class<T> type) { throw new UnsupportedOperationException(); }
+            @Override public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(org.springframework.core.ParameterizedTypeReference<T> type) { throw new UnsupportedOperationException(); }
+            @Override public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(org.springframework.ai.converter.StructuredOutputConverter<T> converter) { throw new UnsupportedOperationException(); }
+        }
     }
 }

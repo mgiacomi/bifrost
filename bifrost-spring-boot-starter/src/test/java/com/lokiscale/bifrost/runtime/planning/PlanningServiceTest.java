@@ -30,7 +30,9 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
@@ -423,21 +425,217 @@ class PlanningServiceTest {
     }
 
     @Test
-    void planningPromptIncludesVisibleToolNames() {
+    void planningPromptIncludesToolDescriptionsAndAlignmentRules() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-tool-names", 3);
         SimpleChatClient chatClient = new SimpleChatClient(plan("plan-tools", PlanTaskStatus.PENDING), "done");
 
-        ToolCallback tool1 = toolCallbackWithName("invoiceParser");
-        ToolCallback tool2 = toolCallbackWithName("expenseLookup");
+        ToolCallback tool1 = toolCallback("invoiceParser", "Extract invoice fields from source documents");
+        ToolCallback tool2 = toolCallback("expenseLookup", "Look up prior expenses for a parsed invoice");
 
         planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of(tool1, tool2));
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
-        assertThat(systemPrompt).contains("invoiceParser");
-        assertThat(systemPrompt).contains("expenseLookup");
+        assertThat(systemPrompt).contains("invoiceParser: Extract invoice fields from source documents");
+        assertThat(systemPrompt).contains("expenseLookup: Look up prior expenses for a parsed invoice");
         assertThat(systemPrompt).contains("Available sub-skills");
+        assertThat(systemPrompt).contains("Bind each task to the tool that best matches that task's intent.");
+        assertThat(systemPrompt).contains("Gather enough evidence to support the final answer before the mission is complete.");
+        assertThat(systemPrompt).contains("\"capabilityName\": \"duplicateInvoiceChecker\"");
+    }
+
+    @Test
+    void planningPromptPreservesAuthoredDescriptionsVerbatim() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-authored-descriptions", 3);
+        SimpleChatClient chatClient = new SimpleChatClient(plan("plan-tools-verbatim", PlanTaskStatus.PENDING), "done");
+
+        String authoredDescription = "Reads invoice PDFs exactly as-authored. Keep JSON keys `invoice_id`, `vendor_name`, and \"line_items\".";
+        ToolCallback tool = toolCallback("invoiceParser", authoredDescription);
+
+        planningService.initializePlan(
+                session,
+                "check invoice",
+                "duplicateInvoiceChecker",
+                EXECUTION_CONFIGURATION,
+                chatClient,
+                List.of(tool));
+
+        String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
+        assertThat(systemPrompt).contains("invoiceParser: " + authoredDescription);
+    }
+
+    @Test
+    void retriesSingleToolOverusePlanWhenMultipleVisibleToolsExist() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-weak-plan-retry", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(
+                weakSingleToolPlanJson(),
+                correctedMultiToolPlanJson());
+
+        ToolCallback invoiceParser = toolCallback("invoiceParser", "Extract invoice fields from source documents");
+        ToolCallback expenseLookup = toolCallback("expenseLookup", "Look up related expenses for comparison");
+
+        ExecutionPlan plan = planningService.initializePlan(
+                        session,
+                        "check invoice duplicates",
+                        "duplicateInvoiceChecker",
+                        EXECUTION_CONFIGURATION,
+                        chatClient,
+                        List.of(invoiceParser, expenseLookup),
+                        true)
+                .orElseThrow();
+
+        assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
+                .containsExactly("invoiceParser", "expenseLookup", "expenseLookup");
+        assertThat(chatClient.systemMessagesSeen()).hasSize(2);
+        assertThat(chatClient.systemMessagesSeen().get(1)).contains("Previous plan was too weak");
+        assertThat(chatClient.systemMessagesSeen().get(1)).contains("overuses 'invoiceParser'");
+        assertThat(readRecords(session)).anyMatch(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED);
+        assertThat(readRecords(session)).anyMatch(record -> record.recordType() == TraceRecordType.PLAN_RETRY_REQUESTED);
+    }
+
+    @Test
+    void countsRejectedPlanningRetriesInSessionUsage() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        RecordingSessionUsageService usageService = new RecordingSessionUsageService();
+        DefaultPlanningService planningService = new DefaultPlanningService(
+                new DefaultPlanTaskLinker(),
+                stateService,
+                usageService,
+                new ModelUsageExtractor());
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-weak-plan-retry-usage", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(
+                weakSingleToolPlanJson(),
+                correctedMultiToolPlanJson());
+
+        ToolCallback invoiceParser = toolCallback("invoiceParser", "Extract invoice fields from source documents");
+        ToolCallback expenseLookup = toolCallback("expenseLookup", "Look up related expenses for comparison");
+
+        planningService.initializePlan(
+                        session,
+                        "check invoice duplicates",
+                        "duplicateInvoiceChecker",
+                        EXECUTION_CONFIGURATION,
+                        chatClient,
+                        List.of(invoiceParser, expenseLookup),
+                        true)
+                .orElseThrow();
+
+        assertThat(usageService.lastSkillName).isEqualTo("duplicateInvoiceChecker");
+        assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(2);
+        assertThat(usageService.snapshot(session).usageUnits()).isGreaterThan(0);
+    }
+
+    @Test
+    void stopsRetryingAfterConfiguredPlanQualityRetryCap() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        RecordingSessionUsageService usageService = new RecordingSessionUsageService();
+        DefaultPlanningService planningService = new DefaultPlanningService(
+                new DefaultPlanTaskLinker(),
+                stateService,
+                usageService,
+                new ModelUsageExtractor());
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-weak-plan-retry-cap", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(
+                weakSingleToolPlanJson(),
+                weakSingleToolPlanJson());
+
+        ToolCallback invoiceParser = toolCallback("invoiceParser", "Extract invoice fields from source documents");
+        ToolCallback expenseLookup = toolCallback("expenseLookup", "Look up related expenses for comparison");
+
+        ExecutionPlan plan = planningService.initializePlan(
+                        session,
+                        "check invoice duplicates",
+                        "duplicateInvoiceChecker",
+                        EXECUTION_CONFIGURATION,
+                        chatClient,
+                        List.of(invoiceParser, expenseLookup),
+                        true)
+                .orElseThrow();
+
+        assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
+                .containsExactly("invoiceParser", "invoiceParser", "invoiceParser");
+        assertThat(chatClient.systemMessagesSeen()).hasSize(2);
+        assertThat(chatClient.systemMessagesSeen().get(1)).contains("Previous plan was too weak");
+        assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(2);
+
+        List<TraceRecord> records = readRecords(session);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED)
+                .hasSize(1);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_RETRY_REQUESTED)
+                .hasSize(1);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_QUALITY_WARNING)
+                .hasSize(2);
+        assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_QUALITY_WARNING)
+                .filteredOn(record -> "ERROR".equals(record.metadata().get("severity")))
+                .hasSize(1)
+                .first()
+                .satisfies(record -> {
+                    assertThat(record.frameType()).isEqualTo(TraceFrameType.PLANNING);
+                    assertThat(record.metadata()).containsEntry("retryCount", 1);
+                    assertThat(record.metadata()).containsEntry("severity", "ERROR");
+                });
+    }
+
+    @Test
+    void warnsButAcceptsLegitimateRepeatedToolPlan() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-repeated-tool-warning", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(repeatedExtractionPlanJson());
+
+        ToolCallback invoiceParser = toolCallback("invoiceParser", "Extract invoice fields from source documents");
+        ToolCallback expenseLookup = toolCallback("expenseLookup", "Look up related expenses for comparison");
+
+        ExecutionPlan plan = planningService.initializePlan(
+                        session,
+                        "extract invoice details",
+                        "duplicateInvoiceChecker",
+                        EXECUTION_CONFIGURATION,
+                        chatClient,
+                        List.of(invoiceParser, expenseLookup),
+                        true)
+                .orElseThrow();
+
+        assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
+                .containsExactly("invoiceParser", "invoiceParser", "invoiceParser");
+        assertThat(chatClient.systemMessagesSeen()).hasSize(1);
+        List<TraceRecord> records = readRecords(session);
+        assertThat(records).noneMatch(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED);
+        assertThat(records).noneMatch(record -> record.recordType() == TraceRecordType.PLAN_RETRY_REQUESTED);
+        assertThat(records).noneMatch(record -> record.recordType() == TraceRecordType.PLAN_QUALITY_WARNING);
+    }
+
+    @Test
+    void ignoresSemanticMismatchHeuristicsWhenToolMetadataIsSparse() {
+        PlanQualityValidator validator = new PlanQualityValidator();
+        ExecutionPlan plan = new ExecutionPlan(
+                "plan-sparse-metadata",
+                "duplicateInvoiceChecker",
+                Instant.parse("2026-03-15T12:00:00Z"),
+                List.of(new PlanTask(
+                        "task-1",
+                        "Final report",
+                        PlanTaskStatus.PENDING,
+                        "toolA",
+                        "Summarize the result",
+                        List.of(),
+                        List.of("report"),
+                        false,
+                        "")));
+
+        PlanQualityValidationResult validation = validator.validate(
+                plan,
+                List.of(
+                        toolCallback("toolA", "Helper tool"),
+                        toolCallback("toolB", "")));
+
+        assertThat(validation.warnings()).isEmpty();
+        assertThat(validation.errors()).isEmpty();
     }
 
     @Test
@@ -467,10 +665,155 @@ class PlanningServiceTest {
     }
 
     private static ToolCallback toolCallbackWithName(String name) {
+        return toolCallback(name, name);
+    }
+
+    private static ToolCallback toolCallback(String name, String description) {
         ToolCallback callback = mock(ToolCallback.class);
-        ToolDefinition definition = ToolDefinition.builder().name(name).description(name).inputSchema("{}").build();
+        ToolDefinition definition = ToolDefinition.builder().name(name).description(description).inputSchema("{}").build();
         when(callback.getToolDefinition()).thenReturn(definition);
         return callback;
+    }
+
+    private static String weakSingleToolPlanJson() {
+        return """
+                {
+                  "planId": "plan-weak",
+                  "capabilityName": "duplicateInvoiceChecker",
+                  "createdAt": "2026-03-15T12:00:00Z",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {
+                      "taskId": "t-1",
+                      "title": "Parse invoice",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Extract invoice fields",
+                      "dependsOn": [],
+                      "expectedOutputs": ["parsed invoice"],
+                      "autoCompletable": false,
+                      "note": ""
+                    },
+                    {
+                      "taskId": "t-2",
+                      "title": "Check duplicates",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Check the invoice against prior expenses",
+                      "dependsOn": ["t-1"],
+                      "expectedOutputs": ["duplicate matches"],
+                      "autoCompletable": false,
+                      "note": ""
+                    },
+                    {
+                      "taskId": "t-3",
+                      "title": "Final report",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Summarize the duplicate invoice result",
+                      "dependsOn": ["t-2"],
+                      "expectedOutputs": ["final report"],
+                      "autoCompletable": false,
+                      "note": ""
+                    }
+                  ]
+                }
+                """;
+    }
+
+    private static String correctedMultiToolPlanJson() {
+        return """
+                {
+                  "planId": "plan-strong",
+                  "capabilityName": "duplicateInvoiceChecker",
+                  "createdAt": "2026-03-15T12:00:00Z",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {
+                      "taskId": "t-1",
+                      "title": "Parse invoice",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Extract invoice fields",
+                      "dependsOn": [],
+                      "expectedOutputs": ["parsed invoice"],
+                      "autoCompletable": false,
+                      "note": ""
+                    },
+                    {
+                      "taskId": "t-2",
+                      "title": "Look up matching expenses",
+                      "status": "PENDING",
+                      "capabilityName": "expenseLookup",
+                      "intent": "Find matching expenses for the parsed invoice",
+                      "dependsOn": ["t-1"],
+                      "expectedOutputs": ["matching expenses"],
+                      "autoCompletable": false,
+                      "note": ""
+                    },
+                    {
+                      "taskId": "t-3",
+                      "title": "Compare evidence",
+                      "status": "PENDING",
+                      "capabilityName": "expenseLookup",
+                      "intent": "Compare the parsed invoice against matching expenses",
+                      "dependsOn": ["t-2"],
+                      "expectedOutputs": ["duplicate decision"],
+                      "autoCompletable": false,
+                      "note": ""
+                    }
+                  ]
+                }
+                """;
+    }
+
+    private static String repeatedExtractionPlanJson() {
+        return """
+                {
+                  "planId": "plan-repeat",
+                  "capabilityName": "duplicateInvoiceChecker",
+                  "createdAt": "2026-03-15T12:00:00Z",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {
+                      "taskId": "t-1",
+                      "title": "Extract invoice header",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Extract invoice number and vendor",
+                      "dependsOn": [],
+                      "expectedOutputs": ["invoice header"],
+                      "autoCompletable": false,
+                      "note": ""
+                    },
+                    {
+                      "taskId": "t-2",
+                      "title": "Extract invoice line items",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Extract invoice line items",
+                      "dependsOn": ["t-1"],
+                      "expectedOutputs": ["line items"],
+                      "autoCompletable": false,
+                      "note": ""
+                    },
+                    {
+                      "taskId": "t-3",
+                      "title": "Extract tax details",
+                      "status": "PENDING",
+                      "capabilityName": "invoiceParser",
+                      "intent": "Extract invoice tax details",
+                      "dependsOn": ["t-2"],
+                      "expectedOutputs": ["tax details"],
+                      "autoCompletable": false,
+                      "note": ""
+                    }
+                  ]
+                }
+                """;
     }
 
     private static CapabilityMetadata capability(String name) {
@@ -534,6 +877,218 @@ class PlanningServiceTest {
 
         @Override
         public void recordLinterOutcome(BifrostSession session, com.lokiscale.bifrost.linter.LinterOutcome outcome) {
+        }
+    }
+
+    private static final class SequencePlanningChatClient implements org.springframework.ai.chat.client.ChatClient {
+
+        private final Deque<String> responses = new ArrayDeque<>();
+        private final List<String> systemMessagesSeen = new ArrayList<>();
+
+        private SequencePlanningChatClient(String... responses) {
+            this.responses.addAll(List.of(responses));
+        }
+
+        private List<String> systemMessagesSeen() {
+            return systemMessagesSeen;
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt() {
+            return new SequenceRequestSpec();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(String content) {
+            return prompt();
+        }
+
+        @Override
+        public ChatClientRequestSpec prompt(org.springframework.ai.chat.prompt.Prompt prompt) {
+            return prompt();
+        }
+
+        @Override
+        public Builder mutate() {
+            throw new UnsupportedOperationException();
+        }
+
+        private final class SequenceRequestSpec implements ChatClientRequestSpec {
+
+            @Override
+            public Builder mutate() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(java.util.function.Consumer<AdvisorSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(org.springframework.ai.chat.client.advisor.api.Advisor... advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec advisors(List<org.springframework.ai.chat.client.advisor.api.Advisor> advisors) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(org.springframework.ai.chat.messages.Message... messages) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec messages(List<org.springframework.ai.chat.messages.Message> messages) {
+                return this;
+            }
+
+            @Override
+            public <T extends org.springframework.ai.chat.prompt.ChatOptions> ChatClientRequestSpec options(T options) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolNames(String... toolNames) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec tools(Object... tools) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(ToolCallback... toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(List<ToolCallback> toolCallbacks) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolCallbacks(org.springframework.ai.tool.ToolCallbackProvider... providers) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec toolContext(Map<String, Object> toolContext) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(String text) {
+                systemMessagesSeen.add(text);
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec system(java.util.function.Consumer<PromptSystemSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(String text) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource, java.nio.charset.Charset charset) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(org.springframework.core.io.Resource resource) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                return this;
+            }
+
+            @Override
+            public ChatClientRequestSpec templateRenderer(org.springframework.ai.template.TemplateRenderer renderer) {
+                return this;
+            }
+
+            @Override
+            public CallResponseSpec call() {
+                String next = responses.pollFirst();
+                if (next == null) {
+                    throw new IllegalStateException("No more queued chat responses");
+                }
+                return new ResponseSpec(next);
+            }
+
+            @Override
+            public StreamResponseSpec stream() {
+                throw new UnsupportedOperationException();
+            }
+        }
+
+        private record ResponseSpec(String content) implements CallResponseSpec {
+
+            @Override
+            public <T> T entity(org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T entity(Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.client.ChatClientResponse chatClientResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public org.springframework.ai.chat.model.ChatResponse chatResponse() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String content() {
+                return content;
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(Class<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.core.ParameterizedTypeReference<T> type) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> org.springframework.ai.chat.client.ResponseEntity<org.springframework.ai.chat.model.ChatResponse, T> responseEntity(
+                    org.springframework.ai.converter.StructuredOutputConverter<T> converter) {
+                throw new UnsupportedOperationException();
+            }
         }
     }
 }

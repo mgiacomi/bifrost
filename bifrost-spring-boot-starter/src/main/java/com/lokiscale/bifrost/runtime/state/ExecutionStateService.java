@@ -41,6 +41,12 @@ public interface ExecutionStateService {
 
     void logPlanUpdated(BifrostSession session, ExecutionPlan plan);
 
+    void recordPlanningEvent(BifrostSession session,
+                             ExecutionFrame frame,
+                             TraceRecordType recordType,
+                             Map<String, Object> metadata,
+                             Object payload);
+
     void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
 
     void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);

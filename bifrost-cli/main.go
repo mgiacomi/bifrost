@@ -770,11 +770,17 @@ func typeAbbrevColor(rt string) (string, string) {
 		return "SCHEMA", "135"
 	case "LINTER_RECORDED":
 		return "LINTER", "135"
-	// Planning — cyan
+	// Planning - cyan
 	case "PLAN_CREATED":
 		return "PLAN_NEW", "51"
 	case "PLAN_UPDATED":
 		return "PLAN_UPD", "51"
+	case "PLAN_VALIDATION_FAILED":
+		return "PLAN_BAD", "196"
+	case "PLAN_RETRY_REQUESTED":
+		return "PLAN_RETRY", "220"
+	case "PLAN_QUALITY_WARNING":
+		return "PLAN_WARN", "214"
 	// Tools — orange
 	case "TOOL_CALL_REQUESTED":
 		return "TOOL_REQ", "214"
@@ -898,6 +904,16 @@ func smartInfo(r TraceRecord) string {
 	case "PLAN_CREATED", "PLAN_UPDATED":
 		if meta != nil {
 			return "plan:" + strVal(meta["planId"])
+		}
+
+	case "PLAN_VALIDATION_FAILED", "PLAN_RETRY_REQUESTED", "PLAN_QUALITY_WARNING":
+		if meta != nil {
+			codes := strVal(meta["issueCodes"])
+			severity := strVal(meta["severity"])
+			if severity == "" {
+				severity = "UNKNOWN"
+			}
+			return severity + " " + codes
 		}
 
 	case "TOOL_CALL_REQUESTED", "TOOL_CALL_STARTED", "TOOL_CALL_COMPLETED", "TOOL_CALL_FAILED":

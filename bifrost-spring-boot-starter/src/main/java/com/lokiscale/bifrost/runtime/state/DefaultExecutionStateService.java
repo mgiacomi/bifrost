@@ -164,6 +164,20 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
+    public void recordPlanningEvent(BifrostSession session,
+                                    ExecutionFrame frame,
+                                    TraceRecordType recordType,
+                                    Map<String, Object> metadata,
+                                    Object payload) {
+        Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(frame, "frame must not be null");
+        Objects.requireNonNull(recordType, "recordType must not be null");
+        session.appendTraceRecord(recordType, frame,
+                metadata == null ? Map.of() : Map.copyOf(metadata),
+                payload == null ? Map.of() : payload);
+    }
+
+    @Override
     public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelRequestPrepared(

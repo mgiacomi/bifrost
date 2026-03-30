@@ -11,18 +11,19 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
-import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.ModelTraceContext;
+import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceRecordType;
+import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
-import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,8 +33,10 @@ import org.springframework.ai.chat.messages.AbstractMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.lang.Nullable;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,78 +48,50 @@ public class DefaultPlanningService implements PlanningService {
     private static final Logger log = LoggerFactory.getLogger(DefaultPlanningService.class);
 
     private static final ObjectMapper YAML_OBJECT_MAPPER = YAMLMapper.builder().findAndAddModules().build();
-
-    private static String buildPlanningPrompt(String capabilityName, List<ToolCallback> visibleTools) {
-        String toolList = (visibleTools == null || visibleTools.isEmpty())
-                ? "(none)"
-                : visibleTools.stream()
-                        .filter(t -> t != null && t.getToolDefinition() != null)
-                        .map(t -> "- " + t.getToolDefinition().name())
-                        .collect(java.util.stream.Collectors.joining("\n"));
-        return """
-                Create an ordered flight plan for this mission before execution.
-                Return ONLY valid JSON — no markdown, no explanation, no code fences.
-                The JSON must match this exact structure:
-                {
-                  "planId": "<unique string>",
-                  "capabilityName": "%s",
-                  "createdAt": "<ISO-8601 timestamp, e.g. 2024-01-01T00:00:00Z>",
-                  "status": "VALID",
-                  "activeTaskId": null,
-                  "tasks": [
-                    {
-                      "taskId": "<unique string>",
-                      "title": "<short title>",
-                      "status": "PENDING",
-                      "capabilityName": "<one of the available sub-skills listed below>",
-                      "intent": "<what this task must accomplish>",
-                      "dependsOn": [],
-                      "expectedOutputs": ["<output description>"],
-                      "autoCompletable": false,
-                      "note": "<optional note or empty string>"
-                    }
-                  ]
-                }
-                Available sub-skills (use these exact names for task capabilityName):
-                %s
-                Constraints:
-                - plan status must be exactly: VALID
-                - task status must be exactly: PENDING
-                - autoCompletable must be a boolean (true or false)
-                - dependsOn must be a JSON array of taskId strings (empty array if no dependencies)
-                - expectedOutputs must be a JSON array of strings
-                - activeTaskId must be null
-                - Return raw JSON only — no additional text before or after
-                """.formatted(capabilityName, toolList);
-    }
+    private static final int MAX_PLAN_QUALITY_RETRIES = 1;
 
     private final PlanTaskLinker planTaskLinker;
     private final ExecutionStateService executionStateService;
     private final SessionUsageService sessionUsageService;
     private final ModelUsageExtractor modelUsageExtractor;
     private final ObjectMapper objectMapper;
+    private final PlanQualityValidator planQualityValidator;
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker, ExecutionStateService executionStateService) {
-        this(planTaskLinker, executionStateService, new NoOpSessionUsageService(), new ModelUsageExtractor(), defaultObjectMapper());
+        this(
+                planTaskLinker,
+                executionStateService,
+                new NoOpSessionUsageService(),
+                new ModelUsageExtractor(),
+                defaultObjectMapper(),
+                new PlanQualityValidator());
     }
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker,
                                   ExecutionStateService executionStateService,
                                   SessionUsageService sessionUsageService,
                                   ModelUsageExtractor modelUsageExtractor) {
-        this(planTaskLinker, executionStateService, sessionUsageService, modelUsageExtractor, defaultObjectMapper());
+        this(
+                planTaskLinker,
+                executionStateService,
+                sessionUsageService,
+                modelUsageExtractor,
+                defaultObjectMapper(),
+                new PlanQualityValidator());
     }
 
     DefaultPlanningService(PlanTaskLinker planTaskLinker,
                            ExecutionStateService executionStateService,
                            SessionUsageService sessionUsageService,
                            ModelUsageExtractor modelUsageExtractor,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper,
+                           PlanQualityValidator planQualityValidator) {
         this.planTaskLinker = Objects.requireNonNull(planTaskLinker, "planTaskLinker must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
         this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.planQualityValidator = Objects.requireNonNull(planQualityValidator, "planQualityValidator must not be null");
     }
 
     @Override
@@ -156,89 +131,19 @@ public class DefaultPlanningService implements PlanningService {
         String planningFrameStatus = "completed";
         Throwable planningFailure = null;
         try {
-            ExecutionFrame modelFrame = executionStateService.openFrame(
+            return initializePlanWithQualityChecks(
                     session,
-                    TraceFrameType.MODEL_CALL,
-                    capabilityName + "#planning-model",
-                    Map.of(
-                            "provider", executionConfiguration.provider().name(),
-                            "providerModel", executionConfiguration.providerModel(),
-                            "segment", "planning"));
-            String modelFrameStatus = "completed";
-            Throwable modelFailure = null;
-            try {
-                ModelTraceContext modelTraceContext = new ModelTraceContext(
-                        executionConfiguration.provider().name(),
-                        executionConfiguration.providerModel(),
-                        capabilityName,
-                        "planning");
-                String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools);
-                PlanningTraceResult planningResult = executionStateService.traceModelCall(
-                        session,
-                        modelFrame,
-                        modelTraceContext,
-                        Map.of(
-                                "system", planningPrompt,
-                                "user", objective),
-                        markRequestSent -> {
-                            Map<String, Object> sentPayload = Map.of(
-                                    "system", planningPrompt,
-                                    "user", objective);
-                            ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                                    .system(planningPrompt)
-                                    .user(objective)
-                                    .advisors(spec -> spec.param(OutputSchemaCallAdvisor.PLANNING_CALL_KEY, true))
-                                    .call();
-                            markRequestSent.accept(sentPayload);
-                            ChatResponse chatResponse;
-                            String planPayload;
-                            try {
-                                ChatClientResponse clientResponse = responseSpec.chatClientResponse();
-                                chatResponse = clientResponse.chatResponse();
-                                planPayload = extractContent(chatResponse);
-                                log.debug(
-                                        "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
-                                        capabilityName,
-                                        preview(planPayload));
-                            }
-                            catch (UnsupportedOperationException ignored) {
-                                chatResponse = null;
-                                planPayload = responseSpec.content();
-                                log.debug(
-                                        "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
-                                        capabilityName,
-                                        preview(planPayload));
-                            }
-                            ExecutionPlan plan = parsePlan(planPayload, capabilityName, strictPlanContract);
-                            return ModelTraceResult.of(
-                                    new PlanningTraceResult(plan, chatResponse),
-                                    Map.of("content", planPayload));
-                        });
-                ExecutionPlan plan = planningResult.plan();
-                sessionUsageService.recordModelResponse(
-                        session,
-                        capabilityName,
-                        modelUsageExtractor.extract(planningResult.chatResponse(), objective, planningPrompt, stringifyPlan(plan)));
-                executionStateService.storePlan(session, plan);
-                executionStateService.logPlanCreated(session, plan);
-                return Optional.of(plan);
-            }
-            catch (RuntimeException ex) {
-                modelFailure = ex;
-                planningFailure = ex;
-                modelFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
-                planningFrameStatus = modelFrameStatus;
-                throw ex;
-            }
-            finally {
-                executionStateService.closeFrame(session, modelFrame, closeMetadata(modelFrameStatus, modelFailure));
-            }
+                    objective,
+                    capabilityName,
+                    executionConfiguration,
+                    chatClient,
+                    visibleTools,
+                    strictPlanContract,
+                    planningFrame);
         }
         catch (RuntimeException ex) {
-            if (planningFailure == null) {
-                planningFailure = ex;
-                planningFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
-            }
+            planningFailure = ex;
+            planningFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
             throw ex;
         }
         finally {
@@ -339,9 +244,223 @@ public class DefaultPlanningService implements PlanningService {
                         }));
     }
 
+    private Optional<ExecutionPlan> initializePlanWithQualityChecks(BifrostSession session,
+                                                                    String objective,
+                                                                    String capabilityName,
+                                                                    EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                                    ChatClient chatClient,
+                                                                    List<ToolCallback> visibleTools,
+                                                                    boolean strictPlanContract,
+                                                                    ExecutionFrame planningFrame) {
+        String retryFeedback = null;
+        int retryCount = 0;
+        while (true) {
+            PlanningAttemptResult attemptResult = requestPlanAttempt(
+                    session,
+                    objective,
+                    capabilityName,
+                    executionConfiguration,
+                    chatClient,
+                    visibleTools,
+                    strictPlanContract,
+                    retryFeedback);
+            sessionUsageService.recordModelResponse(
+                    session,
+                    capabilityName,
+                    modelUsageExtractor.extract(
+                            attemptResult.chatResponse(),
+                            objective,
+                            attemptResult.prompt(),
+                            stringifyPlan(attemptResult.plan())));
+            PlanQualityValidationResult validation = planQualityValidator.validate(attemptResult.plan(), visibleTools);
+            if (validation.hasErrors() && retryCount < MAX_PLAN_QUALITY_RETRIES) {
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, validation.errors(), retryCount);
+                retryFeedback = validation.retryFeedback();
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED, validation.errors(), retryCount);
+                retryCount++;
+                continue;
+            }
+            if (validation.hasWarnings()) {
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING, validation.warnings(), retryCount);
+            }
+            if (validation.hasErrors()) {
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING, validation.errors(), retryCount);
+            }
+            executionStateService.storePlan(session, attemptResult.plan());
+            executionStateService.logPlanCreated(session, attemptResult.plan());
+            return Optional.of(attemptResult.plan());
+        }
+    }
+
+    private PlanningAttemptResult requestPlanAttempt(BifrostSession session,
+                                                     String objective,
+                                                     String capabilityName,
+                                                     EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                     ChatClient chatClient,
+                                                     List<ToolCallback> visibleTools,
+                                                     boolean strictPlanContract,
+                                                     @Nullable String retryFeedback) {
+        ExecutionFrame modelFrame = executionStateService.openFrame(
+                session,
+                TraceFrameType.MODEL_CALL,
+                capabilityName + "#planning-model",
+                Map.of(
+                        "provider", executionConfiguration.provider().name(),
+                        "providerModel", executionConfiguration.providerModel(),
+                        "segment", "planning"));
+        String modelFrameStatus = "completed";
+        Throwable modelFailure = null;
+        String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools, retryFeedback);
+        try {
+            ModelTraceContext modelTraceContext = new ModelTraceContext(
+                    executionConfiguration.provider().name(),
+                    executionConfiguration.providerModel(),
+                    capabilityName,
+                    "planning");
+            PlanningTraceResult planningResult = executionStateService.traceModelCall(
+                    session,
+                    modelFrame,
+                    modelTraceContext,
+                    Map.of(
+                            "system", planningPrompt,
+                            "user", objective),
+                    markRequestSent -> {
+                        Map<String, Object> sentPayload = Map.of(
+                                "system", planningPrompt,
+                                "user", objective);
+                        ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
+                                .system(planningPrompt)
+                                .user(objective)
+                                .advisors(spec -> spec.param(OutputSchemaCallAdvisor.PLANNING_CALL_KEY, true))
+                                .call();
+                        markRequestSent.accept(sentPayload);
+                        ChatResponse chatResponse;
+                        String planPayload;
+                        try {
+                            ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+                            chatResponse = clientResponse.chatResponse();
+                            planPayload = extractContent(chatResponse);
+                            log.debug(
+                                    "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
+                                    capabilityName,
+                                    preview(planPayload));
+                        }
+                        catch (UnsupportedOperationException ignored) {
+                            chatResponse = null;
+                            planPayload = responseSpec.content();
+                            log.debug(
+                                    "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
+                                    capabilityName,
+                                    preview(planPayload));
+                        }
+                        ExecutionPlan plan = parsePlan(planPayload, capabilityName, strictPlanContract);
+                        return ModelTraceResult.of(
+                                new PlanningTraceResult(plan, chatResponse),
+                                Map.of("content", planPayload));
+                    });
+            return new PlanningAttemptResult(planningResult.plan(), planningResult.chatResponse(), planningPrompt);
+        }
+        catch (RuntimeException ex) {
+            modelFailure = ex;
+            modelFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
+            throw ex;
+        }
+        finally {
+            executionStateService.closeFrame(session, modelFrame, closeMetadata(modelFrameStatus, modelFailure));
+        }
+    }
+
+    private void recordPlanQualityEvent(BifrostSession session,
+                                        ExecutionFrame planningFrame,
+                                        TraceRecordType recordType,
+                                        List<PlanQualityIssue> issues,
+                                        int retryCount) {
+        if (issues == null || issues.isEmpty()) {
+            return;
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("retryCount", retryCount);
+        metadata.put("severity", issues.getFirst().severity().name());
+        metadata.put("issueCodes", issues.stream().map(PlanQualityIssue::code).distinct().toList());
+        List<Map<String, Object>> payload = issues.stream()
+                .map(issue -> Map.<String, Object>of(
+                        "code", issue.code(),
+                        "severity", issue.severity().name(),
+                        "message", issue.message()))
+                .toList();
+        executionStateService.recordPlanningEvent(session, planningFrame, recordType, metadata, payload);
+    }
+
+    private static String buildPlanningPrompt(String capabilityName,
+                                              List<ToolCallback> visibleTools,
+                                              @Nullable String retryFeedback) {
+        String toolList = (visibleTools == null || visibleTools.isEmpty())
+                ? "(none)"
+                : visibleTools.stream()
+                        .filter(t -> t != null && t.getToolDefinition() != null)
+                        .map(DefaultPlanningService::describeTool)
+                        .collect(java.util.stream.Collectors.joining("\n"));
+        String retrySection = retryFeedback == null || retryFeedback.isBlank()
+                ? ""
+                : """
+
+                Previous plan was too weak. Correct these issues in the next plan:
+                %s
+                """.formatted(retryFeedback);
+        return """
+                Create an ordered flight plan for this mission before execution.
+                Return ONLY valid JSON - no markdown, no explanation, no code fences.
+                The JSON must match this exact structure:
+                {
+                  "planId": "<unique string>",
+                  "capabilityName": "%s",
+                  "createdAt": "<ISO-8601 timestamp, e.g. 2024-01-01T00:00:00Z>",
+                  "status": "VALID",
+                  "activeTaskId": null,
+                  "tasks": [
+                    {
+                      "taskId": "<unique string>",
+                      "title": "<short title>",
+                      "status": "PENDING",
+                      "capabilityName": "<one of the available sub-skills listed below>",
+                      "intent": "<what this task must accomplish>",
+                      "dependsOn": [],
+                      "expectedOutputs": ["<output description>"],
+                      "autoCompletable": false,
+                      "note": "<optional note or empty string>"
+                    }
+                  ]
+                }
+                Available sub-skills (use these exact names for task capabilityName):
+                %s
+                Constraints:
+                - plan status must be exactly: VALID
+                - task status must be exactly: PENDING
+                - autoCompletable must be a boolean (true or false)
+                - dependsOn must be a JSON array of taskId strings (empty array if no dependencies)
+                - expectedOutputs must be a JSON array of strings
+                - activeTaskId must be null
+                - Return raw JSON only - no additional text before or after
+                Planning quality rules:
+                - Each task must have a distinct purpose that advances the mission.
+                - Bind each task to the tool that best matches that task's intent.
+                - If multiple tools are available, consider whether the mission requires evidence from more than one.
+                - Do not create report or conclusion tasks that are bound to extraction-only or lookup-only tools unless that tool is genuinely the right fit.
+                - Gather enough evidence to support the final answer before the mission is complete.
+                %s""".formatted(capabilityName, toolList, retrySection);
+    }
+
+    private static String describeTool(ToolCallback callback) {
+        ToolDefinition definition = callback.getToolDefinition();
+        String description = definition.description();
+        if (description == null || description.isBlank()) {
+            description = "No description provided.";
+        }
+        return "- %s: %s".formatted(definition.name(), description);
+    }
 
     private Map<String, Object> closeMetadata(String status, @Nullable Throwable failure) {
-        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("status", Thread.currentThread().isInterrupted() ? "aborted" : status);
         if (failure != null) {
             metadata.put("exceptionType", failure.getClass().getName());
@@ -360,7 +479,7 @@ public class DefaultPlanningService implements PlanningService {
 
     @Nullable
     private static String extractContent(@Nullable ChatResponse chatResponse) {
-        return java.util.Optional.ofNullable(chatResponse)
+        return Optional.ofNullable(chatResponse)
                 .map(ChatResponse::getResult)
                 .map(Generation::getOutput)
                 .map(AbstractMessage::getText)
@@ -533,7 +652,6 @@ public class DefaultPlanningService implements PlanningService {
                 return safePayload.substring(firstNewline + 1, lastFence).trim();
             }
         }
-        // Strip leading YAML document marker
         if (safePayload.startsWith("---")) {
             safePayload = safePayload.substring(3).trim();
         }
@@ -561,5 +679,10 @@ public class DefaultPlanningService implements PlanningService {
     }
 
     private record PlanningTraceResult(ExecutionPlan plan, @Nullable ChatResponse chatResponse) {
+    }
+
+    private record PlanningAttemptResult(ExecutionPlan plan,
+                                         @Nullable ChatResponse chatResponse,
+                                         String prompt) {
     }
 }
