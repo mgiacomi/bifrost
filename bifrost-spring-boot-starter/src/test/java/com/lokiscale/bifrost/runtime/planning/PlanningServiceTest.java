@@ -77,7 +77,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = plan("plan-1", PlanTaskStatus.PENDING);
 
         assertThat(session.getExecutionPlan()).isEmpty();
-        assertThat(planningService.initializePlan(session, "hello", rootDefinition(), new SimpleChatClient(plan, "done"), List.<ToolCallback>of()))
+        assertThat(planningService.initializePlan(session, "hello", null, rootDefinition(), new SimpleChatClient(plan, "done"), List.<ToolCallback>of()))
                 .contains(plan);
         assertThat(session.getExecutionPlan()).contains(plan);
     }
@@ -94,7 +94,7 @@ class PlanningServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-usage", 3);
         ExecutionPlan plan = plan("plan-usage", PlanTaskStatus.PENDING);
 
-        assertThat(planningService.initializePlan(session, "hello", rootDefinition(), new SimpleChatClient(plan, "done"), List.of()))
+        assertThat(planningService.initializePlan(session, "hello", null, rootDefinition(), new SimpleChatClient(plan, "done"), List.of()))
                 .contains(plan);
         assertThat(usageService.lastSkillName).isEqualTo("root.visible.skill");
         assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(1);
@@ -110,6 +110,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "parse invoice",
+                        null,
                         rootDefinition("invoiceParser"),
                         new SimpleChatClient(null, YAML_PLAN_WITH_LLM_STATUSES),
                         List.<ToolCallback>of())
@@ -137,6 +138,7 @@ class PlanningServiceTest {
         assertThat(planningService.initializePlan(
                 session,
                 "hello",
+                null,
                 rootDefinition(),
                 new SimpleChatClient(legacyPlan, "done"),
                 List.of()))
@@ -153,6 +155,7 @@ class PlanningServiceTest {
         planningService.initializePlan(
                 session,
                 "hello",
+                null,
                 rootDefinition(),
                 new SimpleChatClient(plan("plan-trace", PlanTaskStatus.PENDING), "done"),
                 List.of());
@@ -347,7 +350,7 @@ class PlanningServiceTest {
         ToolCallback tool1 = toolCallback("invoiceParser", "Extract invoice fields from source documents");
         ToolCallback tool2 = toolCallback("expenseLookup", "Look up prior expenses for a parsed invoice");
 
-        planningService.initializePlan(session, "check invoice", rootDefinition("duplicateInvoiceChecker"), chatClient, List.of(tool1, tool2));
+        planningService.initializePlan(session, "check invoice", null, rootDefinition("duplicateInvoiceChecker"), chatClient, List.of(tool1, tool2));
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("invoiceParser: Extract invoice fields from source documents");
@@ -371,6 +374,7 @@ class PlanningServiceTest {
         planningService.initializePlan(
                 session,
                 "check invoice",
+                null,
                 rootDefinition("duplicateInvoiceChecker"),
                 chatClient,
                 List.of(tool));
@@ -394,6 +398,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "check invoice duplicates",
+                        null,
                         rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
                         List.of(invoiceParser, expenseLookup))
@@ -428,6 +433,7 @@ class PlanningServiceTest {
         planningService.initializePlan(
                         session,
                         "check invoice duplicates",
+                        null,
                         rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
                         List.of(invoiceParser, expenseLookup))
@@ -458,6 +464,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "check invoice duplicates",
+                        null,
                         rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
                         List.of(invoiceParser, expenseLookup))
@@ -500,6 +507,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "extract invoice details",
+                        null,
                         rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
                         List.of(invoiceParser, expenseLookup))
@@ -549,7 +557,7 @@ class PlanningServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-no-tools", 3);
         SimpleChatClient chatClient = new SimpleChatClient(plan("plan-no-tools", PlanTaskStatus.PENDING), "done");
 
-        planningService.initializePlan(session, "check invoice", rootDefinition("duplicateInvoiceChecker"), chatClient, List.of());
+        planningService.initializePlan(session, "check invoice", null, rootDefinition("duplicateInvoiceChecker"), chatClient, List.of());
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("(none)");
@@ -562,7 +570,7 @@ class PlanningServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-cap-name", 3);
         SimpleChatClient chatClient = new SimpleChatClient(plan("plan-cap", PlanTaskStatus.PENDING), "done");
 
-        planningService.initializePlan(session, "check invoice", rootDefinition("duplicateInvoiceChecker"), chatClient, List.of());
+        planningService.initializePlan(session, "check invoice", null, rootDefinition("duplicateInvoiceChecker"), chatClient, List.of());
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("\"capabilityName\": \"duplicateInvoiceChecker\"");
@@ -578,6 +586,7 @@ class PlanningServiceTest {
         assertThatThrownBy(() -> planningService.initializePlan(
                 session,
                 "check duplicate invoice",
+                null,
                 duplicateInvoiceDefinition(),
                 chatClient,
                 List.of(toolCallback("invoiceParser", "Extract invoice fields"), toolCallback("expenseLookup", "Look up matching expenses"))))
@@ -596,6 +605,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "check duplicate invoice",
+                        null,
                         duplicateInvoiceDefinition(),
                         chatClient,
                         List.of(toolCallback("invoiceParser", "Extract invoice fields"), toolCallback("expenseLookup", "Look up matching expenses")))

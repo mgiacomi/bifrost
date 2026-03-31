@@ -37,6 +37,9 @@ public class YamlSkillManifest {
     @JsonProperty("output_schema")
     private OutputSchemaManifest outputSchema;
 
+    @JsonProperty("input_schema")
+    private OutputSchemaManifest inputSchema;
+
     @JsonProperty("output_schema_max_retries")
     private Integer outputSchemaMaxRetries;
 
@@ -131,6 +134,14 @@ public class YamlSkillManifest {
 
     public void setOutputSchema(OutputSchemaManifest outputSchema) {
         this.outputSchema = outputSchema;
+    }
+
+    public OutputSchemaManifest getInputSchema() {
+        return inputSchema;
+    }
+
+    public void setInputSchema(OutputSchemaManifest inputSchema) {
+        this.inputSchema = inputSchema;
     }
 
     public Integer getOutputSchemaMaxRetries() {

@@ -118,6 +118,7 @@ public class YamlSkillCatalog implements InitializingBean {
         validateRequiredField(resource, "name", manifest.getName());
         validateRequiredField(resource, "description", manifest.getDescription());
         validateRequiredField(resource, "model", manifest.getModel());
+        validateInputSchema(resource, manifest);
         validateOutputSchema(resource, manifest);
         validateEvidenceContract(resource, manifest);
         validateLinter(resource, manifest);
@@ -227,6 +228,14 @@ public class YamlSkillCatalog implements InitializingBean {
         validateSchemaNode(resource, outputSchema, "output_schema", true, 1);
     }
 
+    private void validateInputSchema(Resource resource, YamlSkillManifest manifest) {
+        YamlSkillManifest.OutputSchemaManifest inputSchema = manifest.getInputSchema();
+        if (inputSchema == null) {
+            return;
+        }
+        validateSchemaNode(resource, inputSchema, "input_schema", true, 1);
+    }
+
     private void validateEvidenceContract(Resource resource, YamlSkillManifest manifest) {
         YamlSkillManifest.EvidenceContractManifest contract = manifest.getEvidenceContract();
         if (contract == null) {
@@ -302,7 +311,7 @@ public class YamlSkillCatalog implements InitializingBean {
             throw invalidSkill(resource, fieldPath + ".enum", "is only supported for string schemas in the MVP");
         }
         if (root && !"object".equals(schema.getType())) {
-            throw invalidSkill(resource, fieldPath + ".type", "root output_schema type must be 'object'");
+            throw invalidSkill(resource, fieldPath + ".type", "root " + fieldPath + " type must be 'object'");
         }
 
         warnOnSchemaComplexity(resource, fieldPath, schema, depth);

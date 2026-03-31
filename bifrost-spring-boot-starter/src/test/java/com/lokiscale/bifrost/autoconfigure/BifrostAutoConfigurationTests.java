@@ -12,8 +12,12 @@ import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.ExecutionCoordinator;
+import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.runtime.input.SkillInputValidator;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
+import com.lokiscale.bifrost.skillapi.SkillTemplate;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import com.lokiscale.bifrost.vfs.VirtualFileSystem;
 import org.junit.jupiter.api.Test;
@@ -29,6 +33,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -90,7 +95,25 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(VirtualFileSystem.class);
                     assertThat(context).hasSingleBean(RefResolver.class);
                     assertThat(context).hasSingleBean(Clock.class);
+                    assertThat(context).hasSingleBean(SkillInputContractResolver.class);
+                    assertThat(context).hasSingleBean(SkillInputValidator.class);
+                    assertThat(context).hasSingleBean(SkillTemplate.class);
                     assertThat(context.getBean(BifrostSessionProperties.class).getMaxDepth()).isEqualTo(5);
+                });
+    }
+
+    @Test
+    void reusesSharedSkillInputContractResolverAcrossRegistrationPaths() {
+        contextRunner
+                .withUserConfiguration(MappedSkillTargetConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
+                .run(context -> {
+                    SkillInputContractResolver resolver = context.getBean(SkillInputContractResolver.class);
+                    SkillMethodBeanPostProcessor beanPostProcessor = context.getBean(SkillMethodBeanPostProcessor.class);
+                    Object registrar = context.getBean("yamlSkillCapabilityRegistrar");
+
+                    assertThat(ReflectionTestUtils.getField(beanPostProcessor, "inputContractResolver")).isSameAs(resolver);
+                    assertThat(ReflectionTestUtils.getField(registrar, "inputContractResolver")).isSameAs(resolver);
                 });
     }
 

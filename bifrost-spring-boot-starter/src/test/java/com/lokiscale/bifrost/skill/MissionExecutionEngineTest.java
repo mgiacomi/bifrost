@@ -67,13 +67,13 @@ class MissionExecutionEngineTest {
             MissionChatClient chatClient = new MissionChatClient("mission complete");
             ToolCallback callback = mock(ToolCallback.class);
 
-            when(planningService.initializePlan(eq(session), eq("hello"), any(YamlSkillDefinition.class), eq(chatClient), any()))
+            when(planningService.initializePlan(eq(session), eq("hello"), eq(null), any(YamlSkillDefinition.class), eq(chatClient), any()))
                     .thenAnswer(invocation -> {
                         stateService.storePlan(session, plan);
                         return java.util.Optional.of(plan);
                     });
 
-            String response = engine.executeMission(session, definition(), "hello", chatClient, List.of(callback), true, null);
+            String response = engine.executeMission(session, definition(), "hello", null, chatClient, List.of(callback), true, null);
 
             assertThat(response).isEqualTo("mission complete");
             assertThat(chatClient.getSystemMessagesSeen().getFirst()).contains("plan-1", "Ready tasks", "Blocked tasks");
@@ -93,11 +93,11 @@ class MissionExecutionEngineTest {
             BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
             MissionChatClient chatClient = new MissionChatClient("mission complete");
 
-            String response = engine.executeMission(session, definition(), "hello", chatClient, List.of(), false, null);
+            String response = engine.executeMission(session, definition(), "hello", null, chatClient, List.of(), false, null);
 
             assertThat(response).isEqualTo("mission complete");
             assertThat(chatClient.getSystemMessagesSeen()).containsExactly("Execute the mission using only the visible YAML tools when needed.");
-            verify(planningService, never()).initializePlan(eq(session), eq("hello"), any(YamlSkillDefinition.class), eq(chatClient), any());
+            verify(planningService, never()).initializePlan(eq(session), eq("hello"), eq(null), any(YamlSkillDefinition.class), eq(chatClient), any());
         }
     }
 
@@ -118,6 +118,7 @@ class MissionExecutionEngineTest {
                     session,
                     definition(),
                     "hello",
+                    null,
                     new MissionChatClient("mission complete"),
                     List.of(callback),
                     false,
@@ -159,6 +160,7 @@ class MissionExecutionEngineTest {
                     session,
                     definition(),
                     "hello",
+                    null,
                     chatClient,
                     List.of(),
                     false,
@@ -201,6 +203,7 @@ class MissionExecutionEngineTest {
                     session,
                     definition(),
                     "hello",
+                    null,
                     chatClient,
                     List.of(),
                     true,
@@ -230,6 +233,7 @@ class MissionExecutionEngineTest {
                     session,
                     definition(),
                     "hello",
+                    null,
                     new FailingMissionChatClient(),
                     List.of(),
                     false,
@@ -626,6 +630,7 @@ class MissionExecutionEngineTest {
         @Override
         public java.util.Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                                 String objective,
+                                                                java.util.Map<String, Object> missionInput,
                                                                 YamlSkillDefinition definition,
                                                                 org.springframework.ai.chat.client.ChatClient chatClient,
                                                                 List<ToolCallback> visibleTools) {

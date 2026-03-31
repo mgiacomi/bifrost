@@ -1,5 +1,19 @@
 ## Bifrost: The Agentic LLM-OS Framework (Master Spec)
 
+## Project Stance
+This library is still in active development.
+
+For this ticket, we should optimize for a cleaner long-term architecture rather than preserving immature APIs, endpoints, or internal seams.
+
+Explicit guidance:
+
+- breaking changes are acceptable
+- we do not need to preserve legacy code paths just because they already exist
+- compatibility shims should be avoided unless they materially simplify the migration
+- reducing technical debt is more important than minimizing churn
+
+The implementation should prefer replacing weak or transitional patterns over layering new abstractions on top of them.
+
 ## Phase Documents
 - [Phase 1](C:/opendev/code/bifrost/ai/thoughts/phases/phase1.md)
 - [Phase 2](C:/opendev/code/bifrost/ai/thoughts/phases/phase2.md)

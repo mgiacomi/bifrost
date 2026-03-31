@@ -1,0 +1,14 @@
+name: mapped.method.skill
+description: YAML skill mapped to a discovered Java implementation with a format mismatch.
+model: gpt-5
+mapping:
+  target_id: targetBean#deterministicTarget
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - input
+  properties:
+    input:
+      type: string
+      format: date

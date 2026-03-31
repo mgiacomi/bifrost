@@ -227,6 +227,62 @@ class YamlSkillCatalogTests {
     }
 
     @Test
+    void loadsYamlSkillInputSchemaWhenPresent() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/input-schema-skill.yaml")
+                .run(context -> {
+                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("input.schema.skill");
+
+                    assertThat(definition).isNotNull();
+                    assertThat(definition.inputSchema()).isNotNull();
+                    assertThat(definition.inputSchema().getType()).isEqualTo("object");
+                    assertThat(definition.inputSchema().getRequired()).containsExactly("payload");
+                });
+    }
+
+    @Test
+    void failsStartupWhenInputSchemaUsesUnsupportedKeywordOrNonObjectRoot() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/input-schema-root-array-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("input-schema-root-array-skill.yaml")
+                        .hasMessageContaining("field 'input_schema.type'")
+                        .hasMessageContaining("root input_schema type must be 'object'"));
+
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/input-schema-unsupported-keyword-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("input-schema-unsupported-keyword-skill.yaml")
+                        .hasMessageContaining("field 'input_schema.properties.payload.oneOf'")
+                        .hasMessageContaining("unknown field"));
+    }
+
+    @Test
+    void mappedYamlSkillWithMismatchedInputSchemaFailsStartup() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/mapped-method-skill-mismatched-input-schema.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("mapped-method-skill-mismatched-input-schema.yaml")
+                        .hasMessageContaining("input_schema compatibility failed"));
+    }
+
+    @Test
+    void mappedYamlSkillWithFormatMismatchedInputSchemaFailsStartup() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/mapped-method-skill-format-mismatched-input-schema.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("mapped-method-skill-format-mismatched-input-schema.yaml")
+                        .hasMessageContaining("input_schema compatibility failed")
+                        .hasMessageContaining("format mismatch"));
+    }
+
+    @Test
     void loadsEvidenceContractWhenManifestDeclaresOne() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/evidence-contract-skill.yaml")

@@ -22,6 +22,8 @@ import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.runtime.input.SkillInputValidator;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
@@ -40,6 +42,8 @@ import com.lokiscale.bifrost.skill.DefaultSkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.skill.YamlSkillCapabilityRegistrar;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
+import com.lokiscale.bifrost.skillapi.DefaultSkillTemplate;
+import com.lokiscale.bifrost.skillapi.SkillTemplate;
 import com.lokiscale.bifrost.vfs.DefaultRefResolver;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
@@ -102,8 +106,14 @@ public class BifrostAutoConfiguration {
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(
             CapabilityRegistry capabilityRegistry,
-            BifrostExceptionTransformer bifrostExceptionTransformer) {
-        return SkillMethodBeanPostProcessor.create(capabilityRegistry, bifrostExceptionTransformer);
+            ObjectProvider<ObjectMapper> objectMapperProvider,
+            BifrostExceptionTransformer bifrostExceptionTransformer,
+            SkillInputContractResolver skillInputContractResolver) {
+        return SkillMethodBeanPostProcessor.create(
+                capabilityRegistry,
+                objectMapperProvider.getIfAvailable(ObjectMapper::new),
+                bifrostExceptionTransformer,
+                skillInputContractResolver);
     }
 
     @Bean
@@ -131,8 +141,23 @@ public class BifrostAutoConfiguration {
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public YamlSkillCapabilityRegistrar yamlSkillCapabilityRegistrar(CapabilityRegistry capabilityRegistry,
-                                                                     YamlSkillCatalog yamlSkillCatalog) {
-        return new YamlSkillCapabilityRegistrar(capabilityRegistry, yamlSkillCatalog);
+                                                                     YamlSkillCatalog yamlSkillCatalog,
+                                                                     SkillInputContractResolver skillInputContractResolver) {
+        return new YamlSkillCapabilityRegistrar(capabilityRegistry, yamlSkillCatalog, skillInputContractResolver);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public SkillInputContractResolver skillInputContractResolver(ObjectProvider<ObjectMapper> objectMapperProvider) {
+        return new SkillInputContractResolver(objectMapperProvider.getIfAvailable(ObjectMapper::new));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public SkillInputValidator skillInputValidator() {
+        return new SkillInputValidator();
     }
 
     @Bean
@@ -171,8 +196,31 @@ public class BifrostAutoConfiguration {
     public CapabilityExecutionRouter capabilityExecutionRouter(RefResolver refResolver,
                                                                org.springframework.beans.factory.ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
                                                                ExecutionStateService executionStateService,
-                                                               AccessGuard accessGuard) {
-        return new CapabilityExecutionRouter(refResolver, executionCoordinatorProvider, executionStateService, accessGuard);
+                                                               AccessGuard accessGuard,
+                                                               SkillInputValidator skillInputValidator) {
+        return new CapabilityExecutionRouter(
+                refResolver,
+                executionCoordinatorProvider,
+                new ObjectMapper(),
+                executionStateService,
+                accessGuard,
+                skillInputValidator);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public SkillTemplate skillTemplate(CapabilityRegistry capabilityRegistry,
+                                       CapabilityExecutionRouter capabilityExecutionRouter,
+                                       BifrostSessionRunner bifrostSessionRunner,
+                                       ObjectProvider<ObjectMapper> objectMapperProvider,
+                                       SkillInputValidator skillInputValidator) {
+        return new DefaultSkillTemplate(
+                capabilityRegistry,
+                capabilityExecutionRouter,
+                bifrostSessionRunner,
+                objectMapperProvider.getIfAvailable(ObjectMapper::new),
+                skillInputValidator);
     }
 
     @Bean

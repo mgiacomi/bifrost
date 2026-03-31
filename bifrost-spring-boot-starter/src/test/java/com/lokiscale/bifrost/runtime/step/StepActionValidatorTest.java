@@ -5,6 +5,8 @@ import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.runtime.tool.ContractAwareToolCallback;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,12 @@ class StepActionValidatorTest {
         ToolDefinition definition = ToolDefinition.builder().name(name).description(name).inputSchema(inputSchema).build();
         when(callback.getToolDefinition()).thenReturn(definition);
         return callback;
+    }
+
+    private static ToolCallback contractAwareTool(String name, String inputSchema, String contractSchema) {
+        return new ContractAwareToolCallback(
+                mockTool(name, inputSchema),
+                new SkillInputContractResolver().resolveFromToolSchema(contractSchema));
     }
 
     @BeforeEach
@@ -77,6 +85,16 @@ class StepActionValidatorTest {
         void validCallToolReadyTaskPasses() {
             StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of("input", "text"));
             StepValidationResult result = StepActionValidator.validate(action, plan, visibleTools, true);
+            assertThat(result.valid()).isTrue();
+        }
+
+        @Test
+        void bareObjectToolSchemaRemainsPermissive() {
+            List<ToolCallback> genericObjectTools = List.of(mockTool("invoiceParser", "{}"));
+
+            StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of("input", "text"));
+            StepValidationResult result = StepActionValidator.validate(action, plan, genericObjectTools, true);
+
             assertThat(result.valid()).isTrue();
         }
 
@@ -186,7 +204,8 @@ class StepActionValidatorTest {
             StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of());
             StepValidationResult result = StepActionValidator.validate(action, plan, schemaAwareTools, true);
             assertThat(result.valid()).isFalse();
-            assertThat(result.rejectionReason()).contains("requires argument(s) [rawText]");
+            assertThat(result.rejectionReason()).contains("missing_required");
+            assertThat(result.rejectionReason()).contains("rawText");
         }
 
         @Test
@@ -218,6 +237,145 @@ class StepActionValidatorTest {
             StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of());
             StepValidationResult result = StepActionValidator.validate(action, plan, genericTools, true);
             assertThat(result.valid()).isTrue();
+        }
+
+        @Test
+        void nestedAndTypedToolArgumentsUseSharedValidator() {
+            List<ToolCallback> schemaAwareTools = List.of(mockTool("invoiceParser", """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "options": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["enabled"],
+                          "properties": {
+                            "enabled": { "type": "boolean" }
+                          }
+                        }
+                      },
+                      "required": ["options"],
+                      "additionalProperties": false
+                    }
+                    """));
+            StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of("options", Map.of("enabled", "nope", "extra", true)));
+
+            StepValidationResult result = StepActionValidator.validate(action, plan, schemaAwareTools, true);
+
+            assertThat(result.valid()).isFalse();
+            assertThat(result.rejectionReason()).contains("coercion_failed");
+            assertThat(result.rejectionReason()).contains("unknown_field");
+        }
+
+        @Test
+        void nestedObjectWithoutAdditionalPropertiesKeywordRemainsOpen() {
+            List<ToolCallback> schemaAwareTools = List.of(mockTool("invoiceParser", """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "options": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": { "type": "boolean" }
+                          }
+                        }
+                      },
+                      "required": ["options"],
+                      "additionalProperties": false
+                    }
+                    """));
+
+            StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of(
+                    "options", Map.of("enabled", true, "extra", "allowed")));
+
+            StepValidationResult result = StepActionValidator.validate(action, plan, schemaAwareTools, true);
+
+            assertThat(result.valid()).isTrue();
+        }
+
+        @Test
+        void contractAwareToolRejectsMissingArgumentsEvenWhenPublishedSchemaIsGeneric() {
+            List<ToolCallback> tools = List.of(contractAwareTool("invoiceParser", """
+                    {
+                      "type": "object",
+                      "properties": {},
+                      "additionalProperties": true
+                    }
+                    """, """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "rawText": { "type": "string" }
+                      },
+                      "required": ["rawText"],
+                      "additionalProperties": false
+                    }
+                    """));
+
+            StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of());
+            StepValidationResult result = StepActionValidator.validate(action, plan, tools, true);
+
+            assertThat(result.valid()).isFalse();
+            assertThat(result.rejectionReason()).contains("missing_required");
+            assertThat(result.rejectionReason()).contains("rawText");
+        }
+
+        @Test
+        void placeholderToolArgumentsAreRejectedEvenWhenTypeValid() {
+            List<ToolCallback> schemaAwareTools = List.of(mockTool("invoiceParser", """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "payload": { "type": "string" }
+                      },
+                      "required": ["payload"],
+                      "additionalProperties": false
+                    }
+                    """));
+
+            StepAction action = StepAction.callTool("t-1", "invoiceParser",
+                    Map.of("payload", "<canonical mission input>"));
+
+            StepValidationResult result = StepActionValidator.validate(action, plan, schemaAwareTools, true);
+
+            assertThat(result.valid()).isFalse();
+            assertThat(result.rejectionReason()).contains("unresolved placeholder values");
+            assertThat(result.rejectionReason()).contains("payload");
+        }
+
+        @Test
+        void typedMapToolSchemaIsNotTreatedAsGeneric() {
+            List<ToolCallback> typedMapTools = List.of(mockTool("invoiceParser", """
+                    {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                    """));
+
+            StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of("count", 3));
+            StepValidationResult result = StepActionValidator.validate(action, plan, typedMapTools, true);
+
+            assertThat(result.valid()).isFalse();
+            assertThat(result.rejectionReason()).contains("count [type_mismatch]");
+        }
+
+        @Test
+        void strictEmptyObjectToolSchemaRejectsInventedArguments() {
+            List<ToolCallback> strictEmptyTools = List.of(mockTool("invoiceParser", """
+                    {
+                      "type": "object",
+                      "additionalProperties": false
+                    }
+                    """));
+
+            StepAction action = StepAction.callTool("t-1", "invoiceParser", Map.of("extra", "nope"));
+            StepValidationResult result = StepActionValidator.validate(action, plan, strictEmptyTools, true);
+
+            assertThat(result.valid()).isFalse();
+            assertThat(result.rejectionReason()).contains("unknown_field");
+            assertThat(result.rejectionReason()).contains("extra");
         }
     }
 

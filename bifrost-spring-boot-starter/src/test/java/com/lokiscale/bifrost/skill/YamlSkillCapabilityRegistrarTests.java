@@ -54,7 +54,36 @@ class YamlSkillCapabilityRegistrarTests {
                     assertThat(metadata.kind()).isEqualTo(com.lokiscale.bifrost.core.CapabilityKind.YAML_SKILL);
                     assertThat(metadata.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
                     assertThat(metadata.tool().inputSchema()).contains(parameterName);
+                    assertThat(metadata.inputContract().kind())
+                            .isEqualTo(com.lokiscale.bifrost.runtime.input.SkillInputContract.SkillInputContractKind.YAML_INHERITED);
                     assertThat(metadata.invoker().invoke(Map.of(parameterName, "alpha"))).isEqualTo("\"mapped:alpha\"");
+                });
+    }
+
+    @Test
+    void mappedYamlSkillWithoutInputSchemaInheritsJavaDerivedContract() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
+                .run(context -> {
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("mapped.method.skill");
+
+                    assertThat(metadata.inputContract().schema().required()).containsExactly("input");
+                    assertThat(metadata.inputContract().schema().properties()).containsKey("input");
+                });
+    }
+
+    @Test
+    void explicitYamlInputSchemaPublishesConcreteToolSchemaForUnmappedSkill() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/input-schema-skill.yaml")
+                .run(context -> {
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("input.schema.skill");
+
+                    assertThat(metadata.inputContract().kind())
+                            .isEqualTo(com.lokiscale.bifrost.runtime.input.SkillInputContract.SkillInputContractKind.YAML_EXPLICIT);
+                    assertThat(metadata.tool().inputSchema()).contains("payload");
+                    assertThat(metadata.tool().inputSchema()).doesNotContain("\"properties\":{}");
                 });
     }
 

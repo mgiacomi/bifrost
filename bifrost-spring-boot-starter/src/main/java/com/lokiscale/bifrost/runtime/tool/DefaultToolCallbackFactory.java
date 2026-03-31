@@ -74,7 +74,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                                         BifrostSession session,
                                         YamlSkillDefinition definition,
                                         @Nullable Authentication authentication) {
-        return FunctionToolCallback.<Map<String, Object>, Object>builder(
+        ToolCallback callback = FunctionToolCallback.<Map<String, Object>, Object>builder(
                         capability.tool().name(),
                         (arguments, toolContext) -> invokeCapability(capability, arguments, session, definition, authentication, toolContext))
                 .description(capability.tool().description())
@@ -82,6 +82,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
                 })
                 .inputSchema(capability.tool().inputSchema())
                 .build();
+        return new ContractAwareToolCallback(callback, capability.inputContract());
     }
 
     private Object invokeCapability(CapabilityMetadata capability,

@@ -13,6 +13,7 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceContext;
 import com.lokiscale.bifrost.core.ModelTraceResult;
+import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
@@ -106,6 +107,7 @@ public class DefaultPlanningService implements PlanningService {
     @Override
     public Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                   String objective,
+                                                  @Nullable Map<String, Object> missionInput,
                                                   YamlSkillDefinition definition,
                                                   ChatClient chatClient,
                                                   List<ToolCallback> visibleTools) {
@@ -133,6 +135,7 @@ public class DefaultPlanningService implements PlanningService {
             return initializePlanWithQualityChecks(
                     session,
                     objective,
+                    missionInput,
                     definition,
                     chatClient,
                     visibleTools,
@@ -251,6 +254,7 @@ public class DefaultPlanningService implements PlanningService {
 
     private Optional<ExecutionPlan> initializePlanWithQualityChecks(BifrostSession session,
                                                                     String objective,
+                                                                    @Nullable Map<String, Object> missionInput,
                                                                     YamlSkillDefinition definition,
                                                                     ChatClient chatClient,
                                                                     List<ToolCallback> visibleTools,
@@ -264,6 +268,7 @@ public class DefaultPlanningService implements PlanningService {
             PlanningAttemptResult attemptResult = requestPlanAttempt(
                     session,
                     objective,
+                    missionInput,
                     capabilityName,
                     executionConfiguration,
                     chatClient,
@@ -274,7 +279,7 @@ public class DefaultPlanningService implements PlanningService {
                     capabilityName,
                     modelUsageExtractor.extract(
                             attemptResult.chatResponse(),
-                            objective,
+                            attemptResult.userMessage(),
                             attemptResult.prompt(),
                             stringifyPlan(attemptResult.plan())));
             PlanQualityValidationResult validation = planQualityValidator.validate(attemptResult.plan(), visibleTools);
@@ -335,6 +340,7 @@ public class DefaultPlanningService implements PlanningService {
 
     private PlanningAttemptResult requestPlanAttempt(BifrostSession session,
                                                      String objective,
+                                                     @Nullable Map<String, Object> missionInput,
                                                      String capabilityName,
                                                      EffectiveSkillExecutionConfiguration executionConfiguration,
                                                      ChatClient chatClient,
@@ -351,6 +357,7 @@ public class DefaultPlanningService implements PlanningService {
         String modelFrameStatus = "completed";
         Throwable modelFailure = null;
         String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools, retryFeedback);
+        String planningUserMessage = MissionInputMessageFormatter.buildUserMessage(objective, missionInput);
         try {
             ModelTraceContext modelTraceContext = new ModelTraceContext(
                     executionConfiguration.provider().name(),
@@ -363,14 +370,14 @@ public class DefaultPlanningService implements PlanningService {
                     modelTraceContext,
                     Map.of(
                             "system", planningPrompt,
-                            "user", objective),
+                            "user", planningUserMessage),
                     markRequestSent -> {
                         Map<String, Object> sentPayload = Map.of(
                                 "system", planningPrompt,
-                                "user", objective);
+                                "user", planningUserMessage);
                         ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
                                 .system(planningPrompt)
-                                .user(objective)
+                                .user(planningUserMessage)
                                 .advisors(spec -> spec.param(OutputSchemaCallAdvisor.PLANNING_CALL_KEY, true))
                                 .call();
                         markRequestSent.accept(sentPayload);
@@ -398,7 +405,7 @@ public class DefaultPlanningService implements PlanningService {
                                 new PlanningTraceResult(plan, chatResponse),
                                 Map.of("content", planPayload));
                     });
-            return new PlanningAttemptResult(planningResult.plan(), planningResult.chatResponse(), planningPrompt);
+            return new PlanningAttemptResult(planningResult.plan(), planningResult.chatResponse(), planningPrompt, planningUserMessage);
         }
         catch (RuntimeException ex) {
             modelFailure = ex;
@@ -689,6 +696,7 @@ public class DefaultPlanningService implements PlanningService {
 
     private record PlanningAttemptResult(ExecutionPlan plan,
                                          @Nullable ChatResponse chatResponse,
-                                         String prompt) {
+                                         String prompt,
+                                         String userMessage) {
     }
 }

@@ -1,5 +1,6 @@
 package com.lokiscale.bifrost.core;
 
+import com.lokiscale.bifrost.runtime.input.SkillInputContract;
 import org.springframework.lang.Nullable;
 
 import java.util.Objects;
@@ -15,6 +16,7 @@ public record CapabilityMetadata(
         CapabilityInvoker invoker,
         CapabilityKind kind,
         CapabilityToolDescriptor tool,
+        SkillInputContract inputContract,
         @Nullable String mappedTargetId) {
 
     public CapabilityMetadata {
@@ -27,6 +29,20 @@ public record CapabilityMetadata(
         invoker = Objects.requireNonNull(invoker, "invoker must not be null");
         kind = kind == null ? CapabilityKind.JAVA_METHOD : kind;
         tool = tool == null ? CapabilityToolDescriptor.generic(name, description) : tool;
+        inputContract = inputContract == null ? SkillInputContract.genericObject() : inputContract;
+    }
+
+    public CapabilityMetadata(String id,
+                              String name,
+                              String description,
+                              ModelPreference modelPreference,
+                              SkillExecutionDescriptor skillExecution,
+                              Set<String> rbacRoles,
+                              CapabilityInvoker invoker,
+                              CapabilityKind kind,
+                              CapabilityToolDescriptor tool,
+                              @Nullable String mappedTargetId) {
+        this(id, name, description, modelPreference, skillExecution, rbacRoles, invoker, kind, tool, null, mappedTargetId);
     }
 
     private static String requireNonBlank(String value, String fieldName) {

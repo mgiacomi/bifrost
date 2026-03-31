@@ -400,10 +400,10 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient stepChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(defaultChatClient, stepChatClient);
         ExecutionStateService stateService = fixedStateService();
-        MissionExecutionEngine defaultEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine defaultEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new AssertionError("Default engine should not be selected");
         };
-        MissionExecutionEngine stepEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine stepEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             assertThat(chatClient).isSameAs(stepChatClient);
             return "step loop complete";
         };
@@ -455,11 +455,11 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient stepChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(defaultChatClient, stepChatClient);
         ExecutionStateService stateService = fixedStateService();
-        MissionExecutionEngine defaultEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine defaultEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             assertThat(chatClient).isSameAs(defaultChatClient);
             return "one shot complete";
         };
-        MissionExecutionEngine stepEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine stepEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new AssertionError("Step loop should not be selected without explicit planning_mode: true");
         };
 
@@ -507,7 +507,7 @@ class ExecutionCoordinatorTest {
         registry.register(rootMetadata.name(), rootMetadata);
 
         ExecutionStateService stateService = fixedStateService();
-        MissionExecutionEngine assertingEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine assertingEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             assertThat(session.getProducedEvidenceTypes()).isEmpty();
             return "nested complete";
         };
@@ -574,8 +574,8 @@ class ExecutionCoordinatorTest {
                 factory,
                 new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
                 (session, definition, capabilities, authentication) -> List.of(),
-                (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
-                (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
+                (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
+                (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
                 fixedStateService(),
                 new DefaultAccessGuard());
 
@@ -609,7 +609,7 @@ class ExecutionCoordinatorTest {
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
 
-        MissionExecutionEngine failingMissionExecutionEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine failingMissionExecutionEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new IllegalStateException("boom");
         };
         ExecutionCoordinator coordinator = coordinator(
@@ -722,7 +722,7 @@ class ExecutionCoordinatorTest {
                 throw new IllegalStateException("cleanup-finalize");
             }
         };
-        MissionExecutionEngine failingMissionExecutionEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine failingMissionExecutionEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new IllegalStateException("mission-failed");
         };
         ExecutionCoordinator coordinator = coordinator(

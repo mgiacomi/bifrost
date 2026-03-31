@@ -18,9 +18,11 @@ import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import com.lokiscale.bifrost.outputschema.OutputSchemaOutcomeStatus;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.runtime.tool.ContractAwareToolCallback;
 import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
@@ -33,6 +35,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.lang.Nullable;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -390,8 +393,143 @@ class StepLoopMissionExecutionEngineTest {
 
         assertThat(chatClient.systemMessagesSeen()).hasSize(3);
         assertThat(chatClient.systemMessagesSeen().get(1))
-                .contains("requires argument(s) [rawText]")
+                .contains("missing_required")
+                .contains("rawText")
                 .contains("YOUR PREVIOUS ACTION WAS INVALID");
+    }
+
+    @Test
+    void retriesWhenToolArgumentsContainPlaceholderSentinelValues() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        ExecutionPlan plan = singleTaskPlan();
+        PlanningService planningService = new InitializingPlanningService(stateService, plan);
+        SequenceChatClient chatClient = new SequenceChatClient(
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{"payload":"<canonical mission input>"}}
+                """,
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{"payload":"INV-1"}}
+                """,
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":"Finished"}
+                """);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-placeholder-tool-args", 3);
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
+
+            String response = executeMission(
+                    engine,
+                    session,
+                    definition(),
+                    chatClient,
+                    List.of(toolWithSchema("invoiceParser", """
+                            {
+                              "type": "object",
+                              "properties": {
+                                "payload": { "type": "string" }
+                              },
+                              "required": ["payload"],
+                              "additionalProperties": false
+                            }
+                            """, "{\"vendor\":\"Acme\"}")));
+
+            assertThat(response).isEqualTo("Finished");
+        }
+
+        assertThat(chatClient.systemMessagesSeen()).hasSize(3);
+        assertThat(chatClient.systemMessagesSeen().get(1))
+                .contains("unresolved placeholder values")
+                .contains("payload")
+                .contains("YOUR PREVIOUS ACTION WAS INVALID");
+    }
+
+    @Test
+    void retriesToolArgumentValidationWithVerboseGuidanceAfterFirstFailure() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        ExecutionPlan plan = singleTaskPlan();
+        PlanningService planningService = new InitializingPlanningService(stateService, plan);
+        SequenceChatClient chatClient = new SequenceChatClient(
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{}}
+                """,
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{"rawText":"INV-1"}}
+                """,
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":"Finished"}
+                """);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-verbose-retry", 3);
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
+
+            String response = executeMission(
+                    engine,
+                    session,
+                    definition(),
+                    chatClient,
+                    List.of(toolWithContract("invoiceParser", """
+                            {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": true
+                            }
+                            """, """
+                            {
+                              "type": "object",
+                              "properties": {
+                                "rawText": { "type": "string" }
+                              },
+                              "required": ["rawText"],
+                              "additionalProperties": false
+                            }
+                            """, "{\"vendor\":\"Acme\"}")));
+
+            assertThat(response).isEqualTo("Finished");
+        }
+
+        assertThat(chatClient.systemMessagesSeen()).hasSize(3);
+        assertThat(chatClient.systemMessagesSeen().get(0)).doesNotContain("Required fields:");
+        assertThat(chatClient.systemMessagesSeen().get(1))
+                .contains("YOUR PREVIOUS ACTION WAS INVALID")
+                .contains("Required fields: rawText")
+                .contains("`rawText` must be a string");
+    }
+
+    @Test
+    void usesCanonicalMissionInputForPlanningAndStepUserMessages() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        ExecutionPlan plan = singleTaskPlan();
+        PlanningService planningService = new InitializingPlanningService(stateService, plan);
+        SequenceChatClient chatClient = new SequenceChatClient(
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{"rawText":"INV-7"}}
+                """,
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":"Finished"}
+                """);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-mission-input", 3);
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
+
+            String response = executeMission(
+                    engine,
+                    session,
+                    definition(),
+                    "Execute YAML skill 'root.visible.skill' using the provided mission input object.",
+                    Map.of("invoiceId", "INV-7"),
+                    chatClient,
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
+
+            assertThat(response).isEqualTo("Finished");
+        }
+
+        assertThat(chatClient.userMessagesSeen()).isNotEmpty();
+        assertThat(chatClient.userMessagesSeen().getFirst())
+                .contains("Canonical mission input")
+                .contains("\"invoiceId\" : \"INV-7\"");
     }
 
     @Test
@@ -781,10 +919,21 @@ class StepLoopMissionExecutionEngineTest {
                                          YamlSkillDefinition definition,
                                          ChatClient chatClient,
                                          List<ToolCallback> visibleTools) {
+        return executeMission(engine, session, definition, "Check duplicate invoices", null, chatClient, visibleTools);
+    }
+
+    private static String executeMission(StepLoopMissionExecutionEngine engine,
+                                         BifrostSession session,
+                                         YamlSkillDefinition definition,
+                                         String objective,
+                                         @Nullable Map<String, Object> missionInput,
+                                         ChatClient chatClient,
+                                         List<ToolCallback> visibleTools) {
         return engine.executeMission(
                 session,
                 definition,
-                "Check duplicate invoices",
+                objective,
+                missionInput,
                 chatClient,
                 visibleTools,
                 true,
@@ -935,6 +1084,12 @@ class StepLoopMissionExecutionEngineTest {
         return callback;
     }
 
+    private static ToolCallback toolWithContract(String name, String inputSchema, String contractSchema, String result) {
+        return new ContractAwareToolCallback(
+                toolWithSchema(name, inputSchema, result),
+                new SkillInputContractResolver().resolveFromToolSchema(contractSchema));
+    }
+
     private static ToolCallback failingTool(String name) {
         ToolCallback callback = mock(ToolCallback.class);
         ToolDefinition definition = ToolDefinition.builder().name(name).description(name).inputSchema("{}").build();
@@ -991,6 +1146,7 @@ class StepLoopMissionExecutionEngineTest {
         @Override
         public Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                       String objective,
+                                                      @Nullable Map<String, Object> missionInput,
                                                       YamlSkillDefinition definition,
                                                       ChatClient chatClient,
                                                       List<ToolCallback> visibleTools) {

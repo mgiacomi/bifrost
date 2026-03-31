@@ -3,6 +3,9 @@ package com.lokiscale.bifrost.core;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.runtime.input.SkillInputContract;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.runtime.input.SkillInputSchemaNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -20,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 @ExtendWith(OutputCaptureExtension.class)
 class SkillMethodBeanPostProcessorTest {
@@ -167,6 +171,26 @@ class SkillMethodBeanPostProcessorTest {
     }
 
     @Test
+    void publishesRefFriendlyInputSchemasForRefCapableParameters() throws JsonProcessingException {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+
+        processor.postProcessAfterInitialization(new RefBytesInvocationBean(), "refBytesInvocationBean");
+        processor.postProcessAfterInitialization(new RefResourceInvocationBean(), "refResourceInvocationBean");
+        processor.postProcessAfterInitialization(new RefStreamInvocationBean(), "refStreamInvocationBean");
+        processor.postProcessAfterInitialization(new NestedRecordInvocationBean(), "nestedRecordInvocationBean");
+
+        assertThat(readPayloadPropertyType(registry.getCapability("readRefAsBytes"))).isEqualTo("string");
+        assertThat(readPayloadPropertyType(registry.getCapability("readRefAsResource"))).isEqualTo("string");
+        assertThat(readPayloadPropertyType(registry.getCapability("readRefAsStream"))).isEqualTo("string");
+        assertThat(readNestedAttachmentItemType(registry.getCapability("readNestedRecord"))).isEqualTo("string");
+        assertThat(readPayloadPropertyRefMarker(registry.getCapability("readRefAsBytes"))).isTrue();
+        assertThat(readPayloadPropertyRefMarker(registry.getCapability("readRefAsResource"))).isTrue();
+        assertThat(readPayloadPropertyRefMarker(registry.getCapability("readRefAsStream"))).isTrue();
+        assertThat(readNestedAttachmentItemRefMarker(registry.getCapability("readNestedRecord"))).isTrue();
+    }
+
+    @Test
     void materializesNestedResourceLeavesInsideTypedRecordParameters() throws JsonProcessingException {
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
@@ -204,6 +228,67 @@ class SkillMethodBeanPostProcessorTest {
                         new ByteArrayResource("gamma".getBytes(StandardCharsets.UTF_8)))));
 
         assertThat(objectMapper.readValue((String) rawResult, String.class)).isEqualTo("alpha|beta|gamma");
+    }
+
+    @Test
+    void preservesObjectValuedAdditionalPropertiesWhenResolvingInputContracts() {
+        SkillInputContract contract = new SkillInputContractResolver().resolveFromToolSchema("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["payload"],
+                  "additionalProperties": false
+                }
+                """);
+
+        assertThat(contract.schema().properties().get("payload").additionalPropertiesSchema()).isNotNull();
+        assertThat(contract.schema().properties().get("payload").additionalPropertiesSchema().type()).isEqualTo("string");
+        assertThat(contract.isGeneric()).isFalse();
+    }
+
+    @Test
+    void treatsStrictEmptyObjectSchemaAsConcreteContract() {
+        SkillInputContract contract = new SkillInputContractResolver().resolveFromToolSchema("""
+                {
+                  "type": "object",
+                  "additionalProperties": false
+                }
+                """);
+
+        assertThat(contract.isGeneric()).isFalse();
+        assertThat(contract.schema().allowsAdditionalProperties()).isFalse();
+    }
+
+    @Test
+    void treatsOmittedAndExplicitTrueAdditionalPropertiesAsCompatible() {
+        SkillInputContractResolver resolver = new SkillInputContractResolver();
+        SkillInputSchemaNode omitted = resolver.fromJsonSchema("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "payload": { "type": "string" }
+                  }
+                }
+                """);
+        SkillInputSchemaNode explicitTrue = resolver.fromJsonSchema("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "payload": { "type": "string" }
+                  },
+                  "additionalProperties": true
+                }
+                """);
+
+        assertThatNoException().isThrownBy(() ->
+                resolver.validateStructuralCompatibility(omitted, explicitTrue, "input_schema"));
     }
 
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
@@ -326,4 +411,47 @@ class SkillMethodBeanPostProcessorTest {
 
     record NestedDocument(String title, List<byte[]> attachments) {
     }
+
+    private String readPayloadPropertyType(CapabilityMetadata metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.tool().inputSchema())
+                .path("properties")
+                .path("payload")
+                .path("type")
+                .asText();
+    }
+
+    private String readNestedAttachmentItemType(CapabilityMetadata metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.tool().inputSchema())
+                .path("properties")
+                .path("payload")
+                .path("properties")
+                .path("document")
+                .path("properties")
+                .path("attachments")
+                .path("items")
+                .path("type")
+                .asText();
+    }
+
+    private boolean readPayloadPropertyRefMarker(CapabilityMetadata metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.tool().inputSchema())
+                .path("properties")
+                .path("payload")
+                .path("x-bifrost-runtime-ref-capable")
+                .asBoolean(false);
+    }
+
+    private boolean readNestedAttachmentItemRefMarker(CapabilityMetadata metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.tool().inputSchema())
+                .path("properties")
+                .path("payload")
+                .path("properties")
+                .path("document")
+                .path("properties")
+                .path("attachments")
+                .path("items")
+                .path("x-bifrost-runtime-ref-capable")
+                .asBoolean(false);
+    }
+
 }

@@ -1,10 +1,13 @@
 package com.lokiscale.bifrost.core;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -35,24 +38,42 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
     private final CapabilityRegistry capabilityRegistry;
     private final ObjectMapper objectMapper;
     private final BifrostExceptionTransformer bifrostExceptionTransformer;
+    private final SkillInputContractResolver inputContractResolver;
 
     public SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry) {
-        this(capabilityRegistry, new ObjectMapper(), new DefaultBifrostExceptionTransformer());
+        this(capabilityRegistry, new ObjectMapper(), new DefaultBifrostExceptionTransformer(), new SkillInputContractResolver());
     }
 
     public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
                                                       BifrostExceptionTransformer bifrostExceptionTransformer) {
-        return new SkillMethodBeanPostProcessor(capabilityRegistry, new ObjectMapper(), bifrostExceptionTransformer);
+        return new SkillMethodBeanPostProcessor(
+                capabilityRegistry,
+                new ObjectMapper(),
+                bifrostExceptionTransformer,
+                new SkillInputContractResolver());
+    }
+
+    public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
+                                                      ObjectMapper objectMapper,
+                                                      BifrostExceptionTransformer bifrostExceptionTransformer,
+                                                      SkillInputContractResolver inputContractResolver) {
+        return new SkillMethodBeanPostProcessor(
+                capabilityRegistry,
+                objectMapper,
+                bifrostExceptionTransformer,
+                inputContractResolver);
     }
 
     SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry,
                                  ObjectMapper objectMapper,
-                                 BifrostExceptionTransformer bifrostExceptionTransformer) {
+                                 BifrostExceptionTransformer bifrostExceptionTransformer,
+                                 SkillInputContractResolver inputContractResolver) {
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.bifrostExceptionTransformer = Objects.requireNonNull(
                 bifrostExceptionTransformer,
                 "bifrostExceptionTransformer must not be null");
+        this.inputContractResolver = Objects.requireNonNull(inputContractResolver, "inputContractResolver must not be null");
     }
 
     @Override
@@ -66,11 +87,12 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
         SkillMethod annotation = method.getAnnotation(SkillMethod.class);
         String capabilityName = annotation.name().isBlank() ? method.getName() : annotation.name();
         String capabilityDescription = annotation.description().isBlank() ? method.getName() : annotation.description();
+        String inputSchema = buildInputSchema(method);
 
         ToolDefinition toolDefinition = ToolDefinition.builder()
                 .name(capabilityName)
                 .description(capabilityDescription)
-                .inputSchema(JsonSchemaGenerator.generateForMethodInput(method))
+                .inputSchema(inputSchema)
                 .build();
 
         CapabilityInvoker capabilityInvoker = arguments -> invokeSkillMethod(bean, method, capabilityName, arguments);
@@ -85,9 +107,92 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
                 capabilityInvoker,
                 CapabilityKind.JAVA_METHOD,
                 new CapabilityToolDescriptor(capabilityName, capabilityDescription, toolDefinition.inputSchema()),
+                inputContractResolver.resolveJavaCapability(toolDefinition.inputSchema()),
                 null);
 
         capabilityRegistry.register(capabilityName, metadata);
+    }
+
+    private String buildInputSchema(Method method) {
+        try {
+            JsonNode schema = objectMapper.readTree(JsonSchemaGenerator.generateForMethodInput(method));
+            JsonNode propertiesNode = schema.path("properties");
+            if (propertiesNode instanceof ObjectNode propertiesObject) {
+                for (Parameter parameter : method.getParameters()) {
+                    JsonNode parameterSchema = propertiesObject.get(parameter.getName());
+                    if (parameterSchema != null) {
+                        applyRuntimeInputSemantics(parameterSchema, objectMapper.constructType(parameter.getParameterizedType()));
+                    }
+                }
+            }
+            return objectMapper.writeValueAsString(schema);
+        }
+        catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Failed to build method input schema for " + method, ex);
+        }
+    }
+
+    private void applyRuntimeInputSemantics(JsonNode schemaNode, JavaType targetType) {
+        if (!(schemaNode instanceof ObjectNode objectSchema) || targetType == null) {
+            return;
+        }
+
+        Class<?> rawClass = targetType.getRawClass();
+        if (isRefCapableBindableType(rawClass)) {
+            rewriteAsRefFriendlyString(objectSchema, rawClass);
+            return;
+        }
+
+        if (targetType.isCollectionLikeType() || rawClass.isArray()) {
+            JsonNode itemsNode = objectSchema.get("items");
+            if (itemsNode != null) {
+                applyRuntimeInputSemantics(itemsNode, targetType.getContentType());
+            }
+            return;
+        }
+
+        if (targetType.isMapLikeType()) {
+            JsonNode additionalPropertiesNode = objectSchema.get("additionalProperties");
+            if (additionalPropertiesNode != null && additionalPropertiesNode.isObject()) {
+                applyRuntimeInputSemantics(additionalPropertiesNode, targetType.getContentType());
+            }
+            return;
+        }
+
+        if (isSimpleBindableType(rawClass)) {
+            return;
+        }
+
+        JsonNode propertiesNode = objectSchema.get("properties");
+        if (!(propertiesNode instanceof ObjectNode propertiesObject)) {
+            return;
+        }
+        propertyTypes(targetType).forEach((propertyName, propertyType) -> {
+            JsonNode propertySchema = propertiesObject.get(propertyName);
+            if (propertySchema != null) {
+                applyRuntimeInputSemantics(propertySchema, propertyType);
+            }
+        });
+    }
+
+    private void rewriteAsRefFriendlyString(ObjectNode schemaNode, Class<?> rawClass) {
+        schemaNode.removeAll();
+        schemaNode.put("type", "string");
+        schemaNode.put("description", refFriendlyDescription(rawClass));
+        schemaNode.put("x-bifrost-runtime-ref-capable", true);
+    }
+
+    private String refFriendlyDescription(Class<?> rawClass) {
+        if (byte[].class.equals(rawClass)) {
+            return "Provide a ref:// URI for binary content or an inline string value when appropriate.";
+        }
+        if (Resource.class.isAssignableFrom(rawClass)) {
+            return "Provide a ref:// URI for the resource content.";
+        }
+        if (InputStream.class.isAssignableFrom(rawClass)) {
+            return "Provide a ref:// URI for the stream content.";
+        }
+        return "Provide the value inline or as a ref:// URI.";
     }
 
     private Object invokeSkillMethod(Object bean, Method method, String capabilityName, Map<String, Object> arguments) {
@@ -237,6 +342,12 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
                 || Boolean.class.equals(rawClass)
                 || Enum.class.isAssignableFrom(rawClass)
                 || Object.class.equals(rawClass);
+    }
+
+    private boolean isRefCapableBindableType(Class<?> rawClass) {
+        return byte[].class.equals(rawClass)
+                || Resource.class.isAssignableFrom(rawClass)
+                || InputStream.class.isAssignableFrom(rawClass);
     }
 
     private Resource convertToResource(Parameter parameter, Object rawValue) {

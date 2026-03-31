@@ -8,6 +8,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
 import java.util.List;
+import java.util.Map;
 
 public interface MissionExecutionEngine {
 
@@ -15,6 +16,7 @@ public interface MissionExecutionEngine {
             BifrostSession session,
             YamlSkillDefinition definition,
             String objective,
+            @Nullable Map<String, Object> missionInput,
             ChatClient chatClient,
             List<ToolCallback> visibleTools,
             boolean planningEnabled,

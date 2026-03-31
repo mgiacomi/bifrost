@@ -6,6 +6,7 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.ModelTraceContext;
+import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
 import com.lokiscale.bifrost.core.TraceFrameType;
@@ -79,6 +80,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
     public String executeMission(BifrostSession session,
                                  YamlSkillDefinition definition,
                                  String objective,
+                                 @Nullable Map<String, Object> missionInput,
                                  ChatClient chatClient,
                                  List<ToolCallback> visibleTools,
                                  boolean planningEnabled,
@@ -96,8 +98,9 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
         Callable<String> missionCall = () -> SessionContextRunner.callWithSession(session, () -> {
             try {
                 sessionUsageService.recordMissionStart(session, skillName);
+                String userMessage = MissionInputMessageFormatter.buildUserMessage(objective, missionInput);
                 if (planningEnabled) {
-                    planningService.initializePlan(session, objective, definition, chatClient, visibleTools);
+                    planningService.initializePlan(session, objective, missionInput, definition, chatClient, visibleTools);
                 }
 
                 String executionPrompt = executionStateService.currentPlan(session)
@@ -124,12 +127,12 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
                             modelTraceContext,
                             Map.of(
                                     "system", executionPrompt,
-                                    "user", objective),
+                                    "user", userMessage),
                             markRequestSent -> {
-                                Map<String, Object> sentPayload = buildMissionSentPayload(executionPrompt, objective, visibleTools);
+                                Map<String, Object> sentPayload = buildMissionSentPayload(executionPrompt, userMessage, visibleTools);
                                 ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
                                         .system(executionPrompt)
-                                        .user(objective)
+                                        .user(userMessage)
                                         .toolCallbacks(visibleTools)
                                         .call();
                                 markRequestSent.accept(sentPayload);
@@ -152,7 +155,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
                     sessionUsageService.recordModelResponse(
                             session,
                             skillName,
-                            modelUsageExtractor.extract(missionResult.chatResponse(), objective, executionPrompt, content));
+                            modelUsageExtractor.extract(missionResult.chatResponse(), userMessage, executionPrompt, content));
                     return content;
                 }
                 catch (RuntimeException ex) {
@@ -265,11 +268,11 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     private Map<String, Object> buildMissionSentPayload(String executionPrompt,
-                                                        String objective,
+                                                        String userMessage,
                                                         List<ToolCallback> visibleTools) {
         java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("system", executionPrompt);
-        payload.put("user", objective);
+        payload.put("user", userMessage);
         payload.put("toolCallbackCount", visibleTools.size());
         payload.put("toolNames", visibleTools.stream()
                 .map(callback -> {

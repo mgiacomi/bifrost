@@ -11,6 +11,7 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceContext;
 import com.lokiscale.bifrost.core.ModelTraceResult;
+import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
@@ -160,6 +161,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     public String executeMission(BifrostSession session,
                                  YamlSkillDefinition definition,
                                  String objective,
+                                 @Nullable Map<String, Object> missionInput,
                                  ChatClient chatClient,
                                  List<ToolCallback> visibleTools,
                                  boolean planningEnabled,
@@ -184,6 +186,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     planningService.initializePlan(
                             session,
                             objective,
+                            missionInput,
                             definition,
                             chatClient,
                             visibleTools);
@@ -195,7 +198,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                             "Step-loop execution requires a plan but none was created for skill '" + skillName + "'");
                 }
 
-                return executeStepLoop(session, definition, objective, executionConfiguration, chatClient, visibleTools);
+                return executeStepLoop(session, definition, objective, missionInput, executionConfiguration, chatClient, visibleTools);
             } finally {
                 try {
                     if (cleanupOwner.compareAndSet(CleanupOwner.NONE, CleanupOwner.WORKER)) {
@@ -232,6 +235,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     private String executeStepLoop(BifrostSession session,
                                    YamlSkillDefinition definition,
                                    String objective,
+                                   @Nullable Map<String, Object> missionInput,
                                    EffectiveSkillExecutionConfiguration executionConfiguration,
                                    ChatClient chatClient,
                                    List<ToolCallback> visibleTools) {
@@ -282,6 +286,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     session,
                     skillName,
                     objective,
+                    missionInput,
                     executionConfiguration,
                     chatClient,
                     visibleTools,
@@ -312,6 +317,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     private StepResult executeOneStep(BifrostSession session,
                                       String skillName,
                                       String objective,
+                                      @Nullable Map<String, Object> missionInput,
                                       EffectiveSkillExecutionConfiguration executionConfiguration,
                                       ChatClient chatClient,
                                       List<ToolCallback> visibleTools,
@@ -334,26 +340,30 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
 
         String stepFrameStatus = "completed";
         Throwable stepFailure = null;
+        boolean forceVerboseToolArgumentGuidance = false;
         try {
-            String stepPrompt = StepPromptBuilder.buildStepPrompt(
-                    plan,
-                    objective,
-                    stepNumber,
-                    lastToolResult,
-                    executionSummary,
-                    visibleTools,
-                    finalResponseOnly,
-                    skillDefinition == null ? null : skillDefinition.outputSchema());
-            String stepUserMessage = StepPromptBuilder.buildStepUserMessage(plan, objective);
-
             int invalidActionRetryCount = 0;
             int linterAttempt = 1;
             int outputSchemaAttempt = 1;
             int evidenceAttempt = 1;
+            String invalidActionFeedback = null;
             while (true) {
-                String effectivePrompt = invalidActionRetryCount == 0
+                String stepPrompt = StepPromptBuilder.buildStepPrompt(
+                        plan,
+                        objective,
+                        missionInput,
+                        stepNumber,
+                        lastToolResult,
+                        executionSummary,
+                        visibleTools,
+                        finalResponseOnly,
+                        forceVerboseToolArgumentGuidance,
+                        skillDefinition == null ? null : skillDefinition.outputSchema());
+                String stepUserMessage = StepPromptBuilder.buildStepUserMessage(plan, objective, missionInput);
+                String effectivePrompt = invalidActionFeedback == null || invalidActionFeedback.isBlank()
                         ? stepPrompt
-                        : stepPrompt + "\n\nPREVIOUS ATTEMPT WAS INVALID. Please correct and try again.";
+                        : stepPrompt + "\n\nYOUR PREVIOUS ACTION WAS INVALID: "
+                        + invalidActionFeedback + "\nPlease correct and try again.";
 
                 String modelResponse = callModelForStep(
                         session, skillName, executionConfiguration, chatClient, effectivePrompt, stepUserMessage, stepNumber);
@@ -371,6 +381,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                                 "Model failed to produce a valid step action after %d attempts at step %d for skill '%s'."
                                         .formatted(MAX_INVALID_ACTION_RETRIES + 1, stepNumber, skillName));
                     }
+                    invalidActionFeedback = "Failed to parse model response as StepAction";
                     invalidActionRetryCount++;
                     continue;
                 }
@@ -412,8 +423,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                         throw new IllegalStateException("Step action validation exhausted at step %d for skill '%s': %s"
                                 .formatted(stepNumber, skillName, validation.rejectionReason()));
                     }
-                    stepPrompt = stepPrompt + "\n\nYOUR PREVIOUS ACTION WAS INVALID: " + validation.rejectionReason()
-                            + "\nPlease correct and try again.";
+                    invalidActionFeedback = validation.rejectionReason();
+                    forceVerboseToolArgumentGuidance = true;
                     if (!skillValidationRejected) {
                         invalidActionRetryCount++;
                     }

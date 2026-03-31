@@ -1,14 +1,20 @@
 package com.lokiscale.bifrost.runtime.step;
 
 import com.lokiscale.bifrost.core.ExecutionPlan;
+import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
+import com.lokiscale.bifrost.runtime.input.SkillInputContract;
+import com.lokiscale.bifrost.runtime.input.SkillInputPromptRenderer;
+import com.lokiscale.bifrost.runtime.input.SkillInputSchemaNode;
+import com.lokiscale.bifrost.runtime.tool.ToolCallbackInputContracts;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -18,6 +24,7 @@ import java.util.stream.Collectors;
 public final class StepPromptBuilder {
 
     private static final int MAX_LAST_RESULT_CHARS = 1000;
+    private static final SkillInputPromptRenderer INPUT_PROMPT_RENDERER = new SkillInputPromptRenderer();
 
     private StepPromptBuilder() {
     }
@@ -29,6 +36,51 @@ public final class StepPromptBuilder {
                                          @Nullable String executionSummary,
                                          List<ToolCallback> visibleTools,
                                          boolean finalResponseOnly,
+                                         @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+        return buildStepPrompt(
+                plan,
+                objective,
+                null,
+                stepNumber,
+                lastToolResult,
+                executionSummary,
+                visibleTools,
+                finalResponseOnly,
+                false,
+                outputSchema);
+    }
+
+    public static String buildStepPrompt(ExecutionPlan plan,
+                                         String objective,
+                                         @Nullable Map<String, Object> missionInput,
+                                         int stepNumber,
+                                         @Nullable String lastToolResult,
+                                         @Nullable String executionSummary,
+                                         List<ToolCallback> visibleTools,
+                                         boolean finalResponseOnly,
+                                         @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+        return buildStepPrompt(
+                plan,
+                objective,
+                missionInput,
+                stepNumber,
+                lastToolResult,
+                executionSummary,
+                visibleTools,
+                finalResponseOnly,
+                false,
+                outputSchema);
+    }
+
+    public static String buildStepPrompt(ExecutionPlan plan,
+                                         String objective,
+                                         @Nullable Map<String, Object> missionInput,
+                                         int stepNumber,
+                                         @Nullable String lastToolResult,
+                                         @Nullable String executionSummary,
+                                         List<ToolCallback> visibleTools,
+                                         boolean finalResponseOnly,
+                                         boolean forceVerboseToolArgumentGuidance,
                                          @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
         Objects.requireNonNull(plan, "plan must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
@@ -49,7 +101,7 @@ public final class StepPromptBuilder {
                         .reduce((a, b) -> a + "\n" + b)
                         .orElse("(none)");
         String currentStepInstructions = formatCurrentStepInstructions(plan.readyTasks());
-        String missionContext = sanitizeObjective(objective, plan.capabilityName());
+        String missionContext = MissionInputMessageFormatter.buildMissionContext(objective, missionInput, plan.capabilityName());
 
         StringBuilder sb = new StringBuilder();
         sb.append("""
@@ -67,6 +119,10 @@ public final class StepPromptBuilder {
         sb.append("\n\n--- BLOCKED TASKS (failed or cannot continue) ---\n").append(blockedTaskLines);
         if (currentStepInstructions != null) {
             sb.append("\n\n--- CURRENT EXECUTABLE TASK ---\n").append(currentStepInstructions);
+        }
+        String toolArgumentGuidance = formatToolArgumentGuidance(plan.readyTasks(), visibleTools, forceVerboseToolArgumentGuidance);
+        if (toolArgumentGuidance != null) {
+            sb.append("\n\n--- TOOL ARGUMENT SHAPE ---\n").append(toolArgumentGuidance);
         }
 
         if (executionSummary != null && !executionSummary.isBlank()) {
@@ -139,9 +195,17 @@ public final class StepPromptBuilder {
     }
 
     public static String buildStepUserMessage(ExecutionPlan plan, String objective) {
+        return buildStepUserMessage(plan, objective, null);
+    }
+
+    public static String buildStepUserMessage(ExecutionPlan plan,
+                                              String objective,
+                                              @Nullable Map<String, Object> missionInput) {
         Objects.requireNonNull(plan, "plan must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
-        return sanitizeObjective(objective, plan.capabilityName());
+        return MissionInputMessageFormatter.buildUserMessage(
+                MissionInputMessageFormatter.buildMissionContext(objective, null, plan.capabilityName()),
+                missionInput);
     }
 
     private static String formatTasks(List<PlanTask> tasks, ExecutionPlan plan) {
@@ -194,24 +258,6 @@ public final class StepPromptBuilder {
                         task.note() == null ? "" : " - " + task.note()))
                 .reduce((a, b) -> a + "\n" + b)
                 .orElse("  (none)");
-    }
-
-    private static String sanitizeObjective(String objective, @Nullable String capabilityName) {
-        if (objective == null || objective.isBlank()) {
-            return "(none)";
-        }
-        String sanitized = objective;
-        if (capabilityName != null && !capabilityName.isBlank()) {
-            String exactPrefix = "Execute YAML skill '" + capabilityName + "' using these tool arguments:";
-            if (sanitized.startsWith(exactPrefix)) {
-                String argumentsOnly = sanitized.substring(exactPrefix.length()).trim();
-                return argumentsOnly.isBlank() ? "Use the provided mission inputs." : "Use these mission inputs:\n" + argumentsOnly;
-            }
-            sanitized = sanitized.replace("YAML skill '" + capabilityName + "'", "the mission");
-            sanitized = sanitized.replace("'" + capabilityName + "'", "the mission");
-            sanitized = sanitized.replace(capabilityName, "the mission");
-        }
-        return sanitized;
     }
 
     private static void appendOutputSchemaGuidance(StringBuilder sb,
@@ -286,5 +332,80 @@ public final class StepPromptBuilder {
                         task.capabilityName() == null ? "unspecified" : task.capabilityName()))
                 .reduce((a, b) -> a + "\n" + b)
                 .orElse(null);
+    }
+
+    @Nullable
+    private static String formatToolArgumentGuidance(List<PlanTask> readyTasks,
+                                                     List<ToolCallback> visibleTools,
+                                                     boolean forceVerboseToolArgumentGuidance) {
+        if (readyTasks == null || readyTasks.isEmpty() || visibleTools == null || visibleTools.isEmpty()) {
+            return null;
+        }
+        return readyTasks.stream()
+                .map(task -> formatToolArgumentGuidance(task, visibleTools, forceVerboseToolArgumentGuidance))
+                .filter(Objects::nonNull)
+                .reduce((left, right) -> left + "\n\n" + right)
+                .orElse(null);
+    }
+
+    @Nullable
+    private static String formatToolArgumentGuidance(PlanTask task,
+                                                     List<ToolCallback> visibleTools,
+                                                     boolean forceVerboseToolArgumentGuidance) {
+        if (task.capabilityName() == null || task.capabilityName().isBlank()) {
+            return null;
+        }
+        ToolCallback tool = visibleTools.stream()
+                .filter(candidate -> candidate != null && candidate.getToolDefinition() != null)
+                .filter(candidate -> task.capabilityName().equals(candidate.getToolDefinition().name()))
+                .findFirst()
+                .orElse(null);
+        if (tool == null) {
+            return null;
+        }
+        SkillInputContract contract = ToolCallbackInputContracts.resolve(tool);
+        if (contract.isGeneric()) {
+            return null;
+        }
+        SkillInputPromptRenderer.DetailLevel detailLevel = forceVerboseToolArgumentGuidance || useVerboseDetail(contract.schema())
+                ? SkillInputPromptRenderer.DetailLevel.VERBOSE
+                : SkillInputPromptRenderer.DetailLevel.COMPACT;
+        return """
+                Task %s / tool %s:
+                %s
+                """.formatted(task.taskId(), task.capabilityName(), INPUT_PROMPT_RENDERER.renderToolArgumentsExample(contract, detailLevel));
+    }
+
+    private static boolean useVerboseDetail(SkillInputSchemaNode schema) {
+        return maxDepth(schema, 1) > 2 || countProperties(schema) > 6;
+    }
+
+    private static int maxDepth(SkillInputSchemaNode schema, int depth) {
+        if (schema == null) {
+            return depth;
+        }
+        if (schema.isArray()) {
+            return maxDepth(schema.items(), depth + 1);
+        }
+        if (!schema.isObject()) {
+            return depth;
+        }
+        int propertyDepth = schema.properties().values().stream()
+                .mapToInt(child -> maxDepth(child, depth + 1))
+                .max()
+                .orElse(depth);
+        int additionalDepth = schema.additionalPropertiesSchema() == null
+                ? depth
+                : maxDepth(schema.additionalPropertiesSchema(), depth + 1);
+        return Math.max(propertyDepth, additionalDepth);
+    }
+
+    private static int countProperties(SkillInputSchemaNode schema) {
+        if (schema == null || !schema.isObject()) {
+            return 0;
+        }
+        return schema.properties().size()
+                + schema.properties().values().stream().mapToInt(StepPromptBuilder::countProperties).sum()
+                + countProperties(schema.additionalPropertiesSchema());
     }
 }

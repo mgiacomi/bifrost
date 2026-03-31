@@ -18,6 +18,7 @@ public interface PlanningService {
     Optional<ExecutionPlan> initializePlan(
             BifrostSession session,
             String objective,
+            @Nullable Map<String, Object> missionInput,
             YamlSkillDefinition definition,
             ChatClient chatClient,
             List<ToolCallback> visibleTools);

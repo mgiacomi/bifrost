@@ -4,6 +4,9 @@ import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
+import com.lokiscale.bifrost.runtime.input.SkillInputContract;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.runtime.tool.ContractAwareToolCallback;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
@@ -26,6 +29,19 @@ class StepPromptBuilderTest {
         return callback;
     }
 
+    private static ToolCallback mockTool(String name, String inputSchema) {
+        ToolCallback callback = mock(ToolCallback.class);
+        ToolDefinition definition = ToolDefinition.builder().name(name).description(name).inputSchema(inputSchema).build();
+        when(callback.getToolDefinition()).thenReturn(definition);
+        return callback;
+    }
+
+    private static ToolCallback contractAwareTool(String name, String inputSchema, String contractSchema) {
+        return new ContractAwareToolCallback(
+                mockTool(name, inputSchema),
+                new SkillInputContractResolver().resolveFromToolSchema(contractSchema));
+    }
+
     @Test
     void buildStepPromptContainsObjective() {
         ExecutionPlan plan = createTwoTaskPlan();
@@ -40,7 +56,8 @@ class StepPromptBuilderTest {
         ExecutionPlan plan = createTwoTaskPlan();
         String prompt = StepPromptBuilder.buildStepPrompt(
                 plan,
-                "Execute YAML skill 'duplicateInvoiceChecker' using these tool arguments:\n{\"payload\":\"x\"}",
+                "Execute YAML skill 'duplicateInvoiceChecker' using the provided mission input object.",
+                Map.of("payload", "x"),
                 1,
                 null,
                 null,
@@ -48,7 +65,23 @@ class StepPromptBuilderTest {
                 false,
                 null);
         assertThat(prompt).doesNotContain("duplicateInvoiceChecker");
-        assertThat(prompt).contains("Use these mission inputs:");
+        assertThat(prompt).contains("Use the provided mission inputs.");
+        assertThat(prompt).contains("\"payload\" : \"x\"");
+    }
+
+    @Test
+    void buildStepUserMessageDoesNotDuplicateCanonicalMissionInput() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String userMessage = StepPromptBuilder.buildStepUserMessage(
+                plan,
+                "Execute YAML skill 'duplicateInvoiceChecker' using the provided mission input object.",
+                Map.of("payload", "x"));
+
+        assertThat(userMessage).contains("Mission objective:");
+        assertThat(userMessage).contains("Use the provided mission inputs.");
+        assertThat(userMessage).contains("\"payload\" : \"x\"");
+        assertThat(countOccurrences(userMessage, "Canonical mission input:")).isEqualTo(1);
     }
 
     @Test
@@ -154,6 +187,232 @@ class StepPromptBuilderTest {
     }
 
     @Test
+    void buildStepPromptShowsConcreteToolArgumentShape() {
+        ExecutionPlan plan = createTwoTaskPlan();
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                1,
+                null,
+                null,
+                List.of(mockTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "properties": {
+                            "payload": { "type": "string" }
+                          },
+                          "required": ["payload"],
+                          "additionalProperties": false
+                        }
+                        """)),
+                false,
+                null);
+
+        assertThat(prompt).contains("TOOL ARGUMENT SHAPE");
+        assertThat(prompt).contains("Task t-1 / tool invoiceParser");
+        assertThat(prompt).contains("\"payload\": \"<string>\"");
+    }
+
+    @Test
+    void buildStepPromptUsesContractAwareToolGuidanceEvenWhenToolSchemaIsGeneric() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                1,
+                null,
+                null,
+                List.of(contractAwareTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": true
+                        }
+                        """, """
+                        {
+                          "type": "object",
+                          "properties": {
+                            "payload": { "type": "string" }
+                          },
+                          "required": ["payload"],
+                          "additionalProperties": false
+                        }
+                        """)),
+                false,
+                null);
+
+        assertThat(prompt).contains("TOOL ARGUMENT SHAPE");
+        assertThat(prompt).contains("\"payload\": \"<string>\"");
+    }
+
+    @Test
+    void buildStepPromptVerboseGuidanceIncludesNestedFieldRules() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                null,
+                1,
+                null,
+                null,
+                List.of(mockTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "properties": {
+                            "invoiceId": { "type": "string" },
+                            "options": {
+                              "type": "object",
+                              "properties": {
+                                "includeHistory": { "type": "boolean" }
+                              },
+                              "required": ["includeHistory"],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": ["invoiceId"],
+                          "additionalProperties": false
+                        }
+                        """)),
+                false,
+                true,
+                null);
+
+        assertThat(prompt).contains("Required fields: invoiceId");
+        assertThat(prompt).contains("Required fields: options.includeHistory");
+        assertThat(prompt).contains("`options.includeHistory` must be a boolean");
+        assertThat(prompt).contains("Do not add fields under `options` beyond those shown above.");
+    }
+
+    @Test
+    void buildStepPromptDoesNotInventClosedNestedObjectRulesWhenKeywordIsOmitted() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                null,
+                1,
+                null,
+                null,
+                List.of(mockTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "properties": {
+                            "options": {
+                              "type": "object",
+                              "properties": {
+                                "includeHistory": { "type": "boolean" }
+                              }
+                            }
+                          },
+                          "required": ["options"],
+                          "additionalProperties": false
+                        }
+                        """)),
+                false,
+                true,
+                null);
+
+        assertThat(prompt).contains("`options.includeHistory` must be a boolean");
+        assertThat(prompt).doesNotContain("Do not add fields under `options` beyond those shown above.");
+    }
+
+    @Test
+    void buildStepPromptShowsTypedMapArgumentShape() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                1,
+                null,
+                null,
+                List.of(mockTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                        """)),
+                false,
+                null);
+
+        assertThat(prompt).contains("TOOL ARGUMENT SHAPE");
+        assertThat(prompt).contains("\"<key>\": \"<string>\"");
+    }
+
+    @Test
+    void buildStepPromptUsesVerboseGuidanceForComplexTypedMapValues() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                1,
+                null,
+                null,
+                List.of(mockTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "string" },
+                              "metadata": {
+                                "type": "object",
+                                "properties": {
+                                  "enabled": { "type": "boolean" }
+                                },
+                                "required": ["enabled"],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": ["id"],
+                            "additionalProperties": false
+                          }
+                        }
+                        """)),
+                false,
+                null);
+
+        assertThat(prompt).contains("Required fields: <key>.id");
+        assertThat(prompt).contains("`<key>.metadata.enabled` must be a boolean");
+        assertThat(prompt).contains("Do not add fields under `<key>` beyond those shown above.");
+    }
+
+    @Test
+    void buildStepPromptShowsGenericArrayItemsWhenItemsSchemaIsOmitted() {
+        ExecutionPlan plan = createTwoTaskPlan();
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan,
+                "objective",
+                1,
+                null,
+                null,
+                List.of(mockTool("invoiceParser", """
+                        {
+                          "type": "object",
+                          "properties": {
+                            "values": {
+                              "type": "array"
+                            }
+                          },
+                          "required": ["values"],
+                          "additionalProperties": false
+                        }
+                        """)),
+                false,
+                null);
+
+        assertThat(prompt).contains("TOOL ARGUMENT SHAPE");
+        assertThat(prompt).contains("\"values\": [ \"<value>\" ]");
+    }
+
+    @Test
     void buildStepPromptListsToolNames() {
         ExecutionPlan plan = createTwoTaskPlan();
         String prompt = StepPromptBuilder.buildStepPrompt(
@@ -234,5 +493,9 @@ class StepPromptBuilderTest {
                 List.of("t-1"), List.of("expenses"), false, null);
         return new ExecutionPlan("plan-1", "duplicateInvoiceChecker", Instant.now(),
                 PlanStatus.VALID, null, List.of(task1, task2));
+    }
+
+    private int countOccurrences(String value, String token) {
+        return value.split(java.util.regex.Pattern.quote(token), -1).length - 1;
     }
 }

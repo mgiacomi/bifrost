@@ -40,6 +40,22 @@ public record YamlSkillDefinition(
         return manifest.getOutputSchema();
     }
 
+    public YamlSkillManifest.OutputSchemaManifest inputSchema() {
+        return manifest.getInputSchema();
+    }
+
+    public boolean hasDeclaredInputSchema() {
+        return manifest.getInputSchema() != null;
+    }
+
+    public boolean hasInheritedInputContract() {
+        return !hasDeclaredInputSchema() && mappingTargetId() != null && !mappingTargetId().isBlank();
+    }
+
+    public boolean hasGenericInputContract() {
+        return !hasDeclaredInputSchema() && !hasInheritedInputContract();
+    }
+
     public int outputSchemaMaxRetries() {
         return manifest.getOutputSchemaMaxRetries() == null ? 0 : manifest.getOutputSchemaMaxRetries();
     }

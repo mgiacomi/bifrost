@@ -52,6 +52,14 @@ public class ExecutionCoordinator {
     }
 
     public String execute(String skillName, String objective, BifrostSession session, @Nullable Authentication authentication) {
+        return execute(skillName, objective, null, session, authentication);
+    }
+
+    public String execute(String skillName,
+                          String objective,
+                          @Nullable Map<String, Object> missionInput,
+                          BifrostSession session,
+                          @Nullable Authentication authentication) {
         Objects.requireNonNull(session, "session must not be null");
         requireNonBlank(objective, "objective");
         YamlSkillDefinition definition = requireYamlSkill(skillName);
@@ -65,7 +73,12 @@ public class ExecutionCoordinator {
         // Every YAML skill run gets a fresh evidence ledger; nested invocations rely on
         // CapabilityExecutionRouter to snapshot and restore the parent's evidence afterward.
         executionStateService.clearProducedEvidence(session);
-        ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.of("objective", objective));
+        java.util.LinkedHashMap<String, Object> frameParameters = new java.util.LinkedHashMap<>();
+        frameParameters.put("objective", objective);
+        if (missionInput != null && !missionInput.isEmpty()) {
+            frameParameters.put("missionInput", missionInput);
+        }
+        ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.copyOf(frameParameters));
         Throwable failure = null;
         try {
             return BifrostSessionHolder.callWithSession(session, () -> {
@@ -83,6 +96,7 @@ public class ExecutionCoordinator {
                         session,
                         definition,
                         objective,
+                        missionInput,
                         chatClient,
                         visibleTools,
                         definition.planningModeExplicitlyEnabled(),

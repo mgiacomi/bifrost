@@ -47,6 +47,7 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 planningSession,
                 "hello",
+                null,
                 rootDefinition(),
                 new SimpleChatClient(plan("plan-1"), "done"),
                 List.<ToolCallback>of());
@@ -65,6 +66,7 @@ class ExecutionTraceContractTest {
                     missionSession,
                     rootDefinition(),
                     "hello",
+                    null,
                     new SimpleChatClient(null, "mission complete"),
                     List.of(),
                     false,
@@ -99,6 +101,7 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 session,
                 "hello",
+                null,
                 rootDefinition(),
                 new SimpleChatClient(plan("plan-1"), "done"),
                 List.<ToolCallback>of());
@@ -121,6 +124,7 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 session,
                 "check invoice duplicates",
+                null,
                 duplicateInvoiceDefinition(),
                 new SequencePlanningChatClient(weakPlanJson(), correctedPlanJson()),
                 List.of(tool("invoiceParser", "Extract invoice fields from source documents"),
@@ -145,6 +149,7 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 session,
                 "check invoice duplicates",
+                null,
                 duplicateInvoiceDefinition(),
                 new SequencePlanningChatClient(weakPlanJson(), weakPlanJson()),
                 List.of(tool("invoiceParser", "Extract invoice fields from source documents"),
