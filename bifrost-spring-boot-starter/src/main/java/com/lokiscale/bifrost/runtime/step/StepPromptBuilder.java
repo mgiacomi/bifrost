@@ -101,7 +101,7 @@ public final class StepPromptBuilder {
                         .reduce((a, b) -> a + "\n" + b)
                         .orElse("(none)");
         String currentStepInstructions = formatCurrentStepInstructions(plan.readyTasks());
-        String missionContext = MissionInputMessageFormatter.buildMissionContext(objective, missionInput, plan.capabilityName());
+        String missionContext = MissionInputMessageFormatter.buildMissionContext(objective, null, plan.capabilityName());
 
         StringBuilder sb = new StringBuilder();
         sb.append("""
@@ -157,7 +157,7 @@ public final class StepPromptBuilder {
 
                     Rules:
                     - Do NOT call any tool.
-                    - finalResponse should be the mission payload itself, not string-encoded JSON.
+                    - finalResponse must be a raw JSON object matching the required schema, not a string containing escaped JSON.
                     - Return raw JSON only.
                     """);
         } else {
@@ -166,9 +166,8 @@ public final class StepPromptBuilder {
 
                     --- YOUR TASK ---
                     Return ONLY valid JSON - no markdown, no explanation, no code fences.
-                    Choose exactly ONE action:
 
-                    Option 1 - Call a tool for a ready task:
+                    You must call a tool for one of the READY tasks:
                     {
                       "stepAction": "CALL_TOOL",
                       "taskId": "<taskId of the ready task>",
@@ -176,17 +175,10 @@ public final class StepPromptBuilder {
                       "toolArguments": { <arguments for this tool> }
                     }
 
-                    Option 2 - Provide the final mission response (only if ALL tasks are complete):
-                    {
-                      "stepAction": "FINAL_RESPONSE",
-                      "finalResponse": { <your complete response to the mission objective> }
-                    }
-
                     Rules:
                     - You MUST pick a task from the READY list. Do NOT pick waiting, blocked, or completed tasks.
                     - The ready task is already bound to a specific tool. Do not use the mission skill name as toolName.
                     - Use the exact toolName and taskId values shown above.
-                    - finalResponse should be the mission payload itself, not string-encoded JSON.
                     - Return raw JSON only.
                     """);
         }

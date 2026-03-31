@@ -66,7 +66,6 @@ class StepPromptBuilderTest {
                 null);
         assertThat(prompt).doesNotContain("duplicateInvoiceChecker");
         assertThat(prompt).contains("Use the provided mission inputs.");
-        assertThat(prompt).contains("\"payload\" : \"x\"");
     }
 
     @Test
@@ -168,7 +167,6 @@ class StepPromptBuilderTest {
         String prompt = StepPromptBuilder.buildStepPrompt(
                 plan, "objective", 1, null, null, List.of(), false, null);
         assertThat(prompt).contains("CALL_TOOL");
-        assertThat(prompt).contains("FINAL_RESPONSE");
         assertThat(prompt).contains("stepAction");
         assertThat(prompt).contains("valid JSON");
         assertThat(prompt).contains("Do NOT pick waiting, blocked, or completed tasks");

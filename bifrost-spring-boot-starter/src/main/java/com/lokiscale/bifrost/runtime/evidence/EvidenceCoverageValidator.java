@@ -65,10 +65,10 @@ public class EvidenceCoverageValidator {
                     .toList()
                     : List.of();
             String message = includeSupportingTools
-                    ? "Claim '%s' requires evidence %s, and no planned task uses %s."
-                    .formatted(claimName, missingEvidence, tools.isEmpty() ? "a tool that can produce it" : "tool(s) " + tools)
-                    : "Claim '%s' requires evidence %s, but execution only gathered %s."
-                    .formatted(claimName, missingEvidence, availableEvidence);
+                    ? "Validation Error: The plan is missing required evidence %s for the '%s' claim. To fix this, you MUST include a task that uses %s."
+                    .formatted(missingEvidence, claimName, tools.isEmpty() ? "a tool that can produce it" : "the " + tools + " tool(s)")
+                    : "Validation Error: Execution failed to gather %s required for the '%s' claim (only gathered %s)."
+                    .formatted(missingEvidence, claimName, availableEvidence);
             issues.add(new EvidenceCoverageIssue(
                     claimName,
                     missingEvidence.stream().sorted().toList(),

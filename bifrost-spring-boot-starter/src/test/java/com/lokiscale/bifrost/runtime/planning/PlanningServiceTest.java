@@ -362,6 +362,25 @@ class PlanningServiceTest {
     }
 
     @Test
+    void planningPromptIncludesEvidenceConstraints() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-evidence-constraints", 3);
+        SimpleChatClient chatClient = new SimpleChatClient(plan("plan-tools", PlanTaskStatus.PENDING), "done");
+
+        ToolCallback tool1 = toolCallback("invoiceParser", "Extract invoice fields from source documents");
+        ToolCallback tool2 = toolCallback("expenseLookup", "Look up prior expenses for a parsed invoice");
+
+        assertThatThrownBy(() -> planningService.initializePlan(session, "check invoice", null, duplicateInvoiceDefinition(), chatClient, List.of(tool1, tool2)))
+                .isInstanceOf(IllegalStateException.class);
+
+        String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
+        assertThat(systemPrompt).contains("Evidence Constraints:");
+        assertThat(systemPrompt).contains("- You MUST explicitly include a task that uses the [expenseLookup, invoiceParser] tool(s) to help determine the value for the 'isDuplicate' output field.");
+        assertThat(systemPrompt).contains("- You MUST explicitly include a task that uses the [invoiceParser] tool(s) to help determine the value for the 'vendorName' output field.");
+    }
+
+    @Test
     void planningPromptPreservesAuthoredDescriptionsVerbatim() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);

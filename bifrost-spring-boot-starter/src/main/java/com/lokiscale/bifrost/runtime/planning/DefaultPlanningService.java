@@ -273,7 +273,8 @@ public class DefaultPlanningService implements PlanningService {
                     executionConfiguration,
                     chatClient,
                     visibleTools,
-                    retryFeedback);
+                    retryFeedback,
+                    evidenceContract);
             sessionUsageService.recordModelResponse(
                     session,
                     capabilityName,
@@ -345,7 +346,8 @@ public class DefaultPlanningService implements PlanningService {
                                                      EffectiveSkillExecutionConfiguration executionConfiguration,
                                                      ChatClient chatClient,
                                                      List<ToolCallback> visibleTools,
-                                                     @Nullable String retryFeedback) {
+                                                     @Nullable String retryFeedback,
+                                                     @Nullable EvidenceContract evidenceContract) {
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.MODEL_CALL,
@@ -356,7 +358,7 @@ public class DefaultPlanningService implements PlanningService {
                         "segment", "planning"));
         String modelFrameStatus = "completed";
         Throwable modelFailure = null;
-        String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools, retryFeedback);
+        String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools, retryFeedback, evidenceContract);
         String planningUserMessage = MissionInputMessageFormatter.buildUserMessage(objective, missionInput);
         try {
             ModelTraceContext modelTraceContext = new ModelTraceContext(
@@ -440,7 +442,8 @@ public class DefaultPlanningService implements PlanningService {
 
     private static String buildPlanningPrompt(String capabilityName,
                                               List<ToolCallback> visibleTools,
-                                              @Nullable String retryFeedback) {
+                                              @Nullable String retryFeedback,
+                                              @Nullable EvidenceContract evidenceContract) {
         String toolList = (visibleTools == null || visibleTools.isEmpty())
                 ? "(none)"
                 : visibleTools.stream()
@@ -454,6 +457,31 @@ public class DefaultPlanningService implements PlanningService {
                 Previous plan was too weak. Correct these issues in the next plan:
                 %s
                 """.formatted(retryFeedback);
+        
+        String evidenceConstraints = "";
+        if (evidenceContract != null && !evidenceContract.isEmpty()) {
+            StringBuilder builder = new StringBuilder();
+            java.util.List<String> sortedClaims = new java.util.ArrayList<>(evidenceContract.claims());
+            java.util.Collections.sort(sortedClaims);
+            for (String claim : sortedClaims) {
+                java.util.Set<String> reqEvidence = evidenceContract.evidenceForClaim(claim);
+                java.util.List<String> tools = evidenceContract.evidenceByTool().entrySet().stream()
+                        .filter(e -> e.getValue().stream().anyMatch(reqEvidence::contains))
+                        .map(Map.Entry::getKey)
+                        .sorted()
+                        .toList();
+                if (!tools.isEmpty()) {
+                    builder.append("- You MUST explicitly include a task that uses the ")
+                            .append(tools)
+                            .append(" tool(s) to help determine the value for the '")
+                            .append(claim)
+                            .append("' output field.\n");
+                }
+            }
+            if (!builder.isEmpty()) {
+                evidenceConstraints = "Evidence Constraints:\n" + builder.toString();
+            }
+        }
         return """
                 Create an ordered flight plan for this mission before execution.
                 Return ONLY valid JSON - no markdown, no explanation, no code fences.
@@ -494,7 +522,7 @@ public class DefaultPlanningService implements PlanningService {
                 - If multiple tools are available, consider whether the mission requires evidence from more than one.
                 - Do not create report or conclusion tasks that are bound to extraction-only or lookup-only tools unless that tool is genuinely the right fit.
                 - Gather enough evidence to support the final answer before the mission is complete.
-                %s""".formatted(capabilityName, toolList, retrySection);
+                %s%s""".formatted(capabilityName, toolList, evidenceConstraints, retrySection);
     }
 
     private String mergeRetryFeedback(@Nullable String qualityFeedback, @Nullable String evidenceFeedback) {
