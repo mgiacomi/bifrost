@@ -161,6 +161,25 @@ public final class StepPromptBuilder {
                     - Return raw JSON only.
                     """);
         } else {
+            String expectedTaskJson = """
+                    {
+                      "stepAction": "CALL_TOOL",
+                      "taskId": "<taskId of the ready task>",
+                      "toolName": "<exact tool name from the list above>",
+                      "toolArguments": { <arguments for this tool> }
+                    }""";
+            List<PlanTask> readyTasks = plan.readyTasks();
+            if (readyTasks != null && readyTasks.size() == 1) {
+                PlanTask singleTask = readyTasks.getFirst();
+                String toolName = singleTask.capabilityName() == null ? "unspecified" : singleTask.capabilityName();
+                expectedTaskJson = """
+                    {
+                      "stepAction": "CALL_TOOL",
+                      "taskId": "%s",
+                      "toolName": "%s",
+                      "toolArguments": { <arguments for this tool> }
+                    }""".formatted(singleTask.taskId(), toolName);
+            }
             sb.append("""
 
 
@@ -168,12 +187,7 @@ public final class StepPromptBuilder {
                     Return ONLY valid JSON - no markdown, no explanation, no code fences.
 
                     You must call a tool for one of the READY tasks:
-                    {
-                      "stepAction": "CALL_TOOL",
-                      "taskId": "<taskId of the ready task>",
-                      "toolName": "<exact tool name from the list above>",
-                      "toolArguments": { <arguments for this tool> }
-                    }
+                    """).append(expectedTaskJson).append("""
 
                     Rules:
                     - You MUST pick a task from the READY list. Do NOT pick waiting, blocked, or completed tasks.

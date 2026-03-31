@@ -15,6 +15,13 @@ public class SkillInputPromptRenderer {
         if (contract == null || contract.isGeneric()) {
             return "";
         }
+        
+        if (contract.schema().isObject() 
+                && contract.schema().properties().isEmpty() 
+                && contract.schema().additionalPropertiesSchema() == null) {
+            return "{}\n(Note: This tool takes no arguments. You must pass an empty object.)";
+        }
+
         StringBuilder builder = new StringBuilder();
         builder.append(renderValue(contract.schema(), 0));
         if (detailLevel == DetailLevel.VERBOSE) {
