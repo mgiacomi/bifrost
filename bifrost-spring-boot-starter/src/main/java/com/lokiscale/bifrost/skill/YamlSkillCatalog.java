@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
 import com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -118,6 +119,7 @@ public class YamlSkillCatalog implements InitializingBean {
         validateRequiredField(resource, "description", manifest.getDescription());
         validateRequiredField(resource, "model", manifest.getModel());
         validateOutputSchema(resource, manifest);
+        validateEvidenceContract(resource, manifest);
         validateLinter(resource, manifest);
 
         BifrostModelsProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
@@ -134,7 +136,11 @@ public class YamlSkillCatalog implements InitializingBean {
                 catalogEntry.getProviderModel(),
                 effectiveThinkingLevel);
 
-        return new YamlSkillDefinition(resource, manifest, effectiveConfiguration);
+        return new YamlSkillDefinition(
+                resource,
+                manifest,
+                effectiveConfiguration,
+                EvidenceContract.fromManifest(manifest.getEvidenceContract(), manifest.getOutputSchema()));
     }
 
     private BifrostModelsProperties.ModelCatalogEntry resolveModelCatalogEntry(Resource resource, YamlSkillManifest manifest) {
@@ -219,6 +225,64 @@ public class YamlSkillCatalog implements InitializingBean {
         }
 
         validateSchemaNode(resource, outputSchema, "output_schema", true, 1);
+    }
+
+    private void validateEvidenceContract(Resource resource, YamlSkillManifest manifest) {
+        YamlSkillManifest.EvidenceContractManifest contract = manifest.getEvidenceContract();
+        if (contract == null) {
+            return;
+        }
+        if (manifest.getOutputSchema() == null) {
+            throw invalidSkill(resource, "evidence_contract", "requires output_schema so claim names can be validated");
+        }
+
+        Map<String, String> schemaPropertiesByNormalized = new LinkedHashMap<>();
+        manifest.getOutputSchema().getProperties().keySet().forEach(propertyName ->
+                schemaPropertiesByNormalized.put(propertyName.toLowerCase(Locale.ROOT), propertyName));
+
+        validateEvidenceMappings(resource, "evidence_contract.claims", contract.getClaims(), true, schemaPropertiesByNormalized);
+        validateEvidenceMappings(resource, "evidence_contract.tool_evidence", contract.getToolEvidence(), false, schemaPropertiesByNormalized);
+    }
+
+    private void validateEvidenceMappings(Resource resource,
+                                          String fieldPath,
+                                          Map<String, List<String>> mappings,
+                                          boolean claimsMapping,
+                                          Map<String, String> schemaPropertiesByNormalized) {
+        Map<String, String> canonicalByNormalized = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : mappings.entrySet()) {
+            String name = entry.getKey();
+            if (!StringUtils.hasText(name)) {
+                throw invalidSkill(resource, fieldPath, claimsMapping ? "claim names must not be blank" : "tool names must not be blank");
+            }
+            String normalizedName = name.trim().toLowerCase(Locale.ROOT);
+            String previous = canonicalByNormalized.putIfAbsent(normalizedName, name);
+            if (previous != null) {
+                throw invalidSkill(resource, fieldPath + "." + name,
+                        (claimsMapping ? "duplicates claim '" : "duplicates tool '") + previous
+                                + "' when compared case-insensitively");
+            }
+            if (claimsMapping && !schemaPropertiesByNormalized.containsKey(name.toLowerCase(Locale.ROOT))) {
+                throw invalidSkill(resource, fieldPath + "." + name,
+                        "references unknown output_schema property '" + name + "'");
+            }
+            List<String> values = entry.getValue() == null ? List.of() : entry.getValue();
+            Set<String> duplicates = new java.util.LinkedHashSet<>();
+            Set<String> seen = new java.util.LinkedHashSet<>();
+            for (String value : values) {
+                if (!StringUtils.hasText(value)) {
+                    throw invalidSkill(resource, fieldPath + "." + name,
+                            claimsMapping ? "evidence ids must not be blank" : "produced evidence ids must not be blank");
+                }
+                if (!seen.add(value)) {
+                    duplicates.add(value);
+                }
+            }
+            if (!duplicates.isEmpty()) {
+                throw invalidSkill(resource, fieldPath + "." + name,
+                        "contains duplicate evidence ids " + duplicates);
+            }
+        }
     }
 
     private void validateSchemaNode(Resource resource,

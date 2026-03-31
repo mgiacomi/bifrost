@@ -54,12 +54,14 @@ public class CapabilityExecutionRouter {
 
         if (capability.kind() == CapabilityKind.YAML_SKILL && capability.mappedTargetId() == null) {
             PlanSnapshot parentPlan = executionStateService.snapshotPlan(session);
+            com.lokiscale.bifrost.runtime.state.EvidenceSnapshot parentEvidence = executionStateService.snapshotEvidence(session);
             try {
                 return executionCoordinatorProvider.getObject()
                         .execute(capability.name(), objectiveFor(capability, safeArguments), session, authentication);
             }
             finally {
                 executionStateService.restorePlan(session, parentPlan);
+                executionStateService.restoreEvidence(session, parentEvidence);
             }
         }
 

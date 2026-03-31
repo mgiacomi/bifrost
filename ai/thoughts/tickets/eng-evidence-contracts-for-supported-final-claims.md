@@ -74,28 +74,21 @@ Example for `duplicateInvoiceChecker`:
 ```yaml
 evidence_contract:
   claims:
-    vendorName:
-      requires: [parsed_invoice]
-    invoiceDate:
-      requires: [parsed_invoice]
-    totalAmount:
-      requires: [parsed_invoice]
-    isDuplicate:
-      requires: [parsed_invoice, expense_match_search]
-    reasoning:
-      requires: [parsed_invoice, expense_match_search]
+    vendorName: [parsed_invoice]
+    invoiceDate: [parsed_invoice]
+    totalAmount: [parsed_invoice]
+    isDuplicate: [parsed_invoice, expense_match_search]
+    reasoning: [parsed_invoice, expense_match_search]
 
   tool_evidence:
-    invoiceParser:
-      produces: [parsed_invoice]
-    expenseLookup:
-      produces: [expense_match_search]
+    invoiceParser: [parsed_invoice]
+    expenseLookup: [expense_match_search]
 ```
 
 Notes:
 - `claims` keys should map to top-level output field names for the skill.
-- `requires` is a list of evidence-type identifiers.
-- `tool_evidence` maps visible sub-skill names to the evidence types they can produce.
+- each `claims.<field>` value is the list of evidence-type identifiers required to support that claim.
+- each `tool_evidence.<tool>` value is the list of evidence-type identifiers produced by that tool.
 - Evidence-type identifiers are just stable strings in v1.
 
 ## How the Contract Would Be Used
@@ -162,17 +155,9 @@ Suggested shape:
 private EvidenceContractManifest evidenceContract;
 
 public static class EvidenceContractManifest {
-    private Map<String, ClaimRequirementManifest> claims = Map.of();
+    private Map<String, List<String>> claims = Map.of();
     @JsonProperty("tool_evidence")
-    private Map<String, ToolEvidenceManifest> toolEvidence = Map.of();
-}
-
-public static class ClaimRequirementManifest {
-    private List<String> requires = List.of();
-}
-
-public static class ToolEvidenceManifest {
-    private List<String> produces = List.of();
+    private Map<String, List<String>> toolEvidence = Map.of();
 }
 ```
 
@@ -462,6 +447,7 @@ Recommendation:
 
 ## Risks
 - Overdesigning the first version with nested evidence payloads or deep claim semantics may slow delivery and add unnecessary complexity.
+- Using a nested YAML shape too early would add authoring noise without clear benefit in v1, so the compact list-based contract should remain the default unless new metadata is actually needed.
 - Trying to infer support requirements from objective text instead of the contract would reintroduce brittleness.
 - If contract validation is too strict, skill authors may find adoption cumbersome.
 - If contract validation is too loose, the feature will not materially improve answer supportability.

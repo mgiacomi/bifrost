@@ -52,8 +52,10 @@ class CapabilityExecutionRouterTest {
                 CapabilityToolDescriptor.generic("child.llm.skill", "child"),
                 null);
         PlanSnapshot snapshot = PlanSnapshot.of(null);
+        com.lokiscale.bifrost.runtime.state.EvidenceSnapshot evidenceSnapshot = com.lokiscale.bifrost.runtime.state.EvidenceSnapshot.of(java.util.Set.of("parsed_invoice"));
 
         when(stateService.snapshotPlan(session)).thenReturn(snapshot);
+        when(stateService.snapshotEvidence(session)).thenReturn(evidenceSnapshot);
         when(coordinator.execute(eq("child.llm.skill"), org.mockito.ArgumentMatchers.anyString(), eq(session), eq(null)))
                 .thenReturn("child result");
 
@@ -61,6 +63,7 @@ class CapabilityExecutionRouterTest {
 
         assertThat(result).isEqualTo("child result");
         verify(stateService).restorePlan(session, snapshot);
+        verify(stateService).restoreEvidence(session, evidenceSnapshot);
     }
 
     @Test
@@ -135,8 +138,10 @@ class CapabilityExecutionRouterTest {
                 CapabilityToolDescriptor.generic("child.llm.skill", "child"),
                 null);
         PlanSnapshot snapshot = PlanSnapshot.of(null);
+        com.lokiscale.bifrost.runtime.state.EvidenceSnapshot evidenceSnapshot = com.lokiscale.bifrost.runtime.state.EvidenceSnapshot.of(java.util.Set.of("parsed_invoice"));
 
         when(stateService.snapshotPlan(session)).thenReturn(snapshot);
+        when(stateService.snapshotEvidence(session)).thenReturn(evidenceSnapshot);
         when(coordinator.execute(eq("child.llm.skill"), org.mockito.ArgumentMatchers.anyString(), eq(session), eq(null)))
                 .thenReturn("child result");
 
@@ -144,6 +149,82 @@ class CapabilityExecutionRouterTest {
 
         assertThat(result).isEqualTo("child result");
         verify(stateService).restorePlan(session, snapshot);
+        verify(stateService).restoreEvidence(session, evidenceSnapshot);
         verify(refResolver, never()).resolveArguments(org.mockito.ArgumentMatchers.any(), eq(session));
+    }
+
+    @Test
+    void nestedYamlDelegationStartsWithFreshEvidenceAndRestoresParentEvidenceAfterward() {
+        RefResolver refResolver = mock(RefResolver.class);
+        ExecutionStateService stateService = new com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService(
+                java.time.Clock.fixed(java.time.Instant.parse("2026-03-15T12:00:00Z"), java.time.ZoneOffset.UTC));
+        CapabilityMetadata capability = new CapabilityMetadata(
+                "yaml:child",
+                "child.llm.skill",
+                "child",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
+                        "gpt-5",
+                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "openai/gpt-5",
+                        "medium")),
+                java.util.Set.of(),
+                arguments -> "unused",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("child.llm.skill", "child"),
+                null);
+        CapabilityRegistry capabilityRegistry = mock(CapabilityRegistry.class);
+        when(capabilityRegistry.getCapability("child.llm.skill")).thenReturn(capability);
+
+        com.lokiscale.bifrost.skill.YamlSkillManifest manifest = new com.lokiscale.bifrost.skill.YamlSkillManifest();
+        manifest.setName("child.llm.skill");
+        manifest.setDescription("child.llm.skill");
+        manifest.setModel("gpt-5");
+        com.lokiscale.bifrost.skill.YamlSkillDefinition definition = new com.lokiscale.bifrost.skill.YamlSkillDefinition(
+                new org.springframework.core.io.ByteArrayResource(new byte[0]),
+                manifest,
+                new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
+                        "gpt-5",
+                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "openai/gpt-5",
+                        "medium"));
+        com.lokiscale.bifrost.skill.YamlSkillCatalog catalog = mock(com.lokiscale.bifrost.skill.YamlSkillCatalog.class);
+        when(catalog.getSkill("child.llm.skill")).thenReturn(definition);
+
+        com.lokiscale.bifrost.chat.SkillChatClientFactory chatClientFactory = mock(com.lokiscale.bifrost.chat.SkillChatClientFactory.class);
+        when(chatClientFactory.create(definition)).thenReturn(mock(org.springframework.ai.chat.client.ChatClient.class));
+        when(chatClientFactory.createForStepExecution(definition)).thenReturn(mock(org.springframework.ai.chat.client.ChatClient.class));
+
+        com.lokiscale.bifrost.runtime.MissionExecutionEngine engine = (session, skillDefinition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+            assertThat(session.getProducedEvidenceTypes()).isEmpty();
+            session.addProducedEvidenceTypes(java.util.List.of("expense_match_search"));
+            return "child result";
+        };
+        ExecutionCoordinator coordinator = new ExecutionCoordinator(
+                catalog,
+                capabilityRegistry,
+                chatClientFactory,
+                (skillName, session, authentication) -> java.util.List.of(),
+                (session, skillDefinition, capabilities, authentication) -> java.util.List.of(),
+                engine,
+                engine,
+                stateService,
+                new DefaultAccessGuard());
+        StaticListableBeanFactory beanFactory = new StaticListableBeanFactory(Map.of("executionCoordinator", coordinator));
+        CapabilityExecutionRouter router = new CapabilityExecutionRouter(
+                refResolver,
+                beanFactory.getBeanProvider(ExecutionCoordinator.class),
+                new ObjectMapper(),
+                stateService,
+                new DefaultAccessGuard());
+        BifrostSession session = new BifrostSession("session-1", 2);
+        session.addProducedEvidenceTypes(java.util.List.of("parsed_invoice"));
+        ExecutionFrame parentFrame = stateService.openMissionFrame(session, "parent.visible.skill", Map.of("objective", "parent"));
+
+        Object result = router.execute(capability, Map.of("topic", "mars"), session, null);
+
+        assertThat(result).isEqualTo("child result");
+        assertThat(session.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
+        stateService.closeMissionFrame(session, parentFrame);
     }
 }

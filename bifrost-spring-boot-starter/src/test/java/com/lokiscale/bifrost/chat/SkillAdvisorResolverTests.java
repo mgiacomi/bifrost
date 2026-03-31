@@ -5,8 +5,10 @@ import com.lokiscale.bifrost.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContractCallAdvisor;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
@@ -61,6 +63,17 @@ class SkillAdvisorResolverTests {
     }
 
     @Test
+    void createsOutputSchemaThenEvidenceThenLinterAdvisorOrder() {
+        assertThat(resolver.resolve(definition(true, true, true)))
+                .hasSize(3)
+                .element(0).isInstanceOf(OutputSchemaCallAdvisor.class);
+        assertThat(resolver.resolve(definition(true, true, true)))
+                .element(1).isInstanceOf(EvidenceContractCallAdvisor.class);
+        assertThat(resolver.resolve(definition(true, true, true)))
+                .element(2).isInstanceOf(LinterCallAdvisor.class);
+    }
+
+    @Test
     void rethrowsManagedSessionAdvisorMutationFailures() {
         ExecutionStateService failingStateService = new DefaultExecutionStateService(
                 Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC)) {
@@ -86,6 +99,10 @@ class SkillAdvisorResolverTests {
     }
 
     private YamlSkillDefinition definition(boolean withLinter, boolean withOutputSchema) {
+        return definition(withLinter, withOutputSchema, false);
+    }
+
+    private YamlSkillDefinition definition(boolean withLinter, boolean withOutputSchema, boolean withEvidenceContract) {
         YamlSkillManifest manifest = new YamlSkillManifest();
         manifest.setName(withLinter ? "linted.skill" : "plain.skill");
         manifest.setDescription(manifest.getName());
@@ -100,6 +117,12 @@ class SkillAdvisorResolverTests {
             schema.setAdditionalProperties(false);
             manifest.setOutputSchema(schema);
             manifest.setOutputSchemaMaxRetries(2);
+            if (withEvidenceContract) {
+                YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
+                contract.setClaims(java.util.Map.of("vendorName", java.util.List.of("parsed_invoice")));
+                contract.setToolEvidence(java.util.Map.of("invoiceParser", java.util.List.of("parsed_invoice")));
+                manifest.setEvidenceContract(contract);
+            }
         }
         if (withLinter) {
             YamlSkillManifest.RegexManifest regex = new YamlSkillManifest.RegexManifest();
@@ -114,7 +137,8 @@ class SkillAdvisorResolverTests {
         return new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
-                new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"));
+                new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"),
+                EvidenceContract.fromManifest(manifest.getEvidenceContract(), manifest.getOutputSchema()));
     }
 
     private static ChatClientRequest request(String text) {

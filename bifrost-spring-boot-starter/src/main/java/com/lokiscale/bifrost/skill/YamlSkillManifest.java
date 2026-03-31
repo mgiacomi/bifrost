@@ -40,6 +40,9 @@ public class YamlSkillManifest {
     @JsonProperty("output_schema_max_retries")
     private Integer outputSchemaMaxRetries;
 
+    @JsonProperty("evidence_contract")
+    private EvidenceContractManifest evidenceContract;
+
     private MappingManifest mapping = new MappingManifest();
 
     public String getName() {
@@ -138,6 +141,14 @@ public class YamlSkillManifest {
         this.outputSchemaMaxRetries = outputSchemaMaxRetries;
     }
 
+    public EvidenceContractManifest getEvidenceContract() {
+        return evidenceContract;
+    }
+
+    public void setEvidenceContract(EvidenceContractManifest evidenceContract) {
+        this.evidenceContract = evidenceContract;
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
     public static class LinterManifest {
 
@@ -209,6 +220,31 @@ public class YamlSkillManifest {
 
         public void setTargetId(String targetId) {
             this.targetId = targetId;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class EvidenceContractManifest {
+
+        private Map<String, List<String>> claims = Map.of();
+
+        @JsonProperty("tool_evidence")
+        private Map<String, List<String>> toolEvidence = Map.of();
+
+        public Map<String, List<String>> getClaims() {
+            return claims;
+        }
+
+        public void setClaims(Map<String, List<String>> claims) {
+            this.claims = normalizeStringListMap(claims);
+        }
+
+        public Map<String, List<String>> getToolEvidence() {
+            return toolEvidence;
+        }
+
+        public void setToolEvidence(Map<String, List<String>> toolEvidence) {
+            this.toolEvidence = normalizeStringListMap(toolEvidence);
         }
     }
 
@@ -294,5 +330,25 @@ public class YamlSkillManifest {
         public void setFormat(String format) {
             this.format = StringUtils.hasText(format) ? format.trim() : null;
         }
+    }
+
+    private static Map<String, List<String>> normalizeStringListMap(Map<String, List<String>> rawMap) {
+        if (rawMap == null || rawMap.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashMap<String, List<String>> normalized = new LinkedHashMap<>();
+        rawMap.forEach((key, values) -> normalized.put(
+                key == null ? null : key.trim(),
+                normalizeStringList(values)));
+        return Collections.unmodifiableMap(normalized);
+    }
+
+    private static List<String> normalizeStringList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .map(value -> value == null ? null : value.trim())
+                .toList();
     }
 }

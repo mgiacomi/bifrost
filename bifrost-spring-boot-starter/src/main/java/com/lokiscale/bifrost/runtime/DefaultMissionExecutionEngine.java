@@ -15,6 +15,7 @@ import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.messages.AbstractMessage;
@@ -76,18 +77,19 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     public String executeMission(BifrostSession session,
-                                 String skillName,
+                                 YamlSkillDefinition definition,
                                  String objective,
-                                 EffectiveSkillExecutionConfiguration executionConfiguration,
                                  ChatClient chatClient,
                                  List<ToolCallback> visibleTools,
                                  boolean planningEnabled,
                                  @Nullable Authentication authentication) {
         Objects.requireNonNull(session, "session must not be null");
-        Objects.requireNonNull(skillName, "skillName must not be null");
+        Objects.requireNonNull(definition, "definition must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
         Objects.requireNonNull(chatClient, "chatClient must not be null");
         Objects.requireNonNull(visibleTools, "visibleTools must not be null");
+        String skillName = definition.manifest().getName();
+        EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
         int baselineFrameDepth = session.getFramesSnapshot().size();
         AtomicReference<CleanupOwner> cleanupOwner = new AtomicReference<>(CleanupOwner.NONE);
         CountDownLatch cleanupComplete = new CountDownLatch(1);
@@ -95,7 +97,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine {
             try {
                 sessionUsageService.recordMissionStart(session, skillName);
                 if (planningEnabled) {
-                    planningService.initializePlan(session, objective, skillName, executionConfiguration, chatClient, visibleTools);
+                    planningService.initializePlan(session, objective, definition, chatClient, visibleTools);
                 }
 
                 String executionPrompt = executionStateService.currentPlan(session)

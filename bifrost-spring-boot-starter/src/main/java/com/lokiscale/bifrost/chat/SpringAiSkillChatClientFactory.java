@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.chat;
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContractCallAdvisor;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.slf4j.Logger;
@@ -101,6 +102,7 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory {
         }
         return advisors.stream()
                 .filter(advisor -> !(advisor instanceof OutputSchemaCallAdvisor))
+                .filter(advisor -> !(advisor instanceof EvidenceContractCallAdvisor))
                 .filter(advisor -> !(advisor instanceof LinterCallAdvisor))
                 .toList();
     }

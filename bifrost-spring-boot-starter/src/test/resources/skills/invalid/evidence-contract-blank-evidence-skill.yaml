@@ -1,0 +1,14 @@
+name: evidence.contract.blank.evidence.skill
+description: Invalid evidence contract blank evidence id
+model: gpt-5
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    vendorName:
+      type: string
+evidence_contract:
+  claims:
+    vendorName: [" "]
+  tool_evidence:
+    invoiceParser: [parsed_invoice]

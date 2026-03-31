@@ -7,9 +7,17 @@ description: >
 model: granite4-tiny
 planning_mode: true
 max_steps: 10
-allowed_skills:
-  - invoiceParser
-  - expenseLookup
+allowed_skills: [invoiceParser, expenseLookup]
+evidence_contract:
+  claims:
+    vendorName: [parsed_invoice]
+    invoiceDate: [parsed_invoice]
+    totalAmount: [parsed_invoice]
+    isDuplicate: [parsed_invoice, expense_match_search]
+    reasoning: [parsed_invoice, expense_match_search]
+  tool_evidence:
+    invoiceParser: [parsed_invoice]
+    expenseLookup: [expense_match_search]
 output_schema:
   type: object
   properties:
@@ -28,11 +36,6 @@ output_schema:
     reasoning:
       type: string
       description: Brief explanation of why the invoice was or was not considered a duplicate
-  required:
-    - isDuplicate
-    - vendorName
-    - totalAmount
-    - invoiceDate
-    - reasoning
+  required: [isDuplicate, vendorName, totalAmount, invoiceDate, reasoning]
   additionalProperties: false
 output_schema_max_retries: 2

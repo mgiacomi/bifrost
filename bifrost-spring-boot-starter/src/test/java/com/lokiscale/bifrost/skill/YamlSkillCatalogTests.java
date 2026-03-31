@@ -227,6 +227,65 @@ class YamlSkillCatalogTests {
     }
 
     @Test
+    void loadsEvidenceContractWhenManifestDeclaresOne() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/evidence-contract-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("evidence.contract.skill")).isNotNull();
+                    assertThat(catalog.getSkill("evidence.contract.skill").evidenceContract().evidenceForClaim("isDuplicate"))
+                            .containsExactlyInAnyOrder("parsed_invoice", "expense_match_search");
+                    assertThat(catalog.getSkill("evidence.contract.skill").evidenceContract().evidenceProducedByTool("expenseLookup"))
+                            .containsExactly("expense_match_search");
+                });
+    }
+
+    @Test
+    void failsStartupWhenEvidenceContractReferencesUnknownClaim() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-unknown-claim-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("evidence-contract-unknown-claim-skill.yaml")
+                        .hasMessageContaining("field 'evidence_contract.claims.isDuplicate'")
+                        .hasMessageContaining("unknown output_schema property 'isDuplicate'"));
+    }
+
+    @Test
+    void failsStartupWhenEvidenceContractContainsBlankEvidenceIds() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-blank-evidence-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("evidence-contract-blank-evidence-skill.yaml")
+                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'")
+                        .hasMessageContaining("evidence ids must not be blank"));
+    }
+
+    @Test
+    void failsStartupWhenEvidenceContractClaimKeysDifferOnlyByCase() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-duplicate-claim-case-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("evidence-contract-duplicate-claim-case-skill.yaml")
+                        .hasMessageContaining("field 'evidence_contract.claims.VendorName'")
+                        .hasMessageContaining("duplicates claim 'vendorName'"));
+    }
+
+    @Test
+    void failsStartupWhenEvidenceContractToolKeysDifferOnlyByCase() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-duplicate-tool-case-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("evidence-contract-duplicate-tool-case-skill.yaml")
+                        .hasMessageContaining("field 'evidence_contract.tool_evidence.InvoiceParser'")
+                        .hasMessageContaining("duplicates tool 'invoiceParser'"));
+    }
+
+    @Test
     void failsStartupWhenOutputSchemaMaxRetriesIsPresentWithoutSchema() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-max-retries-without-schema-skill.yaml")

@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Collection;
+import java.util.Set;
 
 public class DefaultExecutionStateService implements ExecutionStateService {
 
@@ -152,6 +154,23 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
+    public EvidenceSnapshot snapshotEvidence(BifrostSession session) {
+        Objects.requireNonNull(session, "session must not be null");
+        return EvidenceSnapshot.of(session.getProducedEvidenceTypes());
+    }
+
+    @Override
+    public void restoreEvidence(BifrostSession session, EvidenceSnapshot snapshot) {
+        Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        if (snapshot.evidenceTypes() == null) {
+            session.clearProducedEvidenceTypes();
+            return;
+        }
+        session.replaceProducedEvidenceTypes(snapshot.evidenceTypes());
+    }
+
+    @Override
     public void logPlanCreated(BifrostSession session, ExecutionPlan plan) {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordPlanCreated(session, Objects.requireNonNull(plan, "plan must not be null"));
@@ -267,6 +286,54 @@ public class DefaultExecutionStateService implements ExecutionStateService {
                 requireActiveFrame(session),
                 Objects.requireNonNull(context, "context must not be null"),
                 payload);
+    }
+
+    @Override
+    public void clearProducedEvidence(BifrostSession session) {
+        Objects.requireNonNull(session, "session must not be null");
+        session.clearProducedEvidenceTypes();
+    }
+
+    @Override
+    public Set<String> currentEvidenceTypes(BifrostSession session) {
+        Objects.requireNonNull(session, "session must not be null");
+        return session.getProducedEvidenceTypes();
+    }
+
+    @Override
+    public void recordProducedEvidence(BifrostSession session,
+                                       String capabilityName,
+                                       String linkedTaskId,
+                                       boolean unplanned,
+                                       Collection<String> evidenceTypes) {
+        Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(capabilityName, "capabilityName must not be null");
+        Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
+        if (evidenceTypes.isEmpty()) {
+            return;
+        }
+        session.addProducedEvidenceTypes(evidenceTypes);
+        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("capabilityName", capabilityName);
+        metadata.put("unplanned", unplanned);
+        if (linkedTaskId != null) {
+            metadata.put("linkedTaskId", linkedTaskId);
+        }
+        session.appendTraceRecord(TraceRecordType.EVIDENCE_RECORDED, Map.copyOf(metadata), Map.of(
+                "evidenceTypes", List.copyOf(evidenceTypes),
+                "ledger", session.getProducedEvidenceTypes()));
+    }
+
+    @Override
+    public void recordEvidenceValidation(BifrostSession session,
+                                         boolean passed,
+                                         Map<String, Object> metadata,
+                                         Object payload) {
+        Objects.requireNonNull(session, "session must not be null");
+        session.appendTraceRecord(
+                passed ? TraceRecordType.EVIDENCE_VALIDATION_PASSED : TraceRecordType.EVIDENCE_VALIDATION_FAILED,
+                metadata == null ? Map.of() : Map.copyOf(metadata),
+                payload == null ? Map.of() : payload);
     }
 
     @Override

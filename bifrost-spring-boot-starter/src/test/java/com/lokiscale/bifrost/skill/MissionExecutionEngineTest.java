@@ -9,10 +9,12 @@ import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.SimpleChatClient;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.core.TraceRecord;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
@@ -65,13 +67,13 @@ class MissionExecutionEngineTest {
             MissionChatClient chatClient = new MissionChatClient("mission complete");
             ToolCallback callback = mock(ToolCallback.class);
 
-            when(planningService.initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(EXECUTION_CONFIGURATION), eq(chatClient), any()))
+            when(planningService.initializePlan(eq(session), eq("hello"), any(YamlSkillDefinition.class), eq(chatClient), any()))
                     .thenAnswer(invocation -> {
                         stateService.storePlan(session, plan);
                         return java.util.Optional.of(plan);
                     });
 
-            String response = engine.executeMission(session, "root.visible.skill", "hello", EXECUTION_CONFIGURATION, chatClient, List.of(callback), true, null);
+            String response = engine.executeMission(session, definition(), "hello", chatClient, List.of(callback), true, null);
 
             assertThat(response).isEqualTo("mission complete");
             assertThat(chatClient.getSystemMessagesSeen().getFirst()).contains("plan-1", "Ready tasks", "Blocked tasks");
@@ -91,11 +93,11 @@ class MissionExecutionEngineTest {
             BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
             MissionChatClient chatClient = new MissionChatClient("mission complete");
 
-            String response = engine.executeMission(session, "root.visible.skill", "hello", EXECUTION_CONFIGURATION, chatClient, List.of(), false, null);
+            String response = engine.executeMission(session, definition(), "hello", chatClient, List.of(), false, null);
 
             assertThat(response).isEqualTo("mission complete");
             assertThat(chatClient.getSystemMessagesSeen()).containsExactly("Execute the mission using only the visible YAML tools when needed.");
-            verify(planningService, never()).initializePlan(eq(session), eq("hello"), eq("root.visible.skill"), eq(EXECUTION_CONFIGURATION), eq(chatClient), any());
+            verify(planningService, never()).initializePlan(eq(session), eq("hello"), any(YamlSkillDefinition.class), eq(chatClient), any());
         }
     }
 
@@ -114,9 +116,8 @@ class MissionExecutionEngineTest {
 
             String response = engine.executeMission(
                     session,
-                    "root.visible.skill",
+                    definition(),
                     "hello",
-                    EXECUTION_CONFIGURATION,
                     new MissionChatClient("mission complete"),
                     List.of(callback),
                     false,
@@ -156,9 +157,8 @@ class MissionExecutionEngineTest {
 
             assertThatThrownBy(() -> engine.executeMission(
                     session,
-                    "root.visible.skill",
+                    definition(),
                     "hello",
-                    EXECUTION_CONFIGURATION,
                     chatClient,
                     List.of(),
                     false,
@@ -199,9 +199,8 @@ class MissionExecutionEngineTest {
 
             assertThatThrownBy(() -> engine.executeMission(
                     session,
-                    "root.visible.skill",
+                    definition(),
                     "hello",
-                    EXECUTION_CONFIGURATION,
                     chatClient,
                     List.of(),
                     true,
@@ -229,9 +228,8 @@ class MissionExecutionEngineTest {
 
             assertThatThrownBy(() -> engine.executeMission(
                     session,
-                    "root.visible.skill",
+                    definition(),
                     "hello",
-                    EXECUTION_CONFIGURATION,
                     new FailingMissionChatClient(),
                     List.of(),
                     false,
@@ -269,6 +267,14 @@ class MissionExecutionEngineTest {
         List<TraceRecord> records = new ArrayList<>();
         session.readTraceRecords(records::add);
         return records;
+    }
+
+    private static YamlSkillDefinition definition() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("root.visible.skill");
+        manifest.setModel("gpt-5");
+        return new YamlSkillDefinition(new org.springframework.core.io.ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
     }
 
     private static final class MissionChatClient extends SimpleChatClient {
@@ -620,8 +626,7 @@ class MissionExecutionEngineTest {
         @Override
         public java.util.Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                                 String objective,
-                                                                String capabilityName,
-                                                                EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                                YamlSkillDefinition definition,
                                                                 org.springframework.ai.chat.client.ChatClient chatClient,
                                                                 List<ToolCallback> visibleTools) {
             try {
@@ -654,7 +659,8 @@ class MissionExecutionEngineTest {
         public java.util.Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                                    String taskId,
                                                                    String capabilityName,
-                                                                   Object result) {
+                                                                   Object result,
+                                                                   EvidenceContract evidenceContract) {
             throw new UnsupportedOperationException();
         }
 

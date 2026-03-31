@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.runtime;
 
 import com.lokiscale.bifrost.core.BifrostSession;
-import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
@@ -13,9 +13,8 @@ public interface MissionExecutionEngine {
 
     String executeMission(
             BifrostSession session,
-            String skillName,
+            YamlSkillDefinition definition,
             String objective,
-            EffectiveSkillExecutionConfiguration executionConfiguration,
             ChatClient chatClient,
             List<ToolCallback> visibleTools,
             boolean planningEnabled,

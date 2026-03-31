@@ -400,10 +400,10 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient stepChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(defaultChatClient, stepChatClient);
         ExecutionStateService stateService = fixedStateService();
-        MissionExecutionEngine defaultEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine defaultEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new AssertionError("Default engine should not be selected");
         };
-        MissionExecutionEngine stepEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine stepEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
             assertThat(chatClient).isSameAs(stepChatClient);
             return "step loop complete";
         };
@@ -413,7 +413,7 @@ class ExecutionCoordinatorTest {
                 registry,
                 factory,
                 new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
-                (session, capabilities, authentication) -> List.of(),
+                (session, definition, capabilities, authentication) -> List.of(),
                 defaultEngine,
                 stepEngine,
                 stateService,
@@ -455,11 +455,11 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient stepChatClient = new FakeCoordinatorChatClient(null, "unused", null, false);
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(defaultChatClient, stepChatClient);
         ExecutionStateService stateService = fixedStateService();
-        MissionExecutionEngine defaultEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine defaultEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
             assertThat(chatClient).isSameAs(defaultChatClient);
             return "one shot complete";
         };
-        MissionExecutionEngine stepEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine stepEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new AssertionError("Step loop should not be selected without explicit planning_mode: true");
         };
 
@@ -468,7 +468,7 @@ class ExecutionCoordinatorTest {
                 registry,
                 factory,
                 new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
-                (session, capabilities, authentication) -> List.of(),
+                (session, definition, capabilities, authentication) -> List.of(),
                 defaultEngine,
                 stepEngine,
                 stateService,
@@ -478,6 +478,60 @@ class ExecutionCoordinatorTest {
 
         assertThat(response).isEqualTo("one shot complete");
         assertThat(factory.stepExecutionRequested).isFalse();
+    }
+
+    @Test
+    void clearsInheritedEvidenceBeforeNestedSkillExecution() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest,
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        ExecutionStateService stateService = fixedStateService();
+        MissionExecutionEngine assertingEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
+            assertThat(session.getProducedEvidenceTypes()).isEmpty();
+            return "nested complete";
+        };
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                (currentSkillName, sessionState, authentication) -> List.of(),
+                new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "unused", null, false)),
+                (value, session) -> value,
+                null,
+                stateService,
+                fixedPlanningService(stateService),
+                assertingEngine,
+                null);
+
+        BifrostSession session = new BifrostSession("session-nested", 3);
+        ExecutionFrame parentFrame = stateService.openMissionFrame(session, "parent.visible.skill", Map.of("objective", "parent"));
+        stateService.recordProducedEvidence(session, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
+
+        String response = coordinator.execute("root.visible.skill", "child objective", session, null);
+
+        assertThat(response).isEqualTo("nested complete");
+        assertThat(session.getProducedEvidenceTypes()).isEmpty();
+        stateService.closeMissionFrame(session, parentFrame);
     }
 
     @Test
@@ -519,9 +573,9 @@ class ExecutionCoordinatorTest {
                 registry,
                 factory,
                 new DefaultToolSurfaceService((currentSkillName, sessionState, authentication) -> List.of()),
-                (session, capabilities, authentication) -> List.of(),
-                (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
-                (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
+                (session, definition, capabilities, authentication) -> List.of(),
+                (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
+                (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> "unused",
                 fixedStateService(),
                 new DefaultAccessGuard());
 
@@ -555,7 +609,7 @@ class ExecutionCoordinatorTest {
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
 
-        MissionExecutionEngine failingMissionExecutionEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine failingMissionExecutionEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new IllegalStateException("boom");
         };
         ExecutionCoordinator coordinator = coordinator(
@@ -668,7 +722,7 @@ class ExecutionCoordinatorTest {
                 throw new IllegalStateException("cleanup-finalize");
             }
         };
-        MissionExecutionEngine failingMissionExecutionEngine = (session, skillName, objective, configuration, chatClient, visibleTools, planningEnabled, authentication) -> {
+        MissionExecutionEngine failingMissionExecutionEngine = (session, definition, objective, chatClient, visibleTools, planningEnabled, authentication) -> {
             throw new IllegalStateException("mission-failed");
         };
         ExecutionCoordinator coordinator = coordinator(
@@ -1270,7 +1324,11 @@ class ExecutionCoordinatorTest {
         ExecutionStateService stateService = fixedStateService();
         PlanningService planningService = fixedPlanningService(stateService);
         ToolCallback callback = toolCallbackFactory((value, session) -> value, null, stateService, planningService)
-                .createToolCallbacks(new BifrostSession("session-1", 2), List.of(childMetadata), null)
+                .createToolCallbacks(
+                        new BifrostSession("session-1", 2),
+                        new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("root.visible.skill", List.of()), executionConfiguration),
+                        List.of(childMetadata),
+                        null)
                 .getFirst();
 
         assertThat(callback.getToolDefinition().inputSchema()).isEqualTo(methodSchema);
@@ -1475,8 +1533,8 @@ class ExecutionCoordinatorTest {
         if (!dropInvocationAuthenticationForCallbacks) {
             return delegate;
         }
-        return (session, capabilities, authentication) ->
-                delegate.createToolCallbacks(session, capabilities, null);
+        return (session, definition, capabilities, authentication) ->
+                delegate.createToolCallbacks(session, definition, capabilities, null);
     }
 
     private static ExecutionStateService fixedStateService() {

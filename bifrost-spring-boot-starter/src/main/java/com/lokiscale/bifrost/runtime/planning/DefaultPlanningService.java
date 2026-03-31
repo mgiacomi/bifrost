@@ -20,11 +20,15 @@ import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceCoverageResult;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceCoverageValidator;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -56,6 +60,7 @@ public class DefaultPlanningService implements PlanningService {
     private final ModelUsageExtractor modelUsageExtractor;
     private final ObjectMapper objectMapper;
     private final PlanQualityValidator planQualityValidator;
+    private final EvidenceCoverageValidator evidenceCoverageValidator;
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker, ExecutionStateService executionStateService) {
         this(
@@ -64,7 +69,8 @@ public class DefaultPlanningService implements PlanningService {
                 new NoOpSessionUsageService(),
                 new ModelUsageExtractor(),
                 defaultObjectMapper(),
-                new PlanQualityValidator());
+                new PlanQualityValidator(),
+                new EvidenceCoverageValidator());
     }
 
     public DefaultPlanningService(PlanTaskLinker planTaskLinker,
@@ -77,7 +83,8 @@ public class DefaultPlanningService implements PlanningService {
                 sessionUsageService,
                 modelUsageExtractor,
                 defaultObjectMapper(),
-                new PlanQualityValidator());
+                new PlanQualityValidator(),
+                new EvidenceCoverageValidator());
     }
 
     DefaultPlanningService(PlanTaskLinker planTaskLinker,
@@ -85,37 +92,29 @@ public class DefaultPlanningService implements PlanningService {
                            SessionUsageService sessionUsageService,
                            ModelUsageExtractor modelUsageExtractor,
                            ObjectMapper objectMapper,
-                           PlanQualityValidator planQualityValidator) {
+                           PlanQualityValidator planQualityValidator,
+                           EvidenceCoverageValidator evidenceCoverageValidator) {
         this.planTaskLinker = Objects.requireNonNull(planTaskLinker, "planTaskLinker must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
         this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.planQualityValidator = Objects.requireNonNull(planQualityValidator, "planQualityValidator must not be null");
+        this.evidenceCoverageValidator = Objects.requireNonNull(evidenceCoverageValidator, "evidenceCoverageValidator must not be null");
     }
 
     @Override
     public Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                   String objective,
-                                                  String capabilityName,
-                                                  EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                  YamlSkillDefinition definition,
                                                   ChatClient chatClient,
                                                   List<ToolCallback> visibleTools) {
-        return initializePlan(session, objective, capabilityName, executionConfiguration, chatClient, visibleTools, false);
-    }
-
-    @Override
-    public Optional<ExecutionPlan> initializePlan(BifrostSession session,
-                                                  String objective,
-                                                  String capabilityName,
-                                                  EffectiveSkillExecutionConfiguration executionConfiguration,
-                                                  ChatClient chatClient,
-                                                  List<ToolCallback> visibleTools,
-                                                  boolean strictPlanContract) {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
-        Objects.requireNonNull(capabilityName, "capabilityName must not be null");
+        Objects.requireNonNull(definition, "definition must not be null");
         Objects.requireNonNull(chatClient, "chatClient must not be null");
+        String capabilityName = definition.manifest().getName();
+        var executionConfiguration = definition.executionConfiguration();
         log.debug(
                 "Initializing plan for capability='{}' chatClientType={} visibleTools={}",
                 capabilityName,
@@ -134,11 +133,9 @@ public class DefaultPlanningService implements PlanningService {
             return initializePlanWithQualityChecks(
                     session,
                     objective,
-                    capabilityName,
-                    executionConfiguration,
+                    definition,
                     chatClient,
                     visibleTools,
-                    strictPlanContract,
                     planningFrame);
         }
         catch (RuntimeException ex) {
@@ -197,11 +194,12 @@ public class DefaultPlanningService implements PlanningService {
     public Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                      String taskId,
                                                      String capabilityName,
-                                                     @Nullable Object result) {
+                                                     @Nullable Object result,
+                                                     EvidenceContract evidenceContract) {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(taskId, "taskId must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
-        return executionStateService.currentPlan(session)
+        Optional<ExecutionPlan> updatedPlan = executionStateService.currentPlan(session)
                 .flatMap(plan -> plan.findTask(taskId)
                         .map(task -> {
                             requireBoundCapability(task, capabilityName);
@@ -217,6 +215,13 @@ public class DefaultPlanningService implements PlanningService {
                 .filter(plan -> plan.findTask(taskId)
                         .map(task -> task.status() == PlanTaskStatus.COMPLETED)
                         .orElse(false));
+        if (updatedPlan.isPresent() && evidenceContract != null && !evidenceContract.isEmpty()) {
+            java.util.Set<String> evidenceTypes = evidenceContract.evidenceProducedByTool(capabilityName);
+            if (!evidenceTypes.isEmpty()) {
+                executionStateService.recordProducedEvidence(session, capabilityName, taskId, false, evidenceTypes);
+            }
+        }
+        return updatedPlan;
     }
 
     @Override
@@ -246,12 +251,13 @@ public class DefaultPlanningService implements PlanningService {
 
     private Optional<ExecutionPlan> initializePlanWithQualityChecks(BifrostSession session,
                                                                     String objective,
-                                                                    String capabilityName,
-                                                                    EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                                    YamlSkillDefinition definition,
                                                                     ChatClient chatClient,
                                                                     List<ToolCallback> visibleTools,
-                                                                    boolean strictPlanContract,
                                                                     ExecutionFrame planningFrame) {
+        String capabilityName = definition.manifest().getName();
+        var executionConfiguration = definition.executionConfiguration();
+        EvidenceContract evidenceContract = definition.evidenceContract();
         String retryFeedback = null;
         int retryCount = 0;
         while (true) {
@@ -262,7 +268,6 @@ public class DefaultPlanningService implements PlanningService {
                     executionConfiguration,
                     chatClient,
                     visibleTools,
-                    strictPlanContract,
                     retryFeedback);
             sessionUsageService.recordModelResponse(
                     session,
@@ -273,12 +278,28 @@ public class DefaultPlanningService implements PlanningService {
                             attemptResult.prompt(),
                             stringifyPlan(attemptResult.plan())));
             PlanQualityValidationResult validation = planQualityValidator.validate(attemptResult.plan(), visibleTools);
-            if (validation.hasErrors() && retryCount < MAX_PLAN_QUALITY_RETRIES) {
+            EvidenceCoverageResult evidenceCoverage = evidenceCoverageValidator.validatePlanCoverage(
+                    attemptResult.plan(),
+                    evidenceContract);
+            boolean hasDeterministicEvidenceGap = !evidenceCoverage.complete();
+            if ((validation.hasErrors() || hasDeterministicEvidenceGap) && retryCount < MAX_PLAN_QUALITY_RETRIES) {
                 recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, validation.errors(), retryCount);
-                retryFeedback = validation.retryFeedback();
+                if (hasDeterministicEvidenceGap) {
+                    recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, evidenceCoverage, retryCount);
+                }
+                retryFeedback = mergeRetryFeedback(validation.retryFeedback(), evidenceCoverage.retryFeedback());
                 recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED, validation.errors(), retryCount);
+                if (hasDeterministicEvidenceGap) {
+                    recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED, evidenceCoverage, retryCount);
+                }
                 retryCount++;
                 continue;
+            }
+            if (hasDeterministicEvidenceGap) {
+                recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, evidenceCoverage, retryCount);
+                throw new IllegalStateException(
+                        "Evidence coverage validation failed for skill '%s': %s"
+                                .formatted(capabilityName, evidenceCoverage.retryFeedback()));
             }
             if (validation.hasWarnings()) {
                 recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING, validation.warnings(), retryCount);
@@ -292,13 +313,32 @@ public class DefaultPlanningService implements PlanningService {
         }
     }
 
+    private void recordEvidenceCoverageEvent(BifrostSession session,
+                                             ExecutionFrame planningFrame,
+                                             TraceRecordType recordType,
+                                             EvidenceCoverageResult coverage,
+                                             int retryCount) {
+        if (coverage == null || coverage.complete()) {
+            return;
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("retryCount", retryCount);
+        metadata.put("issueCodes", List.of("evidence-coverage"));
+        metadata.put("severity", "ERROR");
+        metadata.put("claims", coverage.evaluatedClaims());
+        metadata.put("missingEvidence", coverage.issues().stream()
+                .flatMap(issue -> issue.missingEvidence().stream())
+                .distinct()
+                .toList());
+        executionStateService.recordPlanningEvent(session, planningFrame, recordType, metadata, coverage.issues());
+    }
+
     private PlanningAttemptResult requestPlanAttempt(BifrostSession session,
                                                      String objective,
                                                      String capabilityName,
                                                      EffectiveSkillExecutionConfiguration executionConfiguration,
                                                      ChatClient chatClient,
                                                      List<ToolCallback> visibleTools,
-                                                     boolean strictPlanContract,
                                                      @Nullable String retryFeedback) {
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
@@ -353,7 +393,7 @@ public class DefaultPlanningService implements PlanningService {
                                     capabilityName,
                                     preview(planPayload));
                         }
-                        ExecutionPlan plan = parsePlan(planPayload, capabilityName, strictPlanContract);
+                        ExecutionPlan plan = parsePlan(planPayload, capabilityName);
                         return ModelTraceResult.of(
                                 new PlanningTraceResult(plan, chatResponse),
                                 Map.of("content", planPayload));
@@ -450,6 +490,20 @@ public class DefaultPlanningService implements PlanningService {
                 %s""".formatted(capabilityName, toolList, retrySection);
     }
 
+    private String mergeRetryFeedback(@Nullable String qualityFeedback, @Nullable String evidenceFeedback) {
+        if ((qualityFeedback == null || qualityFeedback.isBlank())
+                && (evidenceFeedback == null || evidenceFeedback.isBlank())) {
+            return null;
+        }
+        if (qualityFeedback == null || qualityFeedback.isBlank()) {
+            return evidenceFeedback;
+        }
+        if (evidenceFeedback == null || evidenceFeedback.isBlank()) {
+            return qualityFeedback;
+        }
+        return qualityFeedback + "\n" + evidenceFeedback;
+    }
+
     private static String describeTool(ToolCallback callback) {
         ToolDefinition definition = callback.getToolDefinition();
         String description = definition.description();
@@ -486,7 +540,7 @@ public class DefaultPlanningService implements PlanningService {
                 .orElse(null);
     }
 
-    private ExecutionPlan parsePlan(String payload, String capabilityName, boolean strictPlanContract) {
+    private ExecutionPlan parsePlan(String payload, String capabilityName) {
         String unwrapped = unwrapFencedBlock(payload);
         log.debug(
                 "Parsing plan for capability='{}' looksLikeJson={} payloadPreview={}...",
@@ -496,61 +550,13 @@ public class DefaultPlanningService implements PlanningService {
         try {
             JsonNode tree = parsePlanTree(unwrapped, capabilityName);
             normalizePlanTree(tree);
-            ExecutionPlan plan = objectMapper.treeToValue(tree, ExecutionPlan.class);
-            if (strictPlanContract) {
-                validateStepLoopPlanShape(plan, capabilityName);
-            }
-            return plan;
+            return objectMapper.treeToValue(tree, ExecutionPlan.class);
         }
         catch (JsonProcessingException ex) {
             throw new IllegalStateException(
                     "Failed to parse planning response for capability '" + capabilityName
                             + "' as JSON or YAML. Payload preview: " + preview(unwrapped), ex);
         }
-    }
-
-    private void validateStepLoopPlanShape(ExecutionPlan plan, String capabilityName) {
-        List<String> duplicateTaskIds = duplicateTaskIds(plan);
-        List<String> autoCompletableTaskIds = plan.tasks().stream()
-                .filter(PlanTask::autoCompletable)
-                .map(PlanTask::taskId)
-                .toList();
-        List<String> unboundTaskIds = plan.tasks().stream()
-                .filter(task -> !task.autoCompletable())
-                .filter(task -> task.capabilityName() == null || task.capabilityName().isBlank())
-                .map(PlanTask::taskId)
-                .toList();
-        if (duplicateTaskIds.isEmpty() && autoCompletableTaskIds.isEmpty() && unboundTaskIds.isEmpty()) {
-            return;
-        }
-
-        StringBuilder message = new StringBuilder(
-                "Planning response for capability '" + capabilityName + "' violated the step-loop plan contract.");
-        if (!duplicateTaskIds.isEmpty()) {
-            message.append(" Task IDs must be unique. Duplicates: ").append(duplicateTaskIds).append(".");
-        }
-        if (!autoCompletableTaskIds.isEmpty()) {
-            message.append(" autoCompletable tasks are not supported: ").append(autoCompletableTaskIds).append(".");
-        }
-        if (!unboundTaskIds.isEmpty()) {
-            message.append(" Every non-auto-completable task must declare a capabilityName. Missing: ")
-                    .append(unboundTaskIds)
-                    .append(".");
-        }
-        throw new IllegalStateException(message.toString());
-    }
-
-    private List<String> duplicateTaskIds(ExecutionPlan plan) {
-        return plan.tasks().stream()
-                .map(PlanTask::taskId)
-                .collect(java.util.stream.Collectors.groupingBy(
-                        java.util.function.Function.identity(),
-                        java.util.LinkedHashMap::new,
-                        java.util.stream.Collectors.counting()))
-                .entrySet().stream()
-                .filter(entry -> entry.getValue() > 1)
-                .map(Map.Entry::getKey)
-                .toList();
     }
 
     private void requireBoundCapability(PlanTask task, String capabilityName) {

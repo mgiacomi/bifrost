@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -49,6 +51,7 @@ public final class BifrostSession {
     private LinterOutcome lastLinterOutcome;
     private OutputSchemaOutcome lastOutputSchemaOutcome;
     private SessionUsageSnapshot sessionUsage;
+    private Set<String> producedEvidenceTypes;
     @JsonIgnore
     private Authentication authentication;
 
@@ -110,6 +113,7 @@ public final class BifrostSession {
         this.lastLinterOutcome = lastLinterOutcome;
         this.lastOutputSchemaOutcome = lastOutputSchemaOutcome;
         this.sessionUsage = sessionUsage;
+        this.producedEvidenceTypes = new LinkedHashSet<>();
         this.authentication = authentication;
     }
 
@@ -382,6 +386,51 @@ public final class BifrostSession {
         return BifrostSessionHolder.requireCurrentSession();
     }
 
+    public Set<String> getProducedEvidenceTypes() {
+        lock.lock();
+        try {
+            return Set.copyOf(producedEvidenceTypes);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void addProducedEvidenceTypes(java.util.Collection<String> evidenceTypes) {
+        Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
+        lock.lock();
+        try {
+            if (producedEvidenceTypes == null) {
+                producedEvidenceTypes = new LinkedHashSet<>();
+            }
+            producedEvidenceTypes.addAll(evidenceTypes);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void clearProducedEvidenceTypes() {
+        lock.lock();
+        try {
+            if (producedEvidenceTypes == null) {
+                producedEvidenceTypes = new LinkedHashSet<>();
+                return;
+            }
+            producedEvidenceTypes.clear();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void replaceProducedEvidenceTypes(java.util.Collection<String> evidenceTypes) {
+        Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
+        lock.lock();
+        try {
+            producedEvidenceTypes = new LinkedHashSet<>(evidenceTypes);
+        } finally {
+            lock.unlock();
+        }
+    }
+
     public void markToolActivityForCurrentFrame() {
         lock.lock();
         try {
@@ -467,7 +516,7 @@ public final class BifrostSession {
         }
     }
 
-    void appendTraceRecord(TraceRecordType type, Map<String, Object> metadata, Object payload) {
+    public void appendTraceRecord(TraceRecordType type, Map<String, Object> metadata, Object payload) {
         appendTrace(type, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
     }
 

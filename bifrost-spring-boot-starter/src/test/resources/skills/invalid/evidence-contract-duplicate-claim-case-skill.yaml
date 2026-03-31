@@ -1,0 +1,15 @@
+name: evidence.contract.duplicate.claim.case.skill
+description: Invalid evidence contract with duplicate claim keys after normalization
+model: gpt-5
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    vendorName:
+      type: string
+  required:
+    - vendorName
+evidence_contract:
+  claims:
+    vendorName: [parsed_invoice]
+    VendorName: [expense_match_search]

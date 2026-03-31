@@ -12,6 +12,8 @@ import com.lokiscale.bifrost.runtime.SimpleChatClient;
 import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
+import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -45,8 +47,7 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 planningSession,
                 "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
+                rootDefinition(),
                 new SimpleChatClient(plan("plan-1"), "done"),
                 List.<ToolCallback>of());
 
@@ -62,9 +63,8 @@ class ExecutionTraceContractTest {
 
             String missionResponse = engine.executeMission(
                     missionSession,
-                    "root.visible.skill",
+                    rootDefinition(),
                     "hello",
-                    EXECUTION_CONFIGURATION,
                     new SimpleChatClient(null, "mission complete"),
                     List.of(),
                     false,
@@ -99,8 +99,7 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 session,
                 "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
+                rootDefinition(),
                 new SimpleChatClient(plan("plan-1"), "done"),
                 List.<ToolCallback>of());
 
@@ -122,12 +121,10 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 session,
                 "check invoice duplicates",
-                "duplicateInvoiceChecker",
-                EXECUTION_CONFIGURATION,
+                duplicateInvoiceDefinition(),
                 new SequencePlanningChatClient(weakPlanJson(), correctedPlanJson()),
                 List.of(tool("invoiceParser", "Extract invoice fields from source documents"),
-                        tool("expenseLookup", "Look up related expenses for comparison")),
-                true);
+                        tool("expenseLookup", "Look up related expenses for comparison")));
 
         List<TraceRecord> records = readRecords(session);
         assertThat(records).anyMatch(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED
@@ -148,12 +145,10 @@ class ExecutionTraceContractTest {
         planningService.initializePlan(
                 session,
                 "check invoice duplicates",
-                "duplicateInvoiceChecker",
-                EXECUTION_CONFIGURATION,
+                duplicateInvoiceDefinition(),
                 new SequencePlanningChatClient(weakPlanJson(), weakPlanJson()),
                 List.of(tool("invoiceParser", "Extract invoice fields from source documents"),
-                        tool("expenseLookup", "Look up related expenses for comparison")),
-                true);
+                        tool("expenseLookup", "Look up related expenses for comparison")));
 
         List<TraceRecord> records = readRecords(session);
         assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED)
@@ -190,6 +185,25 @@ class ExecutionTraceContractTest {
                 "root.visible.skill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of());
+    }
+
+    private static YamlSkillDefinition rootDefinition() {
+        return definition("root.visible.skill");
+    }
+
+    private static YamlSkillDefinition duplicateInvoiceDefinition() {
+        return definition("duplicateInvoiceChecker");
+    }
+
+    private static YamlSkillDefinition definition(String name) {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName(name);
+        manifest.setDescription(name);
+        manifest.setModel("gpt-5");
+        return new YamlSkillDefinition(
+                new org.springframework.core.io.ByteArrayResource(new byte[0]),
+                manifest,
+                EXECUTION_CONFIGURATION);
     }
 
     private static List<TraceRecord> modelRecords(BifrostSession session) {

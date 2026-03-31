@@ -18,11 +18,14 @@ import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.core.TraceRecord;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.runtime.SimpleChatClient;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageSnapshot;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
+import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -74,7 +77,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = plan("plan-1", PlanTaskStatus.PENDING);
 
         assertThat(session.getExecutionPlan()).isEmpty();
-        assertThat(planningService.initializePlan(session, "hello", "root.visible.skill", EXECUTION_CONFIGURATION, new SimpleChatClient(plan, "done"), List.<ToolCallback>of()))
+        assertThat(planningService.initializePlan(session, "hello", rootDefinition(), new SimpleChatClient(plan, "done"), List.<ToolCallback>of()))
                 .contains(plan);
         assertThat(session.getExecutionPlan()).contains(plan);
     }
@@ -91,7 +94,7 @@ class PlanningServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-usage", 3);
         ExecutionPlan plan = plan("plan-usage", PlanTaskStatus.PENDING);
 
-        assertThat(planningService.initializePlan(session, "hello", "root.visible.skill", EXECUTION_CONFIGURATION, new SimpleChatClient(plan, "done"), List.of()))
+        assertThat(planningService.initializePlan(session, "hello", rootDefinition(), new SimpleChatClient(plan, "done"), List.of()))
                 .contains(plan);
         assertThat(usageService.lastSkillName).isEqualTo("root.visible.skill");
         assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(1);
@@ -107,8 +110,7 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "parse invoice",
-                        "invoiceParser",
-                        EXECUTION_CONFIGURATION,
+                        rootDefinition("invoiceParser"),
                         new SimpleChatClient(null, YAML_PLAN_WITH_LLM_STATUSES),
                         List.<ToolCallback>of())
                 .orElseThrow();
@@ -117,93 +119,6 @@ class PlanningServiceTest {
         assertThat(plan.status()).isEqualTo(PlanStatus.VALID);
         assertThat(plan.findTask("67890")).isPresent();
         assertThat(plan.findTask("67890").orElseThrow().status()).isEqualTo(PlanTaskStatus.COMPLETED);
-    }
-
-    @Test
-    void rejectsPlanningResponseWithUnboundNonAutoCompletableTask() {
-        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
-        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
-        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid-unbound", 3);
-
-        ExecutionPlan invalidPlan = new ExecutionPlan(
-                "plan-invalid-unbound",
-                "root.visible.skill",
-                Instant.parse("2026-03-15T12:00:00Z"),
-                List.of(
-                        new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING,
-                                "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
-                        new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null)));
-
-        assertThatThrownBy(() -> planningService.initializePlan(
-                session,
-                "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
-                new SimpleChatClient(invalidPlan, "done"),
-                List.of(),
-                true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("violated the step-loop plan contract")
-                .hasMessageContaining("Missing: [task-2]");
-        assertThat(session.getExecutionPlan()).isEmpty();
-    }
-
-    @Test
-    void rejectsPlanningResponseWithAutoCompletableTask() {
-        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
-        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
-        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid-auto", 3);
-
-        ExecutionPlan invalidPlan = new ExecutionPlan(
-                "plan-invalid-auto",
-                "root.visible.skill",
-                Instant.parse("2026-03-15T12:00:00Z"),
-                List.of(new PlanTask("task-1", "Summarize", PlanTaskStatus.PENDING,
-                        null, "Summarize results", List.of(), List.of("summary"), true, null)));
-
-        assertThatThrownBy(() -> planningService.initializePlan(
-                session,
-                "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
-                new SimpleChatClient(invalidPlan, "done"),
-                List.of(),
-                true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("violated the step-loop plan contract")
-                .hasMessageContaining("autoCompletable tasks are not supported: [task-1]");
-        assertThat(session.getExecutionPlan()).isEmpty();
-    }
-
-    @Test
-    void rejectsPlanningResponseWithDuplicateTaskIds() {
-        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
-        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
-        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-invalid-duplicate-task-id", 3);
-
-        ExecutionPlan invalidPlan = new ExecutionPlan(
-                "plan-invalid-duplicate-task-id",
-                "root.visible.skill",
-                Instant.parse("2026-03-15T12:00:00Z"),
-                List.of(
-                        new PlanTask("task-1", "Use first tool", PlanTaskStatus.PENDING,
-                                "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
-                        new PlanTask("task-1", "Use second tool", PlanTaskStatus.PENDING,
-                                "allowed.visible.skill", "Use tool again", List.of(), List.of(), false, null)));
-
-        assertThatThrownBy(() -> planningService.initializePlan(
-                session,
-                "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
-                new SimpleChatClient(invalidPlan, "done"),
-                List.of(),
-                true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("violated the step-loop plan contract")
-                .hasMessageContaining("Task IDs must be unique")
-                .hasMessageContaining("task-1");
-        assertThat(session.getExecutionPlan()).isEmpty();
     }
 
     @Test
@@ -222,8 +137,7 @@ class PlanningServiceTest {
         assertThat(planningService.initializePlan(
                 session,
                 "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
+                rootDefinition(),
                 new SimpleChatClient(legacyPlan, "done"),
                 List.of()))
                 .isPresent();
@@ -239,8 +153,7 @@ class PlanningServiceTest {
         planningService.initializePlan(
                 session,
                 "hello",
-                "root.visible.skill",
-                EXECUTION_CONFIGURATION,
+                rootDefinition(),
                 new SimpleChatClient(plan("plan-trace", PlanTaskStatus.PENDING), "done"),
                 List.of());
 
@@ -298,7 +211,7 @@ class PlanningServiceTest {
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .containsExactly(JournalEntryType.PLAN_UPDATED);
 
-        ExecutionPlan completed = planningService.markToolCompleted(session, "task-1", capability.name(), "done").orElseThrow();
+        ExecutionPlan completed = planningService.markToolCompleted(session, "task-1", capability.name(), "done", EvidenceContract.empty()).orElseThrow();
         assertThat(completed.activeTaskId()).isNull();
         assertThat(completed.findTask("task-1").orElseThrow().status()).isEqualTo(PlanTaskStatus.COMPLETED);
 
@@ -377,7 +290,7 @@ class PlanningServiceTest {
                 List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.IN_PROGRESS,
                         "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
 
-        assertThatThrownBy(() -> planningService.markToolCompleted(session, "task-1", "different.visible.skill", "done"))
+        assertThatThrownBy(() -> planningService.markToolCompleted(session, "task-1", "different.visible.skill", "done", EvidenceContract.empty()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("task-1")
                 .hasMessageContaining("allowed.visible.skill")
@@ -420,7 +333,7 @@ class PlanningServiceTest {
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
 
-        assertThat(planningService.markToolCompleted(session, "missing-task", "allowed.visible.skill", "done")).isEmpty();
+        assertThat(planningService.markToolCompleted(session, "missing-task", "allowed.visible.skill", "done", EvidenceContract.empty())).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
     }
 
@@ -434,7 +347,7 @@ class PlanningServiceTest {
         ToolCallback tool1 = toolCallback("invoiceParser", "Extract invoice fields from source documents");
         ToolCallback tool2 = toolCallback("expenseLookup", "Look up prior expenses for a parsed invoice");
 
-        planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of(tool1, tool2));
+        planningService.initializePlan(session, "check invoice", rootDefinition("duplicateInvoiceChecker"), chatClient, List.of(tool1, tool2));
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("invoiceParser: Extract invoice fields from source documents");
@@ -458,8 +371,7 @@ class PlanningServiceTest {
         planningService.initializePlan(
                 session,
                 "check invoice",
-                "duplicateInvoiceChecker",
-                EXECUTION_CONFIGURATION,
+                rootDefinition("duplicateInvoiceChecker"),
                 chatClient,
                 List.of(tool));
 
@@ -482,11 +394,9 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "check invoice duplicates",
-                        "duplicateInvoiceChecker",
-                        EXECUTION_CONFIGURATION,
+                        rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
-                        List.of(invoiceParser, expenseLookup),
-                        true)
+                        List.of(invoiceParser, expenseLookup))
                 .orElseThrow();
 
         assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
@@ -518,11 +428,9 @@ class PlanningServiceTest {
         planningService.initializePlan(
                         session,
                         "check invoice duplicates",
-                        "duplicateInvoiceChecker",
-                        EXECUTION_CONFIGURATION,
+                        rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
-                        List.of(invoiceParser, expenseLookup),
-                        true)
+                        List.of(invoiceParser, expenseLookup))
                 .orElseThrow();
 
         assertThat(usageService.lastSkillName).isEqualTo("duplicateInvoiceChecker");
@@ -550,11 +458,9 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "check invoice duplicates",
-                        "duplicateInvoiceChecker",
-                        EXECUTION_CONFIGURATION,
+                        rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
-                        List.of(invoiceParser, expenseLookup),
-                        true)
+                        List.of(invoiceParser, expenseLookup))
                 .orElseThrow();
 
         assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
@@ -594,11 +500,9 @@ class PlanningServiceTest {
         ExecutionPlan plan = planningService.initializePlan(
                         session,
                         "extract invoice details",
-                        "duplicateInvoiceChecker",
-                        EXECUTION_CONFIGURATION,
+                        rootDefinition("duplicateInvoiceChecker"),
                         chatClient,
-                        List.of(invoiceParser, expenseLookup),
-                        true)
+                        List.of(invoiceParser, expenseLookup))
                 .orElseThrow();
 
         assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
@@ -645,7 +549,7 @@ class PlanningServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-no-tools", 3);
         SimpleChatClient chatClient = new SimpleChatClient(plan("plan-no-tools", PlanTaskStatus.PENDING), "done");
 
-        planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of());
+        planningService.initializePlan(session, "check invoice", rootDefinition("duplicateInvoiceChecker"), chatClient, List.of());
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("(none)");
@@ -658,10 +562,47 @@ class PlanningServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-cap-name", 3);
         SimpleChatClient chatClient = new SimpleChatClient(plan("plan-cap", PlanTaskStatus.PENDING), "done");
 
-        planningService.initializePlan(session, "check invoice", "duplicateInvoiceChecker", EXECUTION_CONFIGURATION, chatClient, List.of());
+        planningService.initializePlan(session, "check invoice", rootDefinition("duplicateInvoiceChecker"), chatClient, List.of());
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("\"capabilityName\": \"duplicateInvoiceChecker\"");
+    }
+
+    @Test
+    void rejectsContractBackedPlanWhenRequiredEvidenceRemainsUncoveredAfterRetries() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-evidence-fail", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(weakSingleToolPlanJson(), weakSingleToolPlanJson());
+
+        assertThatThrownBy(() -> planningService.initializePlan(
+                session,
+                "check duplicate invoice",
+                duplicateInvoiceDefinition(),
+                chatClient,
+                List.of(toolCallback("invoiceParser", "Extract invoice fields"), toolCallback("expenseLookup", "Look up matching expenses"))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Evidence coverage validation failed");
+        assertThat(session.getExecutionPlan()).isEmpty();
+    }
+
+    @Test
+    void acceptsContractBackedPlanWhenTaskBindingsCoverAllRequiredEvidence() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-evidence-pass", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(correctedMultiToolPlanJson());
+
+        ExecutionPlan plan = planningService.initializePlan(
+                        session,
+                        "check duplicate invoice",
+                        duplicateInvoiceDefinition(),
+                        chatClient,
+                        List.of(toolCallback("invoiceParser", "Extract invoice fields"), toolCallback("expenseLookup", "Look up matching expenses")))
+                .orElseThrow();
+
+        assertThat(plan.tasks()).extracting(PlanTask::capabilityName)
+                .contains("invoiceParser", "expenseLookup");
     }
 
     private static ToolCallback toolCallbackWithName(String name) {
@@ -832,6 +773,56 @@ class PlanningServiceTest {
                 CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic(name, "child"),
                 "targetBean#deterministicTarget");
+    }
+
+    private static YamlSkillDefinition duplicateInvoiceDefinition() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("duplicateInvoiceChecker");
+        manifest.setDescription("duplicateInvoiceChecker");
+        manifest.setModel("gpt-5");
+        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
+        schema.setType("object");
+        schema.setProperties(Map.of(
+                "vendorName", scalarSchema("string"),
+                "isDuplicate", scalarSchema("boolean")));
+        schema.setRequired(List.of("vendorName", "isDuplicate"));
+        schema.setAdditionalProperties(false);
+        manifest.setOutputSchema(schema);
+        manifest.setOutputSchemaMaxRetries(1);
+        YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
+        contract.setClaims(Map.of(
+                "vendorName", List.of("parsed_invoice"),
+                "isDuplicate", List.of("parsed_invoice", "expense_match_search")));
+        contract.setToolEvidence(Map.of(
+                "invoiceParser", List.of("parsed_invoice"),
+                "expenseLookup", List.of("expense_match_search")));
+        manifest.setEvidenceContract(contract);
+        return new YamlSkillDefinition(
+                new org.springframework.core.io.ByteArrayResource(new byte[0]),
+                manifest,
+                EXECUTION_CONFIGURATION,
+                EvidenceContract.fromManifest(contract, schema));
+    }
+
+    private static YamlSkillDefinition rootDefinition() {
+        return rootDefinition("root.visible.skill");
+    }
+
+    private static YamlSkillDefinition rootDefinition(String name) {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName(name);
+        manifest.setDescription(name);
+        manifest.setModel("gpt-5");
+        return new YamlSkillDefinition(
+                new org.springframework.core.io.ByteArrayResource(new byte[0]),
+                manifest,
+                EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillManifest.OutputSchemaManifest scalarSchema(String type) {
+        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
+        schema.setType(type);
+        return schema;
     }
 
     private static ExecutionPlan plan(String id, PlanTaskStatus status) {

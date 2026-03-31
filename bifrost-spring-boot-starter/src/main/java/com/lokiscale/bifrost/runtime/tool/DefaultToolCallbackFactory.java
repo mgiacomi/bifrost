@@ -7,12 +7,15 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.core.ToolTraceContext;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.NoOpUsageMetricsRecorder;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.UsageMetricsRecorder;
+import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
@@ -56,21 +59,24 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
 
     @Override
     public List<ToolCallback> createToolCallbacks(BifrostSession session,
+                                                  YamlSkillDefinition definition,
                                                   List<CapabilityMetadata> capabilities,
                                                   @Nullable Authentication authentication) {
         Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(definition, "definition must not be null");
         Objects.requireNonNull(capabilities, "capabilities must not be null");
         return capabilities.stream()
-                .map(capability -> toToolCallback(capability, session, authentication))
+                .map(capability -> toToolCallback(capability, session, definition, authentication))
                 .toList();
     }
 
     private ToolCallback toToolCallback(CapabilityMetadata capability,
                                         BifrostSession session,
+                                        YamlSkillDefinition definition,
                                         @Nullable Authentication authentication) {
         return FunctionToolCallback.<Map<String, Object>, Object>builder(
                         capability.tool().name(),
-                        (arguments, toolContext) -> invokeCapability(capability, arguments, session, authentication, toolContext))
+                        (arguments, toolContext) -> invokeCapability(capability, arguments, session, definition, authentication, toolContext))
                 .description(capability.tool().description())
                 .inputType(new ParameterizedTypeReference<Map<String, Object>>() {
                 })
@@ -81,6 +87,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
     private Object invokeCapability(CapabilityMetadata capability,
                                     Map<String, Object> arguments,
                                     BifrostSession session,
+                                    YamlSkillDefinition definition,
                                     @Nullable Authentication authentication,
                                     @Nullable ToolContext toolContext) {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
@@ -114,7 +121,9 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
             }
             Object result = capabilityExecutionRouter.execute(capability, safeArguments, session, authentication);
             if (linkedTaskId != null && boundTaskId == null) {
-                planningService.markToolCompleted(session, linkedTaskId, capability.name(), result);
+                planningService.markToolCompleted(session, linkedTaskId, capability.name(), result, definition.evidenceContract());
+            } else if (linkedTaskId == null) {
+                recordEvidenceIfProduced(session, definition.evidenceContract(), capability.name(), linkedTaskId, linkedTaskId == null);
             }
             usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "success");
             executionStateService.logToolResult(session, linkedTaskId == null
@@ -193,5 +202,20 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory {
         } catch (IllegalStateException ignored) {
             return session.getExecutionPlan().map(plan -> plan.capabilityName()).orElse("unknown");
         }
+    }
+
+    private void recordEvidenceIfProduced(BifrostSession session,
+                                          EvidenceContract evidenceContract,
+                                          String capabilityName,
+                                          @Nullable String linkedTaskId,
+                                          boolean unplanned) {
+        if (evidenceContract == null || evidenceContract.isEmpty()) {
+            return;
+        }
+        java.util.Set<String> evidenceTypes = evidenceContract.evidenceProducedByTool(capabilityName);
+        if (evidenceTypes.isEmpty()) {
+            return;
+        }
+        executionStateService.recordProducedEvidence(session, capabilityName, linkedTaskId, unplanned, evidenceTypes);
     }
 }

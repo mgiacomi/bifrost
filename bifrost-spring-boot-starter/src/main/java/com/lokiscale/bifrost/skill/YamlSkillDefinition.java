@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.skill;
 
 import org.springframework.core.io.Resource;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 
 import java.util.List;
 
@@ -10,7 +11,18 @@ import java.util.List;
 public record YamlSkillDefinition(
         Resource resource,
         YamlSkillManifest manifest,
-        EffectiveSkillExecutionConfiguration executionConfiguration) {
+        EffectiveSkillExecutionConfiguration executionConfiguration,
+        EvidenceContract evidenceContract) {
+
+    public YamlSkillDefinition {
+        evidenceContract = evidenceContract == null ? EvidenceContract.empty() : evidenceContract;
+    }
+
+    public YamlSkillDefinition(Resource resource,
+                               YamlSkillManifest manifest,
+                               EffectiveSkillExecutionConfiguration executionConfiguration) {
+        this(resource, manifest, executionConfiguration, EvidenceContract.empty());
+    }
 
     public List<String> allowedSkills() {
         return manifest.getAllowedSkills();

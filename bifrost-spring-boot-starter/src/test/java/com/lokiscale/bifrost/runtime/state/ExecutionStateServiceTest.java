@@ -105,6 +105,25 @@ class ExecutionStateServiceTest {
     }
 
     @Test
+    void restoresParentEvidenceAfterNestedMissionAndClearsWhenNoParentExists() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+
+        BifrostSession sessionWithParent = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-parent-evidence", 3);
+        stateService.recordProducedEvidence(sessionWithParent, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
+        EvidenceSnapshot snapshot = stateService.snapshotEvidence(sessionWithParent);
+        stateService.recordProducedEvidence(sessionWithParent, "expenseLookup", "task-2", false, List.of("expense_match_search"));
+        stateService.restoreEvidence(sessionWithParent, snapshot);
+
+        BifrostSession sessionWithoutParent = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-empty-evidence", 3);
+        EvidenceSnapshot emptySnapshot = stateService.snapshotEvidence(sessionWithoutParent);
+        stateService.recordProducedEvidence(sessionWithoutParent, "expenseLookup", "task-2", false, List.of("expense_match_search"));
+        stateService.restoreEvidence(sessionWithoutParent, emptySnapshot);
+
+        assertThat(sessionWithParent.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
+        assertThat(sessionWithoutParent.getProducedEvidenceTypes()).isEmpty();
+    }
+
+    @Test
     void rejectsClosingFrameOutOfOrder() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-frames", 3);
@@ -168,6 +187,22 @@ class ExecutionStateServiceTest {
         assertThat(toolStarted.frameId()).isEqualTo(frame.frameId());
         assertThat(toolStarted.recordType()).isEqualTo(TraceRecordType.TOOL_CALL_STARTED);
         assertThat(frameClosed.frameId()).isEqualTo(frame.frameId());
+    }
+
+    @Test
+    void recordsProducedEvidenceInLedgerAndTraceWithoutJournalEntries() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-evidence", 3);
+
+        ExecutionFrame rootFrame = stateService.openMissionFrame(session, "root.visible.skill", Map.of());
+        stateService.recordProducedEvidence(session, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
+        stateService.recordEvidenceValidation(session, false, Map.of("skillName", "root.visible.skill"), Map.of("claims", List.of("isDuplicate")));
+        stateService.closeMissionFrame(session, rootFrame);
+
+        assertThat(session.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
+        assertThat(session.getJournalSnapshot()).isEmpty();
+        assertThat(readRecords(session)).anyMatch(record -> record.recordType() == TraceRecordType.EVIDENCE_RECORDED);
+        assertThat(readRecords(session)).anyMatch(record -> record.recordType() == TraceRecordType.EVIDENCE_VALIDATION_FAILED);
     }
 
     @Test

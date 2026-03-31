@@ -17,6 +17,7 @@ import com.lokiscale.bifrost.core.TraceRecord;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import com.lokiscale.bifrost.outputschema.OutputSchemaOutcomeStatus;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
@@ -80,15 +81,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"), tool("expenseLookup", "{\"matches\":[]}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"), tool("expenseLookup", "{\"matches\":[]}")));
 
             assertThat(response).isEqualTo("Mission complete");
         }
@@ -121,15 +119,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("Finished");
         }
@@ -160,15 +155,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("Finished");
         }
@@ -193,15 +185,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(failingTool("invoiceParser")),
-                    true,
-                    null))
+                    List.of(failingTool("invoiceParser"))))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("tool 'invoiceParser' failed")
                     .hasMessageNotContaining("deadlock");
@@ -235,15 +224,12 @@ class StepLoopMissionExecutionEngineTest {
                     missionExecutor,
                     definitionWithOutputSchema());
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definitionWithOutputSchema(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("{\"result\":\"Finished\"}");
         }
@@ -252,6 +238,45 @@ class StepLoopMissionExecutionEngineTest {
         assertThat(session.getLastOutputSchemaOutcome().orElseThrow().status()).isEqualTo(OutputSchemaOutcomeStatus.PASSED);
         assertThat(chatClient.systemMessagesSeen()).hasSize(2);
         assertThat(chatClient.systemMessagesSeen().get(1)).contains("Final response violates output_schema");
+    }
+
+    @Test
+    void evidenceRetriesDoNotConsumeOutputSchemaRetryBudget() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        ExecutionPlan plan = singleTaskPlan().updateTask("t-1", task -> task.complete("parsed"));
+        PlanningService planningService = new InitializingPlanningService(stateService, plan);
+        SequenceChatClient chatClient = new SequenceChatClient(
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":{"result":"Finished","reasoning":"unsupported"}}
+                """,
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":{"result":"Finished"}}
+                """);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-evidence", 3);
+        session.addProducedEvidenceTypes(java.util.Set.of("parsed_invoice"));
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            StepLoopMissionExecutionEngine engine = engine(
+                    stateService,
+                    planningService,
+                    missionExecutor,
+                    definitionWithOutputSchemaAndEvidenceContract());
+
+            String response = executeMission(
+                    engine,
+                    session,
+                    definitionWithOutputSchemaAndEvidenceContract(),
+                    chatClient,
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
+
+            assertThat(response).isEqualTo("{\"result\":\"Finished\"}");
+        }
+
+        assertThat(session.getLastOutputSchemaOutcome()).isPresent();
+        assertThat(session.getLastOutputSchemaOutcome().orElseThrow().attempt()).isEqualTo(1);
+        assertThat(session.getLastOutputSchemaOutcome().orElseThrow().status()).isEqualTo(OutputSchemaOutcomeStatus.PASSED);
+        assertThat(chatClient.systemMessagesSeen()).hasSize(2);
+        assertThat(chatClient.systemMessagesSeen().get(1)).contains("unsupported by gathered evidence");
     }
 
     @Test
@@ -274,15 +299,12 @@ class StepLoopMissionExecutionEngineTest {
                     missionExecutor,
                     definitionWithOutputSchema());
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definitionWithOutputSchema(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("{\"result\":\"Finished\"}");
         }
@@ -308,15 +330,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("Finished");
         }
@@ -350,11 +369,10 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
                     List.of(toolWithSchema("invoiceParser", """
                             {
@@ -365,9 +383,7 @@ class StepLoopMissionExecutionEngineTest {
                               "required": ["rawText"],
                               "additionalProperties": false
                             }
-                            """, "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                            """, "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("Finished");
         }
@@ -399,15 +415,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "duplicateInvoiceChecker",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition("duplicateInvoiceChecker"),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"), tool("expenseLookup", "{\"matches\":[]}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"), tool("expenseLookup", "{\"matches\":[]}")));
 
             assertThat(response).isEqualTo("Finished");
         }
@@ -449,15 +462,12 @@ class StepLoopMissionExecutionEngineTest {
                     missionExecutor,
                     definitionWithRegexLinter());
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definitionWithRegexLinter(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("APPROVED: Finished");
         }
@@ -492,15 +502,12 @@ class StepLoopMissionExecutionEngineTest {
                     missionExecutor,
                     definitionWithRegexLinter(2));
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definitionWithRegexLinter(2),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null);
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
             assertThat(response).isEqualTo("APPROVED: Finished");
         }
@@ -529,15 +536,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(),
-                    true,
-                    null))
+                    List.of()))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("autoCompletable");
         }
@@ -565,15 +569,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("expenseLookup", "{\"matches\":[]}")),
-                    true,
-                    null))
+                    List.of(tool("expenseLookup", "{\"matches\":[]}"))))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Missing task dependencies")
                     .hasMessageContaining("t-2->missing-task");
@@ -604,15 +605,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null))
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"))))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Task IDs must be unique")
                     .hasMessageContaining("t-1");
@@ -639,15 +637,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null))
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"))))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Step action validation exhausted");
         }
@@ -688,15 +683,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            String response = engine.executeMission(
+            String response = executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(realWrappedTool),
-                    true,
-                    null);
+                    List.of(realWrappedTool));
 
             assertThat(response).isEqualTo("Mission complete");
         }
@@ -731,15 +723,12 @@ class StepLoopMissionExecutionEngineTest {
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    definition(),
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null))
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"))))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Tasks missing capability bindings")
                     .hasMessageContaining("t-1");
@@ -769,15 +758,12 @@ class StepLoopMissionExecutionEngineTest {
                     missionExecutor,
                     invalidDefinition);
 
-            assertThatThrownBy(() -> engine.executeMission(
+            assertThatThrownBy(() -> executeMission(
+                    engine,
                     session,
-                    "root.visible.skill",
-                    "Check duplicate invoices",
-                    EXECUTION_CONFIGURATION,
+                    invalidDefinition,
                     chatClient,
-                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")),
-                    true,
-                    null))
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}"))))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("max_steps > 0")
                     .hasMessageContaining("was 0");
@@ -788,6 +774,21 @@ class StepLoopMissionExecutionEngineTest {
                                                          PlanningService planningService,
                                                          ExecutorService missionExecutor) {
         return engine(stateService, planningService, missionExecutor, definition());
+    }
+
+    private static String executeMission(StepLoopMissionExecutionEngine engine,
+                                         BifrostSession session,
+                                         YamlSkillDefinition definition,
+                                         ChatClient chatClient,
+                                         List<ToolCallback> visibleTools) {
+        return engine.executeMission(
+                session,
+                definition,
+                "Check duplicate invoices",
+                chatClient,
+                visibleTools,
+                true,
+                null);
     }
 
     private static StepLoopMissionExecutionEngine engine(DefaultExecutionStateService stateService,
@@ -806,9 +807,13 @@ class StepLoopMissionExecutionEngineTest {
     }
 
     private static YamlSkillDefinition definition() {
+        return definition("root.visible.skill");
+    }
+
+    private static YamlSkillDefinition definition(String name) {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName(name);
+        manifest.setDescription(name);
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
@@ -830,6 +835,40 @@ class StepLoopMissionExecutionEngineTest {
         schema.setRequired(List.of("result"));
         manifest.setOutputSchema(schema);
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillDefinition definitionWithOutputSchemaAndEvidenceContract() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("root.visible.skill");
+        manifest.setModel("gpt-5");
+        manifest.setPlanningMode(true);
+        manifest.setOutputSchemaMaxRetries(1);
+        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
+        schema.setType("object");
+        schema.setAdditionalProperties(false);
+        YamlSkillManifest.OutputSchemaManifest resultField = new YamlSkillManifest.OutputSchemaManifest();
+        resultField.setType("string");
+        YamlSkillManifest.OutputSchemaManifest reasoningField = new YamlSkillManifest.OutputSchemaManifest();
+        reasoningField.setType("string");
+        schema.setProperties(Map.of(
+                "result", resultField,
+                "reasoning", reasoningField));
+        schema.setRequired(List.of("result"));
+        manifest.setOutputSchema(schema);
+        YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
+        contract.setClaims(Map.of(
+                "result", List.of("parsed_invoice"),
+                "reasoning", List.of("expense_match_search")));
+        contract.setToolEvidence(Map.of(
+                "invoiceParser", List.of("parsed_invoice"),
+                "expenseLookup", List.of("expense_match_search")));
+        manifest.setEvidenceContract(contract);
+        return new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                manifest,
+                EXECUTION_CONFIGURATION,
+                EvidenceContract.fromManifest(contract, schema));
     }
 
     private static YamlSkillDefinition definitionWithRegexLinter() {
@@ -928,7 +967,7 @@ class StepLoopMissionExecutionEngineTest {
             return Map.of("invoice", arguments.get("rawText"));
         });
         DefaultToolCallbackFactory factory = new DefaultToolCallbackFactory(router, planningService, stateService);
-        return factory.createToolCallbacks(session, List.of(capability), null).getFirst();
+        return factory.createToolCallbacks(session, definition(), List.of(capability), null).getFirst();
     }
 
     private static List<TraceRecord> readRecords(BifrostSession session) {
@@ -952,8 +991,7 @@ class StepLoopMissionExecutionEngineTest {
         @Override
         public Optional<ExecutionPlan> initializePlan(BifrostSession session,
                                                       String objective,
-                                                      String capabilityName,
-                                                      EffectiveSkillExecutionConfiguration executionConfiguration,
+                                                      YamlSkillDefinition definition,
                                                       ChatClient chatClient,
                                                       List<ToolCallback> visibleTools) {
             stateService.storePlan(session, initialPlan);
@@ -980,8 +1018,9 @@ class StepLoopMissionExecutionEngineTest {
         public Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                          String taskId,
                                                          String capabilityName,
-                                                         Object result) {
-            return delegate.markToolCompleted(session, taskId, capabilityName, result);
+                                                         Object result,
+                                                         EvidenceContract evidenceContract) {
+            return delegate.markToolCompleted(session, taskId, capabilityName, result, evidenceContract);
         }
 
         @Override
