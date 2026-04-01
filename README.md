@@ -1,6 +1,6 @@
 # Bifrost
 
-A Spring Boot–based, agentic AI framework that uses LLM‑driven skills within a Hierarchical Task Network (HTN) architecture.
+A Java Spring Boot–based, agentic AI framework that uses LLM‑driven skills within a Hierarchical Task Network (HTN) architecture.
 
 Bifrost while still an HTN is fundamentally different from traditional HTNs. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows. 
 
@@ -43,7 +43,38 @@ Add the starter to your application:
 Configure skill locations and at least one model in `application.yml`:
 
 ```yaml
+spring:
+  application:
+    name: bifrost-sample
+  ai:
+    taalas:
+      enabled: true
+      api-key: ${TAALAS_API_KEY:sample-taalas-api-key}
+      base-url: ${TAALAS_BASE_URL:https://api.taalas.com}
+      model: ${TAALAS_MODEL:llama3.1-8B}
+    ollama:
+      enabled: true
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: ibm/granite4:tiny-h
+          temperature: 0.7
+
+server:
+  port: 8081
+
+logging:
+  level:
+    com.lokiscale.bifrost.sample: INFO
+    com.lokiscale.bifrost.chat: DEBUG
+    com.lokiscale.bifrost.linter: DEBUG
+    com.lokiscale.bifrost.outputschema: DEBUG
+    com.lokiscale.bifrost.runtime.planning: DEBUG
+    org.springframework.ai.chat.client: DEBUG
+
 bifrost:
+  session:
+    mission-timeout: 6000s
   skills:
     locations:
       - classpath:/skills/**/*.yml
@@ -51,7 +82,13 @@ bifrost:
   models:
     default-model:
       provider: taalas
-      provider-model: llama3.1-8B
+      provider-model: ${TAALAS_MODEL:llama3.1-8B}
+    granite4-tiny:
+      provider: ollama
+      provider-model: ibm/granite4:tiny-h
+
+execution-trace:
+  persistence: ALWAYS
 ```
 
 ## Defining Skills
@@ -61,9 +98,47 @@ bifrost:
 YAML skills define a skill name, description, and execution settings.
 
 ```yaml
-name: invoiceParser
-description: Parse an invoice payload.
-model: default-model
+name: duplicateInvoiceChecker
+description: >
+  Checks whether a given invoice already exists in the expense system.
+  First, parses the raw invoice text to extract vendor, amount, and date.
+  Then, retrieves existing expenses and compares them to determine
+  if the invoice is a duplicate.
+model: granite4-tiny
+planning_mode: true
+max_steps: 10
+allowed_skills: [invoiceParser, expenseLookup]
+evidence_contract:
+  claims:
+    vendorName: [parsed_invoice]
+    invoiceDate: [parsed_invoice]
+    totalAmount: [parsed_invoice]
+    isDuplicate: [parsed_invoice, expense_match_search]
+    reasoning: [parsed_invoice, expense_match_search]
+  tool_evidence:
+    invoiceParser: [parsed_invoice]
+    expenseLookup: [expense_match_search]
+output_schema:
+  type: object
+  properties:
+    isDuplicate:
+      type: boolean
+      description: True if a matching expense was found in the system
+    vendorName:
+      type: string
+      description: Vendor name extracted from the invoice
+    totalAmount:
+      type: number
+      description: Total amount extracted from the invoice
+    invoiceDate:
+      type: string
+      description: Invoice date in ISO-8601 format (YYYY-MM-DD)
+    reasoning:
+      type: string
+      description: Brief explanation of why the invoice was or was not considered a duplicate
+  required: [isDuplicate, vendorName, totalAmount, invoiceDate, reasoning]
+  additionalProperties: false
+output_schema_max_retries: 2
 ```
 
 ### Java `@SkillMethod` skills
