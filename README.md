@@ -2,7 +2,7 @@
 
 A Spring Boot–based, agentic AI framework that uses LLM‑driven skills within a Hierarchical Task Network (HTN) architecture.
 
-Bifrost is a Spring Boot–based agentic AI framework that uses a skill‑driven Hierarchical Task Network (HTN) architecture. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows.
+Bifrost while still an HTN is fundamentally different from traditional HTNs. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows. 
 
 At its core, Bifrost treats skills as the fundamental building blocks of capability. Each skill is defined in natural language and executed by an LLM, which can decide—based on context, data, and the mission—whether to call other skills, chain them, or complete the task directly. This creates a flexible, adaptive planning system that feels closer to human reasoning than traditional symbolic planners.
 
