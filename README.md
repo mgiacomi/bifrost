@@ -1,13 +1,32 @@
 # Bifrost
 
-Bifrost is a Spring Boot-first AI skill orchestration framework for Java applications. It supports YAML-defined skills and `@SkillMethod`-backed deterministic skills.
+A Spring Boot–based, agentic AI framework that uses LLM‑driven skills within a Hierarchical Task Network (HTN) architecture.
+
+Bifrost is a Spring Boot–based agentic AI framework that uses a skill‑driven Hierarchical Task Network (HTN) architecture. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows.
+
+At its core, Bifrost treats skills as the fundamental building blocks of capability. Each skill is defined in natural language and executed by an LLM, which can decide—based on context, data, and the mission—whether to call other skills, chain them, or complete the task directly. This creates a flexible, adaptive planning system that feels closer to human reasoning than traditional symbolic planners.
+
+
+## Why Bifrost?
+Most HTN planners (like JSHOP2 or PANDA) rely on static, hand‑coded methods. They’re powerful, but brittle. Bifrost takes a different approach:
+- LLM‑driven decomposition
+The agent decides how to break down a mission in real time.
+- Skill‑based execution
+Each skill is a modular, reusable capability that can call others.
+- Natural‑language domain modeling
+No DSLs or planning languages — skills are written in plain English.
+- Spring Boot foundation
+Easy integration, dependency injection, configuration, and deployment.
+The result is a hybrid system that combines the structure of HTNs with the adaptability of modern LLMs.
+
 
 ## Project Structure
 
-Bifrost currently contains two modules:
+Bifrost currently contains three modules:
 
 - `bifrost-spring-boot-starter`: the core starter.
 - `bifrost-sample`: a sample Spring Boot application.
+- `bifrost-cli`: a command line tool to debug and test Bifrost.
 
 ## Getting Started
 
