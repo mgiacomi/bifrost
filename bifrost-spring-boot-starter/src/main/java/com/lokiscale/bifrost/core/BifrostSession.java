@@ -15,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
@@ -29,8 +30,8 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-public final class BifrostSession {
-
+public final class BifrostSession
+{
     private static final Clock DEFAULT_CLOCK = Clock.systemUTC();
 
     private final String sessionId;
@@ -55,34 +56,40 @@ public final class BifrostSession {
     @JsonIgnore
     private Authentication authentication;
 
-    public BifrostSession(int maxDepth) {
+    public BifrostSession(int maxDepth)
+    {
         this(UUID.randomUUID().toString(), maxDepth);
     }
 
-    BifrostSession(String sessionId, int maxDepth) {
+    BifrostSession(String sessionId, int maxDepth)
+    {
         this(sessionId, maxDepth, List.of(), null, null, null, null, null, TracePersistencePolicy.ONERROR, DEFAULT_CLOCK);
     }
 
-    public BifrostSession(int maxDepth, @Nullable Authentication authentication) {
+    public BifrostSession(int maxDepth, @Nullable Authentication authentication)
+    {
         this(UUID.randomUUID().toString(), maxDepth, List.of(), null, null, null, null, authentication, TracePersistencePolicy.ONERROR, DEFAULT_CLOCK);
     }
 
-    BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication) {
+    BifrostSession(String sessionId, int maxDepth, @Nullable Authentication authentication)
+    {
         this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, TracePersistencePolicy.ONERROR, DEFAULT_CLOCK);
     }
 
     BifrostSession(String sessionId,
-                   int maxDepth,
-                   @Nullable Authentication authentication,
-                   TracePersistencePolicy persistencePolicy) {
+            int maxDepth,
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy)
+    {
         this(sessionId, maxDepth, authentication, persistencePolicy, DEFAULT_CLOCK);
     }
 
     BifrostSession(String sessionId,
-                   int maxDepth,
-                   @Nullable Authentication authentication,
-                   TracePersistencePolicy persistencePolicy,
-                   Clock clock) {
+            int maxDepth,
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock)
+    {
         this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, persistencePolicy, clock);
     }
 
@@ -96,11 +103,14 @@ public final class BifrostSession {
             @Nullable SessionUsageSnapshot sessionUsage,
             @Nullable Authentication authentication,
             TracePersistencePolicy persistencePolicy,
-            Clock clock) {
+            Clock clock)
+    {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
-        if (maxDepth <= 0) {
+        if (maxDepth <= 0)
+        {
             throw new IllegalArgumentException("maxDepth must be greater than zero");
         }
+
         this.maxDepth = maxDepth;
         this.lock = new ReentrantLock();
         this.frames = new ArrayDeque<>(frames == null ? List.of() : List.copyOf(frames));
@@ -117,467 +127,653 @@ public final class BifrostSession {
         this.authentication = authentication;
     }
 
-    public String getSessionId() {
+    public String getSessionId()
+    {
         return sessionId;
     }
 
-    public int getMaxDepth() {
+    public int getMaxDepth()
+    {
         return maxDepth;
     }
 
-    public Optional<ExecutionPlan> getExecutionPlan() {
+    public Optional<ExecutionPlan> getExecutionPlan()
+    {
         lock.lock();
-        try {
+        try
+        {
             return Optional.ofNullable(executionPlan);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void replaceExecutionPlan(ExecutionPlan plan) {
+    public void replaceExecutionPlan(ExecutionPlan plan)
+    {
         lock.lock();
-        try {
+        try
+        {
             executionPlan = Objects.requireNonNull(plan, "plan must not be null");
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void clearExecutionPlan() {
+    public void clearExecutionPlan()
+    {
         lock.lock();
-        try {
+        try
+        {
             executionPlan = null;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public Optional<ExecutionPlan> updateExecutionPlan(UnaryOperator<ExecutionPlan> updater) {
+    public Optional<ExecutionPlan> updateExecutionPlan(UnaryOperator<ExecutionPlan> updater)
+    {
         Objects.requireNonNull(updater, "updater must not be null");
         lock.lock();
-        try {
-            if (executionPlan == null) {
+        try
+        {
+            if (executionPlan == null)
+            {
                 return Optional.empty();
             }
             executionPlan = Objects.requireNonNull(updater.apply(executionPlan), "updated plan must not be null");
             return Optional.of(executionPlan);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public Optional<Authentication> getAuthentication() {
+    public Optional<Authentication> getAuthentication()
+    {
         lock.lock();
-        try {
+        try
+        {
             return Optional.ofNullable(authentication);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public Optional<LinterOutcome> getLastLinterOutcome() {
+    public Optional<LinterOutcome> getLastLinterOutcome()
+    {
         lock.lock();
-        try {
+        try
+        {
             return Optional.ofNullable(lastLinterOutcome);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void setLastLinterOutcome(@Nullable LinterOutcome lastLinterOutcome) {
+    public void setLastLinterOutcome(@Nullable LinterOutcome lastLinterOutcome)
+    {
         lock.lock();
-        try {
+        try
+        {
             this.lastLinterOutcome = lastLinterOutcome;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public Optional<OutputSchemaOutcome> getLastOutputSchemaOutcome() {
+    public Optional<OutputSchemaOutcome> getLastOutputSchemaOutcome()
+    {
         lock.lock();
-        try {
+        try
+        {
             return Optional.ofNullable(lastOutputSchemaOutcome);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void setLastOutputSchemaOutcome(@Nullable OutputSchemaOutcome lastOutputSchemaOutcome) {
+    public void setLastOutputSchemaOutcome(@Nullable OutputSchemaOutcome lastOutputSchemaOutcome)
+    {
         lock.lock();
-        try {
+        try
+        {
             this.lastOutputSchemaOutcome = lastOutputSchemaOutcome;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void setAuthentication(@Nullable Authentication authentication) {
+    public void setAuthentication(@Nullable Authentication authentication)
+    {
         lock.lock();
-        try {
+        try
+        {
             this.authentication = authentication;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void pushFrame(ExecutionFrame frame) {
+    public void pushFrame(ExecutionFrame frame)
+    {
         Objects.requireNonNull(frame, "frame must not be null");
         lock.lock();
-        try {
-            if (countsTowardMaxDepth(frame) && currentMaxDepthUsage() >= maxDepth) {
+        try
+        {
+            if (countsTowardMaxDepth(frame) && currentMaxDepthUsage() >= maxDepth)
+            {
                 throw new BifrostStackOverflowException(sessionId, maxDepth, frame.route());
             }
             frames.push(frame);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public ExecutionFrame popFrame() {
+    public ExecutionFrame popFrame()
+    {
         lock.lock();
-        try {
-            if (frames.isEmpty()) {
+        try
+        {
+            if (frames.isEmpty())
+            {
                 throw new IllegalStateException("Cannot pop execution frame from an empty session stack.");
             }
             ExecutionFrame frame = frames.pop();
             toolActivityCountByFrameId.remove(frame.frameId());
             return frame;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public ExecutionFrame peekFrame() {
+    public ExecutionFrame peekFrame()
+    {
         lock.lock();
-        try {
-            if (frames.isEmpty()) {
+        try
+        {
+            if (frames.isEmpty())
+            {
                 throw new IllegalStateException("Cannot peek execution frame from an empty session stack.");
             }
             return frames.peek();
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonProperty("frames")
-    public List<ExecutionFrame> getFramesSnapshot() {
+    public List<ExecutionFrame> getFramesSnapshot()
+    {
         lock.lock();
-        try {
+        try
+        {
             return List.copyOf(frames);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonIgnore
-    public List<JournalEntry> getJournalSnapshot() {
+    public List<JournalEntry> getJournalSnapshot()
+    {
         return getExecutionJournal().getEntriesSnapshot();
     }
 
     @JsonProperty("executionTrace")
-    public ExecutionTrace getExecutionTrace() {
+    public ExecutionTrace getExecutionTrace()
+    {
         lock.lock();
-        try {
+        try
+        {
             return requireExecutionTraceHandle().snapshot();
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonIgnore
-    public ExecutionJournal getExecutionJournal() {
+    public ExecutionJournal getExecutionJournal()
+    {
         lock.lock();
-        try {
-            if (finalizedExecutionJournal != null) {
+        try
+        {
+            if (finalizedExecutionJournal != null)
+            {
                 return finalizedExecutionJournal;
             }
             return journalProjector.project(requireExecutionTraceHandle());
-        } catch (IOException ex) {
+        }
+        catch (IOException ex)
+        {
             throw new IllegalStateException("Failed to project execution journal for session '" + sessionId + "'", ex);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonProperty("executionJournal")
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public ExecutionJournal getSerializedExecutionJournal() {
+    public ExecutionJournal getSerializedExecutionJournal()
+    {
         lock.lock();
-        try {
+        try
+        {
             return finalizedExecutionJournal != null ? finalizedExecutionJournal : getExecutionJournal();
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonProperty("executionPlan")
-    public ExecutionPlan getExecutionPlanSnapshot() {
+    public ExecutionPlan getExecutionPlanSnapshot()
+    {
         lock.lock();
-        try {
+        try
+        {
             return executionPlan;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonProperty("lastLinterOutcome")
-    public LinterOutcome getLastLinterOutcomeSnapshot() {
+    public LinterOutcome getLastLinterOutcomeSnapshot()
+    {
         lock.lock();
-        try {
+        try
+        {
             return lastLinterOutcome;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonProperty("lastOutputSchemaOutcome")
-    public OutputSchemaOutcome getLastOutputSchemaOutcomeSnapshot() {
+    public OutputSchemaOutcome getLastOutputSchemaOutcomeSnapshot()
+    {
         lock.lock();
-        try {
+        try
+        {
             return lastOutputSchemaOutcome;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public Optional<SessionUsageSnapshot> getSessionUsage() {
+    public Optional<SessionUsageSnapshot> getSessionUsage()
+    {
         lock.lock();
-        try {
+        try
+        {
             return Optional.ofNullable(sessionUsage);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void setSessionUsage(@Nullable SessionUsageSnapshot sessionUsage) {
+    public void setSessionUsage(@Nullable SessionUsageSnapshot sessionUsage)
+    {
         lock.lock();
-        try {
+        try
+        {
             this.sessionUsage = sessionUsage;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public Optional<SessionUsageSnapshot> updateSessionUsage(UnaryOperator<SessionUsageSnapshot> updater) {
+    public Optional<SessionUsageSnapshot> updateSessionUsage(UnaryOperator<SessionUsageSnapshot> updater)
+    {
         Objects.requireNonNull(updater, "updater must not be null");
         lock.lock();
-        try {
-            if (sessionUsage == null) {
+        try
+        {
+            if (sessionUsage == null)
+            {
                 return Optional.empty();
             }
             sessionUsage = Objects.requireNonNull(updater.apply(sessionUsage), "updated session usage must not be null");
             return Optional.of(sessionUsage);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
     @JsonProperty("sessionUsage")
-    public SessionUsageSnapshot getSessionUsageSnapshot() {
+    public SessionUsageSnapshot getSessionUsageSnapshot()
+    {
         lock.lock();
-        try {
+        try
+        {
             return sessionUsage;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public static BifrostSession getCurrentSession() {
+    public static BifrostSession getCurrentSession()
+    {
         return BifrostSessionHolder.requireCurrentSession();
     }
 
-    public Set<String> getProducedEvidenceTypes() {
+    public Set<String> getProducedEvidenceTypes()
+    {
         lock.lock();
-        try {
+        try
+        {
             return Set.copyOf(producedEvidenceTypes);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void addProducedEvidenceTypes(java.util.Collection<String> evidenceTypes) {
+    public void addProducedEvidenceTypes(Collection<String> evidenceTypes)
+    {
         Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
         lock.lock();
-        try {
-            if (producedEvidenceTypes == null) {
+        try
+        {
+            if (producedEvidenceTypes == null)
+            {
                 producedEvidenceTypes = new LinkedHashSet<>();
             }
             producedEvidenceTypes.addAll(evidenceTypes);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void clearProducedEvidenceTypes() {
+    public void clearProducedEvidenceTypes()
+    {
         lock.lock();
-        try {
-            if (producedEvidenceTypes == null) {
+        try
+        {
+            if (producedEvidenceTypes == null)
+            {
                 producedEvidenceTypes = new LinkedHashSet<>();
                 return;
             }
             producedEvidenceTypes.clear();
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void replaceProducedEvidenceTypes(java.util.Collection<String> evidenceTypes) {
+    public void replaceProducedEvidenceTypes(Collection<String> evidenceTypes)
+    {
         Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
         lock.lock();
-        try {
+        try
+        {
             producedEvidenceTypes = new LinkedHashSet<>(evidenceTypes);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void markToolActivityForCurrentFrame() {
+    public void markToolActivityForCurrentFrame()
+    {
         lock.lock();
-        try {
-            if (frames.isEmpty()) {
+        try
+        {
+            if (frames.isEmpty())
+            {
                 return;
             }
             toolActivityCountByFrameId.merge(frames.peek().frameId(), 1, Integer::sum);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public int consumeToolActivityCountForCurrentFrame() {
+    public int consumeToolActivityCountForCurrentFrame()
+    {
         lock.lock();
-        try {
-            if (frames.isEmpty()) {
+        try
+        {
+            if (frames.isEmpty())
+            {
                 return 0;
             }
             Integer count = toolActivityCountByFrameId.remove(frames.peek().frameId());
             return count == null ? 0 : count;
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void markTraceErrored() {
+    public void markTraceErrored()
+    {
         lock.lock();
-        try {
+        try
+        {
             requireExecutionTraceHandle().markErrored();
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void finalizeTrace(Map<String, Object> metadata) {
+    public void finalizeTrace(Map<String, Object> metadata)
+    {
         lock.lock();
         ExecutionJournal projectedJournal = null;
         IOException projectionFailure = null;
         IOException finalizationFailure = null;
-        try {
+
+        try
+        {
             ExecutionTraceHandle handle = requireExecutionTraceHandle();
-            if (handle.snapshot().completed() && finalizedExecutionJournal != null) {
+            if (handle.snapshot().completed() && finalizedExecutionJournal != null)
+            {
                 return;
             }
-            try {
+            try
+            {
                 projectedJournal = journalProjector.project(handle);
             }
-            catch (IOException ex) {
+            catch (IOException ex)
+            {
                 projectionFailure = ex;
             }
-            try {
+            try
+            {
                 handle.finalizeTrace(metadata == null ? Map.of() : Map.copyOf(metadata));
             }
-            catch (IOException ex) {
+            catch (IOException ex)
+            {
                 finalizationFailure = ex;
             }
-            if (finalizationFailure == null && projectionFailure == null && projectedJournal != null) {
+            if (finalizationFailure == null && projectionFailure == null && projectedJournal != null)
+            {
                 finalizedExecutionJournal = projectedJournal;
             }
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
-        if (finalizationFailure != null) {
-            if (projectionFailure != null) {
+        if (finalizationFailure != null)
+        {
+            if (projectionFailure != null)
+            {
                 finalizationFailure.addSuppressed(projectionFailure);
             }
             throw new IllegalStateException("Failed to finalize execution trace for session '" + sessionId + "'", finalizationFailure);
         }
-        if (projectionFailure != null) {
+        if (projectionFailure != null)
+        {
             throw new IllegalStateException("Failed to finalize execution trace for session '" + sessionId + "'", projectionFailure);
         }
     }
 
-    public void readTraceRecords(Consumer<TraceRecord> consumer) {
+    public void readTraceRecords(Consumer<TraceRecord> consumer)
+    {
         Objects.requireNonNull(consumer, "consumer must not be null");
         lock.lock();
-        try {
+        try
+        {
             requireExecutionTraceHandle().readRecords(consumer);
-        } catch (IOException ex) {
+        }
+        catch (IOException ex)
+        {
             throw new IllegalStateException("Failed to read execution trace for session '" + sessionId + "'", ex);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public void appendTraceRecord(TraceRecordType type, Map<String, Object> metadata, Object payload) {
+    public void appendTraceRecord(TraceRecordType type, Map<String, Object> metadata, Object payload)
+    {
         appendTrace(type, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
     }
 
-    public void appendTraceRecord(TraceRecordType type, ExecutionFrame frame, Map<String, Object> metadata, Object payload) {
+    public void appendTraceRecord(TraceRecordType type, ExecutionFrame frame, Map<String, Object> metadata, Object payload)
+    {
         Objects.requireNonNull(frame, "frame must not be null");
         lock.lock();
-        try {
+
+        try
+        {
             ExecutionTraceHandle handle = requireExecutionTraceHandle();
             handle.append(type, frame, frame.traceFrameType(), metadata == null ? Map.of() : Map.copyOf(metadata), payload);
-        } catch (IOException ex) {
+        }
+        catch (IOException ex)
+        {
             throw new IllegalStateException("Failed to append execution trace record for session '" + sessionId + "'", ex);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    private void appendTrace(TraceRecordType type, Map<String, Object> metadata, Object payload) {
+    private void appendTrace(TraceRecordType type, Map<String, Object> metadata, Object payload)
+    {
         lock.lock();
-        try {
+        try
+        {
             ExecutionTraceHandle handle = requireExecutionTraceHandle();
             ExecutionFrame activeFrame = frames.peek();
             TraceFrameType frameType = activeFrame == null ? null : activeFrame.traceFrameType();
-            if (activeFrame == null) {
+            if (activeFrame == null)
+            {
                 handle.append(type, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
-            } else {
+            }
+            else
+            {
                 handle.append(type, activeFrame, frameType, metadata == null ? Map.of() : Map.copyOf(metadata), payload);
             }
-        } catch (IOException ex) {
+        }
+        catch (IOException ex)
+        {
             throw new IllegalStateException("Failed to append execution trace record for session '" + sessionId + "'", ex);
-        } finally {
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
     }
 
-    private int currentMaxDepthUsage() {
+    private int currentMaxDepthUsage()
+    {
         int depth = 0;
-        for (ExecutionFrame frame : frames) {
-            if (countsTowardMaxDepth(frame)) {
+        for (ExecutionFrame frame : frames)
+        {
+            if (countsTowardMaxDepth(frame))
+            {
                 depth++;
             }
         }
         return depth;
     }
 
-    private static boolean countsTowardMaxDepth(ExecutionFrame frame) {
-        return frame != null && switch (frame.traceFrameType()) {
+    private static boolean countsTowardMaxDepth(ExecutionFrame frame)
+    {
+        return frame != null && switch (frame.traceFrameType())
+        {
             case MODEL_CALL, PLANNING, TOOL_INVOCATION, STEP_EXECUTION -> false;
             default -> true;
         };
     }
 
-    private ExecutionTraceHandle requireExecutionTraceHandle() {
-        if (executionTraceHandle == null) {
+    private ExecutionTraceHandle requireExecutionTraceHandle()
+    {
+        if (executionTraceHandle == null)
+        {
             throw new IllegalStateException("BifrostSession requires a live execution trace handle");
         }
         return executionTraceHandle;

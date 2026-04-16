@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.core;
 
-public enum JournalLevel {
+public enum JournalLevel
+{
     TRACE,
     INFO,
     WARN,

@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.core;
 
-public interface BifrostExceptionTransformer {
-
+public interface BifrostExceptionTransformer
+{
     String transform(Throwable throwable);
 }

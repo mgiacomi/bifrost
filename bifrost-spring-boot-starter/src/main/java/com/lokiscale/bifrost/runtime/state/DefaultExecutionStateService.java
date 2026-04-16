@@ -24,40 +24,47 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Set;
 
-public class DefaultExecutionStateService implements ExecutionStateService {
-
+public class DefaultExecutionStateService implements ExecutionStateService
+{
     private final Clock clock;
     private final SessionUsageService sessionUsageService;
     // Runtime observability flows through one recorder boundary so feature code does not invent parallel trace semantics.
     private final ExecutionTraceRecorder traceRecorder;
 
-    public DefaultExecutionStateService(Clock clock) {
+    public DefaultExecutionStateService(Clock clock)
+    {
         this(clock, new NoOpSessionUsageService());
     }
 
-    public DefaultExecutionStateService(Clock clock, SessionUsageService sessionUsageService) {
+    public DefaultExecutionStateService(Clock clock, SessionUsageService sessionUsageService)
+    {
         this(clock, sessionUsageService, new DefaultExecutionTraceRecorder(clock));
     }
 
     public DefaultExecutionStateService(Clock clock,
-                                        SessionUsageService sessionUsageService,
-                                        ExecutionTraceRecorder traceRecorder) {
+            SessionUsageService sessionUsageService,
+            ExecutionTraceRecorder traceRecorder)
+    {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
         this.traceRecorder = Objects.requireNonNull(traceRecorder, "traceRecorder must not be null");
     }
 
     @Override
-    public ExecutionFrame openMissionFrame(BifrostSession session, String route, Map<String, Object> parameters) {
+    public ExecutionFrame openMissionFrame(BifrostSession session, String route, Map<String, Object> parameters)
+    {
         return openFrame(session, TraceFrameType.ROOT_MISSION, route, parameters);
     }
 
     @Override
-    public ExecutionFrame openFrame(BifrostSession session, TraceFrameType traceFrameType, String route, Map<String, Object> parameters) {
+    public ExecutionFrame openFrame(BifrostSession session, TraceFrameType traceFrameType, String route, Map<String, Object> parameters)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Instant now = clock.instant();
         ExecutionFrame frame = new ExecutionFrame(
@@ -68,11 +75,14 @@ public class DefaultExecutionStateService implements ExecutionStateService {
                 route,
                 parameters == null ? Map.of() : Map.copyOf(parameters),
                 now);
+
         session.pushFrame(frame);
-        try {
+        try
+        {
             traceRecorder.recordFrameOpened(session, frame);
         }
-        catch (RuntimeException | Error ex) {
+        catch (RuntimeException | Error ex)
+        {
             rollbackFramePush(session, frame);
             throw ex;
         }
@@ -80,38 +90,52 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void closeMissionFrame(BifrostSession session, ExecutionFrame frame) {
+    public void closeMissionFrame(BifrostSession session, ExecutionFrame frame)
+    {
         closeFrame(session, frame, Map.of());
     }
 
     @Override
-    public void closeFrame(BifrostSession session, ExecutionFrame frame, Map<String, Object> metadata) {
+    public void closeFrame(BifrostSession session, ExecutionFrame frame, Map<String, Object> metadata)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(frame, "frame must not be null");
         List<ExecutionFrame> frames = session.getFramesSnapshot();
-        if (frames.isEmpty()) {
+
+        if (frames.isEmpty())
+        {
             return;
         }
-        if (frames.stream().noneMatch(frame::equals)) {
+        if (frames.stream().noneMatch(frame::equals))
+        {
             return;
         }
+
         ExecutionFrame activeFrame;
-        try {
+        try
+        {
             activeFrame = session.peekFrame();
         }
-        catch (IllegalStateException ex) {
+        catch (IllegalStateException ex)
+        {
             return;
         }
-        if (!activeFrame.equals(frame)) {
+
+        if (!activeFrame.equals(frame))
+        {
             throw new IllegalStateException("Attempted to close execution frame '%s' but active frame was '%s'."
                     .formatted(frame.frameId(), activeFrame.frameId()));
         }
+
         traceRecorder.recordFrameClosed(session, frame, metadata == null ? Map.of() : Map.copyOf(metadata));
-        try {
+        try
+        {
             session.popFrame();
         }
-        catch (IllegalStateException ex) {
-            if (session.getFramesSnapshot().stream().noneMatch(frame::equals)) {
+        catch (IllegalStateException ex)
+        {
+            if (session.getFramesSnapshot().stream().noneMatch(frame::equals))
+            {
                 return;
             }
             throw ex;
@@ -119,34 +143,40 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void storePlan(BifrostSession session, ExecutionPlan plan) {
+    public void storePlan(BifrostSession session, ExecutionPlan plan)
+    {
         Objects.requireNonNull(session, "session must not be null");
         session.replaceExecutionPlan(Objects.requireNonNull(plan, "plan must not be null"));
     }
 
     @Override
-    public void clearPlan(BifrostSession session) {
+    public void clearPlan(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         session.clearExecutionPlan();
     }
 
     @Override
-    public java.util.Optional<ExecutionPlan> currentPlan(BifrostSession session) {
+    public Optional<ExecutionPlan> currentPlan(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         return session.getExecutionPlan();
     }
 
     @Override
-    public PlanSnapshot snapshotPlan(BifrostSession session) {
+    public PlanSnapshot snapshotPlan(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         return PlanSnapshot.of(session.getExecutionPlan().orElse(null));
     }
 
     @Override
-    public void restorePlan(BifrostSession session, PlanSnapshot snapshot) {
+    public void restorePlan(BifrostSession session, PlanSnapshot snapshot)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(snapshot, "snapshot must not be null");
-        if (snapshot.plan() == null) {
+        if (snapshot.plan() == null)
+        {
             session.clearExecutionPlan();
             return;
         }
@@ -154,16 +184,19 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public EvidenceSnapshot snapshotEvidence(BifrostSession session) {
+    public EvidenceSnapshot snapshotEvidence(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         return EvidenceSnapshot.of(session.getProducedEvidenceTypes());
     }
 
     @Override
-    public void restoreEvidence(BifrostSession session, EvidenceSnapshot snapshot) {
+    public void restoreEvidence(BifrostSession session, EvidenceSnapshot snapshot)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(snapshot, "snapshot must not be null");
-        if (snapshot.evidenceTypes() == null) {
+        if (snapshot.evidenceTypes() == null)
+        {
             session.clearProducedEvidenceTypes();
             return;
         }
@@ -171,23 +204,26 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void logPlanCreated(BifrostSession session, ExecutionPlan plan) {
+    public void logPlanCreated(BifrostSession session, ExecutionPlan plan)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordPlanCreated(session, Objects.requireNonNull(plan, "plan must not be null"));
     }
 
     @Override
-    public void logPlanUpdated(BifrostSession session, ExecutionPlan plan) {
+    public void logPlanUpdated(BifrostSession session, ExecutionPlan plan)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordPlanUpdated(session, Objects.requireNonNull(plan, "plan must not be null"));
     }
 
     @Override
     public void recordPlanningEvent(BifrostSession session,
-                                    ExecutionFrame frame,
-                                    TraceRecordType recordType,
-                                    Map<String, Object> metadata,
-                                    Object payload) {
+            ExecutionFrame frame,
+            TraceRecordType recordType,
+            Map<String, Object> metadata,
+            Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(frame, "frame must not be null");
         Objects.requireNonNull(recordType, "recordType must not be null");
@@ -197,7 +233,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
+    public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelRequestPrepared(
                 session,
@@ -207,7 +244,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
+    public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelRequestSent(
                 session,
@@ -217,7 +255,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload) {
+    public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelResponseReceived(
                 session,
@@ -228,27 +267,30 @@ public class DefaultExecutionStateService implements ExecutionStateService {
 
     @Override
     public <T> T traceModelCall(BifrostSession session,
-                                ExecutionFrame frame,
-                                ModelTraceContext context,
-                                Object preparedPayload,
-                                ModelTraceCallback<T> callback) {
+            ExecutionFrame frame,
+            ModelTraceContext context,
+            Object preparedPayload,
+            ModelTraceCallback<T> callback)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(frame, "frame must not be null");
         Objects.requireNonNull(context, "context must not be null");
         Objects.requireNonNull(callback, "callback must not be null");
         traceRecorder.recordModelRequestPrepared(session, frame, context, preparedPayload);
-        ModelTraceResult<T> result = callback.execute(sentPayload ->
-                traceRecorder.recordModelRequestSent(session, frame, context, sentPayload));
+
+        ModelTraceResult<T> result = callback.execute(sentPayload -> traceRecorder.recordModelRequestSent(session, frame, context, sentPayload));
         traceRecorder.recordModelResponseReceived(
                 session,
                 frame,
                 context,
                 result == null ? null : result.responsePayload());
+
         return result == null ? null : result.result();
     }
 
     @Override
-    public void logToolCall(BifrostSession session, TaskExecutionEvent event) {
+    public void logToolCall(BifrostSession session, TaskExecutionEvent event)
+    {
         Objects.requireNonNull(session, "session must not be null");
         TaskExecutionEvent safeEvent = Objects.requireNonNull(event, "event must not be null");
         ExecutionFrame frame = requireActiveFrame(session);
@@ -258,7 +300,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void logUnplannedToolCall(BifrostSession session, TaskExecutionEvent event) {
+    public void logUnplannedToolCall(BifrostSession session, TaskExecutionEvent event)
+    {
         Objects.requireNonNull(session, "session must not be null");
         TaskExecutionEvent safeEvent = Objects.requireNonNull(event, "event must not be null");
         ExecutionFrame frame = requireActiveFrame(session);
@@ -268,7 +311,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void logToolResult(BifrostSession session, TaskExecutionEvent event) {
+    public void logToolResult(BifrostSession session, TaskExecutionEvent event)
+    {
         Objects.requireNonNull(session, "session must not be null");
         TaskExecutionEvent safeEvent = Objects.requireNonNull(event, "event must not be null");
         traceRecorder.recordToolCompleted(
@@ -279,7 +323,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void logToolFailure(BifrostSession session, ToolTraceContext context, Object payload) {
+    public void logToolFailure(BifrostSession session, ToolTraceContext context, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordToolFailed(
                 session,
@@ -289,36 +334,45 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void clearProducedEvidence(BifrostSession session) {
+    public void clearProducedEvidence(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         session.clearProducedEvidenceTypes();
     }
 
     @Override
-    public Set<String> currentEvidenceTypes(BifrostSession session) {
+    public Set<String> currentEvidenceTypes(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         return session.getProducedEvidenceTypes();
     }
 
     @Override
     public void recordProducedEvidence(BifrostSession session,
-                                       String capabilityName,
-                                       String linkedTaskId,
-                                       boolean unplanned,
-                                       Collection<String> evidenceTypes) {
+            String capabilityName,
+            String linkedTaskId,
+            boolean unplanned,
+            Collection<String> evidenceTypes)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
         Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
-        if (evidenceTypes.isEmpty()) {
+
+        if (evidenceTypes.isEmpty())
+        {
             return;
         }
+
         session.addProducedEvidenceTypes(evidenceTypes);
-        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("capabilityName", capabilityName);
         metadata.put("unplanned", unplanned);
-        if (linkedTaskId != null) {
+
+        if (linkedTaskId != null)
+        {
             metadata.put("linkedTaskId", linkedTaskId);
         }
+
         session.appendTraceRecord(TraceRecordType.EVIDENCE_RECORDED, Map.copyOf(metadata), Map.of(
                 "evidenceTypes", List.copyOf(evidenceTypes),
                 "ledger", session.getProducedEvidenceTypes()));
@@ -326,9 +380,10 @@ public class DefaultExecutionStateService implements ExecutionStateService {
 
     @Override
     public void recordEvidenceValidation(BifrostSession session,
-                                         boolean passed,
-                                         Map<String, Object> metadata,
-                                         Object payload) {
+            boolean passed,
+            Map<String, Object> metadata,
+            Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         session.appendTraceRecord(
                 passed ? TraceRecordType.EVIDENCE_VALIDATION_PASSED : TraceRecordType.EVIDENCE_VALIDATION_FAILED,
@@ -337,7 +392,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void recordLinterOutcome(BifrostSession session, LinterOutcome outcome) {
+    public void recordLinterOutcome(BifrostSession session, LinterOutcome outcome)
+    {
         Objects.requireNonNull(session, "session must not be null");
         LinterOutcome recordedOutcome = Objects.requireNonNull(outcome, "outcome must not be null");
         session.setLastLinterOutcome(recordedOutcome);
@@ -346,7 +402,8 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void recordOutputSchemaOutcome(BifrostSession session, OutputSchemaOutcome outcome) {
+    public void recordOutputSchemaOutcome(BifrostSession session, OutputSchemaOutcome outcome)
+    {
         Objects.requireNonNull(session, "session must not be null");
         OutputSchemaOutcome recordedOutcome = Objects.requireNonNull(outcome, "outcome must not be null");
         session.setLastOutputSchemaOutcome(recordedOutcome);
@@ -354,26 +411,30 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void recordAdvisorRequestMutation(BifrostSession session, AdvisorTraceContext context, Object payload) {
+    public void recordAdvisorRequestMutation(BifrostSession session, AdvisorTraceContext context, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordAdvisorRequestMutation(session, Objects.requireNonNull(context, "context must not be null"), payload);
     }
 
     @Override
-    public void recordAdvisorResponseMutation(BifrostSession session, AdvisorTraceContext context, Object payload) {
+    public void recordAdvisorResponseMutation(BifrostSession session, AdvisorTraceContext context, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordAdvisorResponseMutation(session, Objects.requireNonNull(context, "context must not be null"), payload);
     }
 
     @Override
-    public void logError(BifrostSession session, Map<String, Object> payload) {
+    public void logError(BifrostSession session, Map<String, Object> payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordError(session, payload == null ? Map.of() : Map.copyOf(payload));
     }
 
     @Override
     public void recordStepEvent(BifrostSession session, ExecutionFrame frame, TraceRecordType recordType,
-                                 Map<String, Object> metadata, Object payload) {
+            Map<String, Object> metadata, Object payload)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(frame, "frame must not be null");
         Objects.requireNonNull(recordType, "recordType must not be null");
@@ -383,44 +444,56 @@ public class DefaultExecutionStateService implements ExecutionStateService {
     }
 
     @Override
-    public void finalizeTrace(BifrostSession session, Map<String, Object> metadata) {
+    public void finalizeTrace(BifrostSession session, Map<String, Object> metadata)
+    {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.finalizeTrace(session, com.lokiscale.bifrost.core.TraceCompletion.of(metadata));
     }
 
-    private String currentFrameId(BifrostSession session) {
+    private String currentFrameId(BifrostSession session)
+    {
         List<ExecutionFrame> frames = session.getFramesSnapshot();
         return frames.isEmpty() ? null : frames.getFirst().frameId();
     }
 
-    private OperationType mapOperationType(TraceFrameType traceFrameType) {
-        if (traceFrameType == null) {
+    private OperationType mapOperationType(TraceFrameType traceFrameType)
+    {
+        if (traceFrameType == null)
+        {
             return OperationType.SKILL;
         }
-        return switch (traceFrameType) {
+
+        return switch (traceFrameType)
+        {
             case ROOT_MISSION -> OperationType.CAPABILITY;
             case SKILL_EXECUTION, PLANNING, MODEL_CALL, TOOL_INVOCATION, STEP_EXECUTION -> OperationType.SKILL;
             case RETRY -> OperationType.SUB_AGENT;
         };
     }
 
-    private ExecutionFrame requireActiveFrame(BifrostSession session) {
+    private ExecutionFrame requireActiveFrame(BifrostSession session)
+    {
         return session.peekFrame();
     }
 
-    private ToolTraceContext toolContext(TaskExecutionEvent event, boolean unplanned) {
+    private ToolTraceContext toolContext(TaskExecutionEvent event, boolean unplanned)
+    {
         return new ToolTraceContext(event.capabilityName(), event.linkedTaskId(), unplanned);
     }
 
-    private void rollbackFramePush(BifrostSession session, ExecutionFrame frame) {
+    private void rollbackFramePush(BifrostSession session, ExecutionFrame frame)
+    {
         List<ExecutionFrame> frames = session.getFramesSnapshot();
-        if (frames.isEmpty() || !frame.equals(frames.getFirst())) {
+        if (frames.isEmpty() || !frame.equals(frames.getFirst()))
+        {
             return;
         }
-        try {
+        try
+        {
             session.popFrame();
         }
-        catch (IllegalStateException ignored) {
+        catch (IllegalStateException ignored)
+        {
             // Best-effort rollback only; preserve the original recorder failure.
         }
     }

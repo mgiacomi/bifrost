@@ -9,37 +9,43 @@ import org.springframework.lang.Nullable;
 
 import java.util.Objects;
 
-public final class ContractAwareToolCallback implements ToolCallback {
-
+public final class ContractAwareToolCallback implements ToolCallback
+{
     private final ToolCallback delegate;
     private final SkillInputContract inputContract;
 
-    public ContractAwareToolCallback(ToolCallback delegate, SkillInputContract inputContract) {
+    public ContractAwareToolCallback(ToolCallback delegate, SkillInputContract inputContract)
+    {
         this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
         this.inputContract = Objects.requireNonNull(inputContract, "inputContract must not be null");
     }
 
-    public SkillInputContract inputContract() {
+    public SkillInputContract inputContract()
+    {
         return inputContract;
     }
 
     @Override
-    public ToolDefinition getToolDefinition() {
+    public ToolDefinition getToolDefinition()
+    {
         return delegate.getToolDefinition();
     }
 
     @Override
-    public ToolMetadata getToolMetadata() {
+    public ToolMetadata getToolMetadata()
+    {
         return delegate.getToolMetadata();
     }
 
     @Override
-    public String call(String toolInput) {
+    public String call(String toolInput)
+    {
         return delegate.call(toolInput);
     }
 
     @Override
-    public String call(String toolInput, @Nullable ToolContext toolContext) {
+    public String call(String toolInput, @Nullable ToolContext toolContext)
+    {
         return delegate.call(toolInput, toolContext);
     }
 }

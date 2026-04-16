@@ -11,7 +11,6 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceContext;
 import com.lokiscale.bifrost.core.ModelTraceResult;
-import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
@@ -65,19 +64,22 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Plan-step execution engine that replaces the single-shot mission model call with a deterministic loop.
  */
-public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
-
+public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
+{
     private static final Logger log = LoggerFactory.getLogger(StepLoopMissionExecutionEngine.class);
 
     private static final int DEFAULT_MAX_STEPS = 10;
     private static final int MAX_INVALID_ACTION_RETRIES = 1;
     private static final int MAX_EXECUTION_SUMMARY_LINES = 5;
 
-    private enum CleanupOwner {
+    private enum CleanupOwner
+    {
         NONE,
         WORKER,
         CALLER
@@ -98,51 +100,55 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     private final int defaultMaxSteps;
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
-                                          ExecutionStateService executionStateService,
-                                          CapabilityRegistry capabilityRegistry,
-                                          YamlSkillCatalog ignoredYamlSkillCatalog,
-                                          Duration missionTimeout,
-                                          ExecutorService missionExecutor,
-                                          SessionUsageService sessionUsageService,
-                                          ModelUsageExtractor modelUsageExtractor) {
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            YamlSkillCatalog ignoredYamlSkillCatalog,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor)
+    {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
                 sessionUsageService, modelUsageExtractor, DEFAULT_MAX_STEPS);
         this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
     }
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
-                                          ExecutionStateService executionStateService,
-                                          CapabilityRegistry capabilityRegistry,
-                                          YamlSkillCatalog ignoredYamlSkillCatalog,
-                                          Duration missionTimeout,
-                                          ExecutorService missionExecutor,
-                                          SessionUsageService sessionUsageService,
-                                          ModelUsageExtractor modelUsageExtractor,
-                                          int defaultMaxSteps) {
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            YamlSkillCatalog ignoredYamlSkillCatalog,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor,
+            int defaultMaxSteps)
+    {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
                 sessionUsageService, modelUsageExtractor, defaultMaxSteps);
         this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
     }
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
-                                          ExecutionStateService executionStateService,
-                                          CapabilityRegistry capabilityRegistry,
-                                          Duration missionTimeout,
-                                          ExecutorService missionExecutor,
-                                          SessionUsageService sessionUsageService,
-                                          ModelUsageExtractor modelUsageExtractor) {
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor)
+    {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
                 sessionUsageService, modelUsageExtractor, DEFAULT_MAX_STEPS);
     }
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
-                                          ExecutionStateService executionStateService,
-                                          CapabilityRegistry capabilityRegistry,
-                                          Duration missionTimeout,
-                                          ExecutorService missionExecutor,
-                                          SessionUsageService sessionUsageService,
-                                          ModelUsageExtractor modelUsageExtractor,
-                                          int defaultMaxSteps) {
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor,
+            int defaultMaxSteps)
+    {
         this.planningService = Objects.requireNonNull(planningService, "planningService must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
@@ -159,13 +165,14 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
 
     @Override
     public String executeMission(BifrostSession session,
-                                 YamlSkillDefinition definition,
-                                 String objective,
-                                 @Nullable Map<String, Object> missionInput,
-                                 ChatClient chatClient,
-                                 List<ToolCallback> visibleTools,
-                                 boolean planningEnabled,
-                                 @Nullable Authentication authentication) {
+            YamlSkillDefinition definition,
+            String objective,
+            @Nullable Map<String, Object> missionInput,
+            ChatClient chatClient,
+            List<ToolCallback> visibleTools,
+            boolean planningEnabled,
+            @Nullable Authentication authentication)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(definition, "definition must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
@@ -178,11 +185,14 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         AtomicReference<CleanupOwner> cleanupOwner = new AtomicReference<>(CleanupOwner.NONE);
         CountDownLatch cleanupComplete = new CountDownLatch(1);
 
-        Callable<String> missionCall = () -> SessionContextRunner.callWithSession(session, () -> {
-            try {
+        Callable<String> missionCall = () -> SessionContextRunner.callWithSession(session, () ->
+        {
+            try
+            {
                 sessionUsageService.recordMissionStart(session, skillName);
 
-                if (planningEnabled) {
+                if (planningEnabled)
+                {
                     planningService.initializePlan(
                             session,
                             objective,
@@ -193,39 +203,54 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 }
 
                 Optional<ExecutionPlan> planOpt = executionStateService.currentPlan(session);
-                if (planOpt.isEmpty()) {
+                if (planOpt.isEmpty())
+                {
                     throw new IllegalStateException(
                             "Step-loop execution requires a plan but none was created for skill '" + skillName + "'");
                 }
 
                 return executeStepLoop(session, definition, objective, missionInput, executionConfiguration, chatClient, visibleTools);
-            } finally {
-                try {
-                    if (cleanupOwner.compareAndSet(CleanupOwner.NONE, CleanupOwner.WORKER)) {
+            }
+            finally
+            {
+                try
+                {
+                    if (cleanupOwner.compareAndSet(CleanupOwner.NONE, CleanupOwner.WORKER))
+                    {
                         unwindMissionFrames(session, baselineFrameDepth);
                     }
-                } finally {
+                }
+                finally
+                {
                     cleanupComplete.countDown();
                 }
             }
         });
 
         Future<String> mission = missionExecutor.submit(missionCall);
-        try {
+        try
+        {
             return mission.get(missionTimeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException ex) {
+        }
+        catch (TimeoutException ex)
+        {
             mission.cancel(true);
             awaitMissionCleanup(session, mission, baselineFrameDepth, cleanupOwner, cleanupComplete);
             throw new BifrostMissionTimeoutException(session.getSessionId(), skillName, missionTimeout, ex);
-        } catch (InterruptedException ex) {
+        }
+        catch (InterruptedException ex)
+        {
             mission.cancel(true);
             awaitMissionCleanup(session, mission, baselineFrameDepth, cleanupOwner, cleanupComplete);
             Thread.currentThread().interrupt();
             throw new BifrostMissionTimeoutException(session.getSessionId(), skillName, missionTimeout, ex);
-        } catch (ExecutionException ex) {
+        }
+        catch (ExecutionException ex)
+        {
             awaitMissionCleanup(session, mission, baselineFrameDepth, cleanupOwner, cleanupComplete);
             Throwable cause = ex.getCause();
-            if (cause instanceof RuntimeException runtimeException) {
+            if (cause instanceof RuntimeException runtimeException)
+            {
                 throw unwrapMissionFailure(runtimeException);
             }
             throw new IllegalStateException("Mission execution failed for skill '" + skillName + "'", cause);
@@ -233,15 +258,17 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     private String executeStepLoop(BifrostSession session,
-                                   YamlSkillDefinition definition,
-                                   String objective,
-                                   @Nullable Map<String, Object> missionInput,
-                                   EffectiveSkillExecutionConfiguration executionConfiguration,
-                                   ChatClient chatClient,
-                                   List<ToolCallback> visibleTools) {
+            YamlSkillDefinition definition,
+            String objective,
+            @Nullable Map<String, Object> missionInput,
+            EffectiveSkillExecutionConfiguration executionConfiguration,
+            ChatClient chatClient,
+            List<ToolCallback> visibleTools)
+    {
         String skillName = definition.manifest().getName();
         int maxSteps = definition.maxSteps(defaultMaxSteps);
-        if (maxSteps <= 0) {
+        if (maxSteps <= 0)
+        {
             recordTerminalFailure(session, skillName, 0,
                     "Step-loop execution rejected invalid max_steps value: " + maxSteps);
             throw new IllegalStateException(
@@ -256,8 +283,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         Deque<String> executionSummary = new ArrayDeque<>();
         String lastToolResult = null;
 
-        for (int stepNumber = 1; stepNumber <= maxSteps; stepNumber++) {
-            if (Thread.currentThread().isInterrupted()) {
+        for (int stepNumber = 1; stepNumber <= maxSteps; stepNumber++)
+        {
+            if (Thread.currentThread().isInterrupted())
+            {
                 throw new BifrostMissionTimeoutException(session.getSessionId(), skillName, missionTimeout,
                         new InterruptedException("Step loop interrupted"));
             }
@@ -270,11 +299,13 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
             boolean allDone = plan.tasks().stream().allMatch(task -> task.status() == PlanTaskStatus.COMPLETED);
             boolean noneReady = readyTasks.isEmpty();
 
-            if (allDone) {
+            if (allDone)
+            {
                 log.debug("All tasks completed at step {} for skill '{}', requesting final response", stepNumber, skillName);
             }
 
-            if (noneReady && !allDone) {
+            if (noneReady && !allDone)
+            {
                 recordTerminalFailure(session, skillName, stepNumber,
                         "Plan deadlock: no ready tasks remain while the plan still has incomplete tasks.");
                 throw new IllegalStateException(
@@ -298,36 +329,38 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     true,
                     allDone);
 
-            if (stepResult.isFinalResponse()) {
+            if (stepResult.isFinalResponse())
+            {
                 return stepResult.finalResponse();
             }
 
             lastToolResult = stepResult.toolResult();
-            if (stepResult.summaryLine() != null) {
+            if (stepResult.summaryLine() != null)
+            {
                 appendExecutionSummary(executionSummary, stepResult.summaryLine());
             }
         }
 
-        recordTerminalFailure(session, skillName, maxSteps,
-                "Step limit reached before the plan completed.");
+        recordTerminalFailure(session, skillName, maxSteps, "Step limit reached before the plan completed.");
         throw new IllegalStateException("Step-loop exhausted %d steps for skill '%s' before the plan completed."
                 .formatted(maxSteps, skillName));
     }
 
     private StepResult executeOneStep(BifrostSession session,
-                                      String skillName,
-                                      String objective,
-                                      @Nullable Map<String, Object> missionInput,
-                                      EffectiveSkillExecutionConfiguration executionConfiguration,
-                                      ChatClient chatClient,
-                                      List<ToolCallback> visibleTools,
-                                      ExecutionPlan plan,
-                                      int stepNumber,
-                                      @Nullable String lastToolResult,
-                                      @Nullable String executionSummary,
-                                      @Nullable YamlSkillDefinition skillDefinition,
-                                      boolean strictCompletion,
-                                      boolean finalResponseOnly) {
+            String skillName,
+            String objective,
+            @Nullable Map<String, Object> missionInput,
+            EffectiveSkillExecutionConfiguration executionConfiguration,
+            ChatClient chatClient,
+            List<ToolCallback> visibleTools,
+            ExecutionPlan plan,
+            int stepNumber,
+            @Nullable String lastToolResult,
+            @Nullable String executionSummary,
+            @Nullable YamlSkillDefinition skillDefinition,
+            boolean strictCompletion,
+            boolean finalResponseOnly)
+    {
         ExecutionFrame stepFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.STEP_EXECUTION,
@@ -341,13 +374,15 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         String stepFrameStatus = "completed";
         Throwable stepFailure = null;
         boolean forceVerboseToolArgumentGuidance = false;
-        try {
+        try
+        {
             int invalidActionRetryCount = 0;
             int linterAttempt = 1;
             int outputSchemaAttempt = 1;
             int evidenceAttempt = 1;
             String invalidActionFeedback = null;
-            while (true) {
+            while (true)
+            {
                 String stepPrompt = StepPromptBuilder.buildStepPrompt(
                         plan,
                         objective,
@@ -363,17 +398,19 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 String effectivePrompt = invalidActionFeedback == null || invalidActionFeedback.isBlank()
                         ? stepPrompt
                         : stepPrompt + "\n\nYOUR PREVIOUS ACTION WAS INVALID: "
-                        + invalidActionFeedback + "\nPlease correct and try again.";
+                                + invalidActionFeedback + "\nPlease correct and try again.";
 
                 String modelResponse = callModelForStep(
                         session, skillName, executionConfiguration, chatClient, effectivePrompt, stepUserMessage, stepNumber);
 
                 StepAction action = parseStepAction(modelResponse, finalResponseOnly);
-                if (action == null) {
+                if (action == null)
+                {
                     executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_ACTION_REJECTED,
                             Map.of("retry", invalidActionRetryCount, "reason", "Failed to parse model response as StepAction"),
                             Map.of("rawResponse", truncate(modelResponse, 500)));
-                    if (invalidActionRetryCount >= MAX_INVALID_ACTION_RETRIES) {
+                    if (invalidActionRetryCount >= MAX_INVALID_ACTION_RETRIES)
+                    {
                         recordTerminalFailure(session, skillName, stepNumber,
                                 "Model failed to produce a valid step action after %d attempts."
                                         .formatted(MAX_INVALID_ACTION_RETRIES + 1));
@@ -394,7 +431,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
 
                 StepValidationResult validation = StepActionValidator.validate(action, plan, visibleTools, strictCompletion);
                 boolean skillValidationRejected = false;
-                if (validation.valid() && action.stepAction() == StepActionType.FINAL_RESPONSE) {
+                if (validation.valid() && action.stepAction() == StepActionType.FINAL_RESPONSE)
+                {
                     FinalResponseValidationOutcome finalValidation = validateFinalResponseForSkill(
                             session, action, skillDefinition, linterAttempt, outputSchemaAttempt, evidenceAttempt);
                     validation = finalValidation.validation();
@@ -402,7 +440,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     outputSchemaAttempt = finalValidation.nextOutputSchemaAttempt();
                     evidenceAttempt = finalValidation.nextEvidenceAttempt();
                     skillValidationRejected = !validation.valid();
-                    if (!validation.valid() && finalValidation.exhausted()) {
+                    if (!validation.valid() && finalValidation.exhausted())
+                    {
                         executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_ACTION_REJECTED,
                                 Map.of("reason", validation.rejectionReason(), "exhausted", true),
                                 Map.of("stepAction", actionName(action)));
@@ -412,12 +451,14 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                                 .formatted(stepNumber, skillName, validation.rejectionReason()));
                     }
                 }
-                if (!validation.valid()) {
+                if (!validation.valid())
+                {
                     executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_ACTION_REJECTED,
                             Map.of("retry", invalidActionRetryCount, "reason", validation.rejectionReason()),
                             Map.of("stepAction", actionName(action)));
                     log.debug("Step {} action rejected (retry {}): {}", stepNumber, invalidActionRetryCount, validation.rejectionReason());
-                    if (!skillValidationRejected && invalidActionRetryCount >= MAX_INVALID_ACTION_RETRIES) {
+                    if (!skillValidationRejected && invalidActionRetryCount >= MAX_INVALID_ACTION_RETRIES)
+                    {
                         recordTerminalFailure(session, skillName, stepNumber,
                                 "Step action validation exhausted: " + validation.rejectionReason());
                         throw new IllegalStateException("Step action validation exhausted at step %d for skill '%s': %s"
@@ -425,7 +466,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     }
                     invalidActionFeedback = validation.rejectionReason();
                     forceVerboseToolArgumentGuidance = true;
-                    if (!skillValidationRejected) {
+                    if (!skillValidationRejected)
+                    {
                         invalidActionRetryCount++;
                     }
                     continue;
@@ -434,32 +476,38 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_ACTION_VALIDATED,
                         Map.of("stepAction", actionName(action)), Map.of());
 
-                return switch (action.stepAction()) {
+                return switch (action.stepAction())
+                {
                     case CALL_TOOL -> executeToolAction(session, action, skillDefinition, visibleTools, stepFrame, stepNumber);
                     case FINAL_RESPONSE -> {
                         String finalResponse = serializeFinalResponse(action.finalResponse());
-                executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_COMPLETED,
-                        Map.of("stepAction", "FINAL_RESPONSE", "stepNumber", stepNumber), Map.of());
+                        executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_COMPLETED,
+                                Map.of("stepAction", "FINAL_RESPONSE", "stepNumber", stepNumber), Map.of());
                         yield StepResult.finalResponse(finalResponse);
                     }
                 };
             }
-        } catch (RuntimeException ex) {
+        }
+        catch (RuntimeException ex)
+        {
             stepFailure = ex;
             stepFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
             throw ex;
-        } finally {
+        }
+        finally
+        {
             executionStateService.closeFrame(session, stepFrame, closeMetadata(stepFrameStatus, stepFailure));
         }
     }
 
     private String callModelForStep(BifrostSession session,
-                                    String skillName,
-                                    EffectiveSkillExecutionConfiguration executionConfiguration,
-                                    ChatClient chatClient,
-                                    String stepPrompt,
-                                    String stepUserMessage,
-                                    int stepNumber) {
+            String skillName,
+            EffectiveSkillExecutionConfiguration executionConfiguration,
+            ChatClient chatClient,
+            String stepPrompt,
+            String stepUserMessage,
+            int stepNumber)
+    {
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.MODEL_CALL,
@@ -471,7 +519,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
 
         String modelFrameStatus = "completed";
         Throwable modelFailure = null;
-        try {
+        try
+        {
             ModelTraceContext modelTraceContext = new ModelTraceContext(
                     executionConfiguration.provider().name(),
                     executionConfiguration.providerModel(),
@@ -483,21 +532,26 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     modelFrame,
                     modelTraceContext,
                     Map.of("system", stepPrompt, "user", stepUserMessage),
-                    markRequestSent -> {
+                    markRequestSent ->
+                    {
                         Map<String, Object> sentPayload = Map.of("system", stepPrompt, "user", stepUserMessage);
                         ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
                                 .system(stepPrompt)
                                 .user(stepUserMessage)
                                 .call();
+
                         markRequestSent.accept(sentPayload);
 
                         ChatResponse chatResponse;
                         String responseContent;
-                        try {
+                        try
+                        {
                             ChatClientResponse clientResponse = responseSpec.chatClientResponse();
                             chatResponse = clientResponse.chatResponse();
                             responseContent = extractContentFromChatResponse(chatResponse);
-                        } catch (UnsupportedOperationException ignored) {
+                        }
+                        catch (UnsupportedOperationException ignored)
+                        {
                             chatResponse = null;
                             responseContent = responseSpec.content();
                         }
@@ -506,25 +560,31 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                                 session,
                                 skillName,
                                 modelUsageExtractor.extract(chatResponse, stepUserMessage, stepPrompt, responseContent));
+
                         return ModelTraceResult.of(
                                 responseContent,
                                 Map.of("content", responseContent == null ? "" : responseContent));
                     });
-        } catch (RuntimeException ex) {
+        }
+        catch (RuntimeException ex)
+        {
             modelFailure = ex;
             modelFrameStatus = Thread.currentThread().isInterrupted() ? "aborted" : "failed";
             throw ex;
-        } finally {
+        }
+        finally
+        {
             executionStateService.closeFrame(session, modelFrame, closeMetadata(modelFrameStatus, modelFailure));
         }
     }
 
     private StepResult executeToolAction(BifrostSession session,
-                                         StepAction action,
-                                         @Nullable YamlSkillDefinition skillDefinition,
-                                         List<ToolCallback> visibleTools,
-                                         ExecutionFrame stepFrame,
-                                         int stepNumber) {
+            StepAction action,
+            @Nullable YamlSkillDefinition skillDefinition,
+            List<ToolCallback> visibleTools,
+            ExecutionFrame stepFrame,
+            int stepNumber)
+    {
         ToolCallback toolCallback = visibleTools.stream()
                 .filter(t -> t != null && t.getToolDefinition() != null
                         && action.toolName().equals(t.getToolDefinition().name()))
@@ -538,17 +598,22 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 action.toolArguments() == null ? Map.of() : action.toolArguments());
 
         String toolResult;
-        try {
+        try
+        {
             String argumentsJson;
-            try {
+            try
+            {
                 argumentsJson = objectMapper.writeValueAsString(
                         action.toolArguments() == null ? Map.of() : action.toolArguments());
-            } catch (JsonProcessingException ex) {
+            }
+            catch (JsonProcessingException ex)
+            {
                 throw new IllegalStateException("Failed to serialize tool arguments for tool '" + action.toolName() + "'", ex);
             }
 
             String rawResult = toolCallback.call(argumentsJson, new ToolContext(Map.of(
                     DefaultToolCallbackFactory.STEP_LOOP_TASK_ID_CONTEXT_KEY, action.taskId())));
+
             toolResult = rawResult == null ? "null" : rawResult;
             planningService.markToolCompleted(
                     session,
@@ -556,14 +621,18 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                     action.toolName(),
                     toolResult,
                     skillDefinition == null ? com.lokiscale.bifrost.runtime.evidence.EvidenceContract.empty() : skillDefinition.evidenceContract());
-        } catch (RuntimeException ex) {
+        }
+        catch (RuntimeException ex)
+        {
             planningService.markToolFailed(session, action.taskId(), action.toolName(), ex);
             executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_COMPLETED,
                     Map.of("stepAction", "CALL_TOOL", "stepNumber", stepNumber,
                             "taskId", action.taskId(), "toolName", action.toolName(), "status", "failed"),
                     Map.of("error", truncate(ex.getMessage(), 200)));
+
             RuntimeException unwrapped = unwrapMissionFailure(ex);
-            if (unwrapped instanceof BifrostStackOverflowException || unwrapped instanceof BifrostMissionTimeoutException) {
+            if (unwrapped instanceof BifrostStackOverflowException || unwrapped instanceof BifrostMissionTimeoutException)
+            {
                 throw unwrapped;
             }
             throw new IllegalStateException("Step %d tool '%s' failed for task '%s': %s"
@@ -585,27 +654,35 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     @Nullable
-    private StepAction parseStepAction(String modelResponse, boolean finalResponseOnly) {
-        if (modelResponse == null || modelResponse.isBlank()) {
+    private StepAction parseStepAction(String modelResponse, boolean finalResponseOnly)
+    {
+        if (modelResponse == null || modelResponse.isBlank())
+        {
             return null;
         }
         String unwrapped = unwrapFencedBlock(modelResponse);
-        try {
+        try
+        {
             StepAction parsed = objectMapper.readValue(unwrapped, StepAction.class);
-            if (finalResponseOnly && (parsed.stepAction() == null || parsed.stepAction() != StepActionType.FINAL_RESPONSE)) {
+            if (finalResponseOnly && (parsed.stepAction() == null || parsed.stepAction() != StepActionType.FINAL_RESPONSE))
+            {
                 JsonNode node = objectMapper.readTree(unwrapped);
-                if (looksLikeBareFinalResponsePayload(node)) {
+                if (looksLikeBareFinalResponsePayload(node))
+                {
                     return StepAction.finalResponse(node);
                 }
             }
             return parsed;
-        } catch (JsonProcessingException ex) {
+        }
+        catch (JsonProcessingException ex)
+        {
             log.debug("Failed to parse step action JSON: {}", ex.getMessage());
             return null;
         }
     }
 
-    private boolean looksLikeBareFinalResponsePayload(@Nullable JsonNode node) {
+    private boolean looksLikeBareFinalResponsePayload(@Nullable JsonNode node)
+    {
         return node != null
                 && node.isObject()
                 && !node.has("stepAction")
@@ -613,12 +690,15 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 && !node.has("finalResponse");
     }
 
-    private String unwrapFencedBlock(String payload) {
+    private String unwrapFencedBlock(String payload)
+    {
         String safePayload = payload.trim();
-        if (safePayload.startsWith("```")) {
+        if (safePayload.startsWith("```"))
+        {
             int firstNewline = safePayload.indexOf('\n');
             int lastFence = safePayload.lastIndexOf("```");
-            if (firstNewline >= 0 && lastFence > firstNewline) {
+            if (firstNewline >= 0 && lastFence > firstNewline)
+            {
                 return safePayload.substring(firstNewline + 1, lastFence).trim();
             }
         }
@@ -626,7 +706,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     @Nullable
-    private static String extractContentFromChatResponse(@Nullable ChatResponse chatResponse) {
+    private static String extractContentFromChatResponse(@Nullable ChatResponse chatResponse)
+    {
         return Optional.ofNullable(chatResponse)
                 .map(ChatResponse::getResult)
                 .map(Generation::getOutput)
@@ -635,9 +716,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     private void recordTerminalFailure(BifrostSession session,
-                                       String skillName,
-                                       int stepNumber,
-                                       String message) {
+            String skillName,
+            int stepNumber,
+            String message)
+    {
         executionStateService.logError(session, Map.of(
                 "skillName", skillName,
                 "stepNumber", stepNumber,
@@ -645,66 +727,78 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 "message", message));
     }
 
-    private void validatePlanForStepLoop(BifrostSession session, String skillName, ExecutionPlan plan) {
+    private void validatePlanForStepLoop(BifrostSession session, String skillName, ExecutionPlan plan)
+    {
         List<String> duplicateTaskIds = plan.tasks().stream()
                 .map(PlanTask::taskId)
-                .collect(java.util.stream.Collectors.groupingBy(
-                        java.util.function.Function.identity(),
-                        java.util.LinkedHashMap::new,
-                        java.util.stream.Collectors.counting()))
+                .collect(Collectors.groupingBy(Function.identity(), LinkedHashMap::new, Collectors.counting()))
                 .entrySet().stream()
                 .filter(entry -> entry.getValue() > 1)
                 .map(Map.Entry::getKey)
                 .toList();
+
         List<String> unsupportedTaskIds = plan.tasks().stream()
                 .filter(PlanTask::autoCompletable)
                 .map(PlanTask::taskId)
                 .toList();
+
         List<String> invalidDependencies = plan.tasks().stream()
                 .flatMap(task -> task.dependsOn().stream()
                         .filter(dependencyId -> plan.findTask(dependencyId).isEmpty())
                         .map(dependencyId -> task.taskId() + "->" + dependencyId))
                 .toList();
+
         List<String> unboundToolTasks = plan.tasks().stream()
                 .filter(task -> !task.autoCompletable())
                 .filter(task -> task.capabilityName() == null || task.capabilityName().isBlank())
                 .map(PlanTask::taskId)
                 .toList();
+
         if (duplicateTaskIds.isEmpty() && unsupportedTaskIds.isEmpty() && invalidDependencies.isEmpty()
-                && unboundToolTasks.isEmpty()) {
+                && unboundToolTasks.isEmpty())
+        {
             return;
         }
+
         StringBuilder message = new StringBuilder("Step-loop execution rejected an invalid Phase 6 plan.");
-        if (!duplicateTaskIds.isEmpty()) {
+        if (!duplicateTaskIds.isEmpty())
+        {
             message.append(" Task IDs must be unique. Duplicates: ").append(duplicateTaskIds).append(".");
         }
-        if (!unsupportedTaskIds.isEmpty()) {
+        if (!unsupportedTaskIds.isEmpty())
+        {
             message.append(" autoCompletable tasks are not supported: ").append(unsupportedTaskIds).append(".");
         }
-        if (!invalidDependencies.isEmpty()) {
+        if (!invalidDependencies.isEmpty())
+        {
             message.append(" Missing task dependencies: ").append(invalidDependencies).append(".");
         }
-        if (!unboundToolTasks.isEmpty()) {
+        if (!unboundToolTasks.isEmpty())
+        {
             message.append(" Tasks missing capability bindings: ").append(unboundToolTasks).append(".");
         }
+
         recordTerminalFailure(session, skillName, 0, message.toString());
         throw new IllegalStateException(message.toString());
     }
 
     private FinalResponseValidationOutcome validateFinalResponseForSkill(BifrostSession session,
-                                                                        StepAction action,
-                                                                        @Nullable YamlSkillDefinition skillDefinition,
-                                                                        int linterAttempt,
-                                                                        int outputSchemaAttempt,
-                                                                        int evidenceAttempt) {
-        if (skillDefinition == null) {
+            StepAction action,
+            @Nullable YamlSkillDefinition skillDefinition,
+            int linterAttempt,
+            int outputSchemaAttempt,
+            int evidenceAttempt)
+    {
+        if (skillDefinition == null)
+        {
             return FinalResponseValidationOutcome.ok(linterAttempt, outputSchemaAttempt, evidenceAttempt);
         }
 
         String finalResponse = serializeFinalResponse(action.finalResponse());
         ValidatorAttemptOutcome outputSchemaValidation = validateOutputSchema(
                 session, skillDefinition, finalResponse, outputSchemaAttempt);
-        if (!outputSchemaValidation.valid()) {
+        if (!outputSchemaValidation.valid())
+        {
             return new FinalResponseValidationOutcome(
                     outputSchemaValidation.validation(),
                     linterAttempt,
@@ -714,7 +808,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         }
 
         ValidatorAttemptOutcome evidenceValidation = validateEvidence(session, skillDefinition, action.finalResponse(), evidenceAttempt);
-        if (!evidenceValidation.valid()) {
+        if (!evidenceValidation.valid())
+        {
             return new FinalResponseValidationOutcome(
                     evidenceValidation.validation(),
                     linterAttempt,
@@ -733,10 +828,12 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     private ValidatorAttemptOutcome validateLinter(YamlSkillDefinition skillDefinition,
-                                                   @Nullable String finalResponse,
-                                                   int attempt) {
+            @Nullable String finalResponse,
+            int attempt)
+    {
         var linter = skillDefinition.linter();
-        if (linter == null || !"regex".equals(linter.getType()) || linter.getRegex() == null) {
+        if (linter == null || !"regex".equals(linter.getType()) || linter.getRegex() == null)
+        {
             return ValidatorAttemptOutcome.passed(attempt);
         }
 
@@ -751,8 +848,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         String detail = matches
                 ? "Final response matched configured regex linter."
                 : (linter.getRegex().getMessage() == null || linter.getRegex().getMessage().isBlank()
-                ? "Final response did not match the configured regex linter."
-                : linter.getRegex().getMessage());
+                        ? "Final response did not match the configured regex linter."
+                        : linter.getRegex().getMessage());
 
         executionStateService.recordLinterOutcome(BifrostSession.getCurrentSession(), new LinterOutcome(
                 skillDefinition.manifest().getName(),
@@ -769,10 +866,12 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     private ValidatorAttemptOutcome validateOutputSchema(BifrostSession session,
-                                                         YamlSkillDefinition skillDefinition,
-                                                         @Nullable String finalResponse,
-                                                         int attempt) {
-        if (skillDefinition.outputSchema() == null) {
+            YamlSkillDefinition skillDefinition,
+            @Nullable String finalResponse,
+            int attempt)
+    {
+        if (skillDefinition.outputSchema() == null)
+        {
             return ValidatorAttemptOutcome.passed(attempt);
         }
 
@@ -781,6 +880,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         OutputSchemaOutcomeStatus status = result.valid()
                 ? OutputSchemaOutcomeStatus.PASSED
                 : attempt <= maxRetries ? OutputSchemaOutcomeStatus.RETRYING : OutputSchemaOutcomeStatus.EXHAUSTED;
+
         executionStateService.recordOutputSchemaOutcome(session, new OutputSchemaOutcome(
                 skillDefinition.manifest().getName(),
                 result.failureMode(),
@@ -789,7 +889,9 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 maxRetries,
                 status,
                 result.issues()));
-        if (result.valid()) {
+
+        if (result.valid())
+        {
             return ValidatorAttemptOutcome.passed(attempt);
         }
 
@@ -800,10 +902,12 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     private ValidatorAttemptOutcome validateEvidence(BifrostSession session,
-                                                     YamlSkillDefinition skillDefinition,
-                                                     @Nullable JsonNode finalResponseNode,
-                                                     int attempt) {
-        if (skillDefinition.evidenceContract().isEmpty()) {
+            YamlSkillDefinition skillDefinition,
+            @Nullable JsonNode finalResponseNode,
+            int attempt)
+    {
+        if (skillDefinition.evidenceContract().isEmpty())
+        {
             return ValidatorAttemptOutcome.passed(attempt);
         }
 
@@ -812,6 +916,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                 finalResponseNode,
                 skillDefinition.evidenceContract(),
                 executionStateService.currentEvidenceTypes(session));
+
         executionStateService.recordEvidenceValidation(
                 session,
                 result.complete(),
@@ -821,50 +926,67 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
                         "attempt", attempt,
                         "maxRetries", maxRetries),
                 result);
-        if (result.complete()) {
+
+        if (result.complete())
+        {
             return ValidatorAttemptOutcome.passed(attempt);
         }
+
         boolean exhausted = attempt > maxRetries;
-        if (exhausted) {
+        if (exhausted)
+        {
             return ValidatorAttemptOutcome.failed(
                     "Final response is unsupported by gathered evidence: " + result.retryFeedback(),
                     attempt,
                     true);
         }
+
         return ValidatorAttemptOutcome.failed(
                 "Final response is unsupported by gathered evidence: " + result.retryFeedback(),
                 attempt + 1,
                 false);
     }
 
-    private String actionName(StepAction action) {
-        if (action == null || action.stepAction() == null) {
+    private String actionName(StepAction action)
+    {
+        if (action == null || action.stepAction() == null)
+        {
             return "";
         }
         return action.stepAction().name();
     }
 
-    private String serializeFinalResponse(@Nullable com.fasterxml.jackson.databind.JsonNode finalResponseNode) {
-        if (finalResponseNode == null || finalResponseNode.isNull()) {
+    private String serializeFinalResponse(@Nullable com.fasterxml.jackson.databind.JsonNode finalResponseNode)
+    {
+        if (finalResponseNode == null || finalResponseNode.isNull())
+        {
             return "";
         }
-        if (finalResponseNode.isTextual()) {
+        if (finalResponseNode.isTextual())
+        {
             return finalResponseNode.asText();
         }
-        try {
+        try
+        {
             return objectMapper.writeValueAsString(finalResponseNode);
-        } catch (JsonProcessingException ex) {
+        }
+        catch (JsonProcessingException ex)
+        {
             throw new IllegalStateException("Failed to serialize FINAL_RESPONSE payload", ex);
         }
     }
 
-    private String summarizeOutputSchemaIssues(List<OutputSchemaValidationIssue> issues) {
-        if (issues == null || issues.isEmpty()) {
+    private String summarizeOutputSchemaIssues(List<OutputSchemaValidationIssue> issues)
+    {
+        if (issues == null || issues.isEmpty())
+        {
             return "unknown schema validation error";
         }
+
         return issues.stream()
                 .limit(3)
-                .map(issue -> {
+                .map(issue ->
+                {
                     String field = issue.canonicalField() == null || issue.canonicalField().isBlank()
                             ? issue.path()
                             : issue.canonicalField();
@@ -875,25 +997,35 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
     }
 
     @Nullable
-    private String formatExecutionSummary(Deque<String> executionSummary) {
-        if (executionSummary == null || executionSummary.isEmpty()) {
+    private String formatExecutionSummary(Deque<String> executionSummary)
+    {
+        if (executionSummary == null || executionSummary.isEmpty())
+        {
             return null;
         }
+
         return String.join("\n", executionSummary);
     }
 
-    private void appendExecutionSummary(Deque<String> executionSummary, String summaryLine) {
-        if (summaryLine == null || summaryLine.isBlank()) {
+    private void appendExecutionSummary(Deque<String> executionSummary, String summaryLine)
+    {
+        if (summaryLine == null || summaryLine.isBlank())
+        {
             return;
         }
+
         executionSummary.addLast(summaryLine);
-        while (executionSummary.size() > MAX_EXECUTION_SUMMARY_LINES) {
+
+        while (executionSummary.size() > MAX_EXECUTION_SUMMARY_LINES)
+        {
             executionSummary.removeFirst();
         }
     }
 
-    private void unwindMissionFrames(BifrostSession session, int baselineFrameDepth) {
-        while (session.getFramesSnapshot().size() > baselineFrameDepth) {
+    private void unwindMissionFrames(BifrostSession session, int baselineFrameDepth)
+    {
+        while (session.getFramesSnapshot().size() > baselineFrameDepth)
+        {
             ExecutionFrame activeFrame = session.peekFrame();
             executionStateService.closeFrame(session, activeFrame, Map.of(
                     "status", "aborted",
@@ -901,89 +1033,113 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         }
     }
 
-    private RuntimeException unwrapMissionFailure(RuntimeException runtimeException) {
+    private RuntimeException unwrapMissionFailure(RuntimeException runtimeException)
+    {
         if (runtimeException instanceof ToolExecutionException toolExecutionException
                 && toolExecutionException.getCause() instanceof RuntimeException nestedRuntimeException
                 && (nestedRuntimeException instanceof BifrostStackOverflowException
-                || nestedRuntimeException instanceof BifrostMissionTimeoutException)) {
+                        || nestedRuntimeException instanceof BifrostMissionTimeoutException))
+        {
             return nestedRuntimeException;
         }
+
         return runtimeException;
     }
 
     private void awaitMissionCleanup(BifrostSession session,
-                                     Future<String> mission,
-                                     int baselineFrameDepth,
-                                     AtomicReference<CleanupOwner> cleanupOwner,
-                                     CountDownLatch cleanupComplete) {
-        try {
+            Future<String> mission,
+            int baselineFrameDepth,
+            AtomicReference<CleanupOwner> cleanupOwner,
+            CountDownLatch cleanupComplete)
+    {
+        try
+        {
             mission.get(250, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ex) {
+        }
+        catch (InterruptedException ex)
+        {
             Thread.currentThread().interrupt();
-        } catch (ExecutionException | TimeoutException | java.util.concurrent.CancellationException ignored) {
+        }
+        catch (ExecutionException | TimeoutException | java.util.concurrent.CancellationException ignored)
+        {
             // Best effort wait only.
         }
-        if (cleanupComplete.getCount() == 0L) {
+        if (cleanupComplete.getCount() == 0L)
+        {
             return;
         }
-        if (cleanupOwner.compareAndSet(CleanupOwner.NONE, CleanupOwner.CALLER)) {
-            try {
+        if (cleanupOwner.compareAndSet(CleanupOwner.NONE, CleanupOwner.CALLER))
+        {
+            try
+            {
                 unwindMissionFrames(session, baselineFrameDepth);
-            } finally {
+            }
+            finally
+            {
                 cleanupComplete.countDown();
             }
             return;
         }
-        try {
+        try
+        {
             cleanupComplete.await(250, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ex) {
+        }
+        catch (InterruptedException ex)
+        {
             Thread.currentThread().interrupt();
         }
     }
 
-    private Map<String, Object> closeMetadata(String status, @Nullable Throwable failure) {
+    private Map<String, Object> closeMetadata(String status, @Nullable Throwable failure)
+    {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("status", Thread.currentThread().isInterrupted() ? "aborted" : status);
-        if (failure != null) {
+        if (failure != null)
+        {
             metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank()) {
+            if (failure.getMessage() != null && !failure.getMessage().isBlank())
+            {
                 metadata.put("message", failure.getMessage());
             }
         }
         return metadata;
     }
 
-    private static String truncate(@Nullable String value, int maxLength) {
-        if (value == null) {
+    private static String truncate(@Nullable String value, int maxLength)
+    {
+        if (value == null)
+        {
             return "";
         }
         return value.length() <= maxLength ? value : value.substring(0, maxLength) + "...";
     }
 
-    private record StepResult(@Nullable String finalResponse,
-                              @Nullable String toolResult,
-                              @Nullable String summaryLine) {
-
-        boolean isFinalResponse() {
+    private record StepResult(@Nullable String finalResponse, @Nullable String toolResult, @Nullable String summaryLine)
+    {
+        boolean isFinalResponse()
+        {
             return finalResponse != null;
         }
 
-        static StepResult finalResponse(String response) {
+        static StepResult finalResponse(String response)
+        {
             return new StepResult(response, null, null);
         }
 
-        static StepResult toolExecuted(String toolResult, String summaryLine) {
+        static StepResult toolExecuted(String toolResult, String summaryLine)
+        {
             return new StepResult(null, toolResult, summaryLine);
         }
     }
 
     private record FinalResponseValidationOutcome(StepValidationResult validation,
-                                                  int nextLinterAttempt,
-                                                  int nextOutputSchemaAttempt,
-                                                  int nextEvidenceAttempt,
-                                                  boolean exhausted) {
-
-        static FinalResponseValidationOutcome ok(int linterAttempt, int outputSchemaAttempt, int evidenceAttempt) {
+            int nextLinterAttempt,
+            int nextOutputSchemaAttempt,
+            int nextEvidenceAttempt,
+            boolean exhausted)
+    {
+        static FinalResponseValidationOutcome ok(int linterAttempt, int outputSchemaAttempt, int evidenceAttempt)
+        {
             return new FinalResponseValidationOutcome(
                     StepValidationResult.ok(),
                     linterAttempt,
@@ -993,19 +1149,20 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine {
         }
     }
 
-    private record ValidatorAttemptOutcome(StepValidationResult validation,
-                                           int nextAttempt,
-                                           boolean exhausted) {
-
-        boolean valid() {
+    private record ValidatorAttemptOutcome(StepValidationResult validation, int nextAttempt, boolean exhausted)
+    {
+        boolean valid()
+        {
             return validation.valid();
         }
 
-        static ValidatorAttemptOutcome passed(int attempt) {
+        static ValidatorAttemptOutcome passed(int attempt)
+        {
             return new ValidatorAttemptOutcome(StepValidationResult.ok(), attempt, false);
         }
 
-        static ValidatorAttemptOutcome failed(String reason, int nextAttempt, boolean exhausted) {
+        static ValidatorAttemptOutcome failed(String reason, int nextAttempt, boolean exhausted)
+        {
             return new ValidatorAttemptOutcome(StepValidationResult.rejected(reason), nextAttempt, exhausted);
         }
     }

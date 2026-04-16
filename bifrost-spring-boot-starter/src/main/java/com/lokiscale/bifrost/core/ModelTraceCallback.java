@@ -1,7 +1,9 @@
 package com.lokiscale.bifrost.core;
 
-@FunctionalInterface
-public interface ModelTraceCallback<T> {
+import java.util.function.Consumer;
 
-    ModelTraceResult<T> execute(java.util.function.Consumer<Object> markRequestSent);
+@FunctionalInterface
+public interface ModelTraceCallback<T>
+{
+    ModelTraceResult<T> execute(Consumer<Object> markRequestSent);
 }

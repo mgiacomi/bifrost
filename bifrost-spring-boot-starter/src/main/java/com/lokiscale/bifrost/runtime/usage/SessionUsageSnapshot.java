@@ -12,9 +12,10 @@ public record SessionUsageSnapshot(
         int usageUnits,
         int exactModelResponses,
         int heuristicModelResponses,
-        int unavailableModelResponses) {
-
-    public SessionUsageSnapshot {
+        int unavailableModelResponses)
+{
+    public SessionUsageSnapshot
+    {
         validateNonNegative(skillInvocations, "skillInvocations");
         validateNonNegative(toolInvocations, "toolInvocations");
         validateNonNegative(linterRetries, "linterRetries");
@@ -27,11 +28,13 @@ public record SessionUsageSnapshot(
         validateNonNegative(unavailableModelResponses, "unavailableModelResponses");
     }
 
-    public static SessionUsageSnapshot empty() {
+    public static SessionUsageSnapshot empty()
+    {
         return new SessionUsageSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
-    public SessionUsageSnapshot incrementSkillInvocations() {
+    public SessionUsageSnapshot incrementSkillInvocations()
+    {
         return new SessionUsageSnapshot(
                 skillInvocations + 1,
                 toolInvocations,
@@ -45,7 +48,8 @@ public record SessionUsageSnapshot(
                 unavailableModelResponses);
     }
 
-    public SessionUsageSnapshot incrementToolInvocations() {
+    public SessionUsageSnapshot incrementToolInvocations()
+    {
         return new SessionUsageSnapshot(
                 skillInvocations,
                 toolInvocations + 1,
@@ -59,7 +63,8 @@ public record SessionUsageSnapshot(
                 unavailableModelResponses);
     }
 
-    public SessionUsageSnapshot incrementLinterRetries() {
+    public SessionUsageSnapshot incrementLinterRetries()
+    {
         return new SessionUsageSnapshot(
                 skillInvocations,
                 toolInvocations,
@@ -73,7 +78,8 @@ public record SessionUsageSnapshot(
                 unavailableModelResponses);
     }
 
-    public SessionUsageSnapshot recordModelUsage(ModelUsageRecord usageRecord) {
+    public SessionUsageSnapshot recordModelUsage(ModelUsageRecord usageRecord)
+    {
         Objects.requireNonNull(usageRecord, "usageRecord must not be null");
         return new SessionUsageSnapshot(
                 skillInvocations,
@@ -88,8 +94,10 @@ public record SessionUsageSnapshot(
                 unavailableModelResponses + (usageRecord.precision() == UsagePrecision.UNAVAILABLE ? 1 : 0));
     }
 
-    private static void validateNonNegative(int value, String name) {
-        if (value < 0) {
+    private static void validateNonNegative(int value, String name)
+    {
+        if (value < 0)
+        {
             throw new IllegalArgumentException(name + " must not be negative");
         }
     }

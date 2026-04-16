@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.core;
 
-public enum JournalEntryType {
+public enum JournalEntryType
+{
     THOUGHT,
     PLAN_CREATED,
     PLAN_UPDATED,

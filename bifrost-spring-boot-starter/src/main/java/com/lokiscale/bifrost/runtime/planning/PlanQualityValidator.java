@@ -12,10 +12,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-public class PlanQualityValidator {
-
+public class PlanQualityValidator
+{
     private static final Set<String> REPORT_KEYWORDS = Set.of(
             "summary", "summarize", "report", "conclusion", "final", "answer", "respond", "response");
     private static final Set<String> EXTRACT_KEYWORDS = Set.of(
@@ -23,12 +25,15 @@ public class PlanQualityValidator {
     private static final Set<String> LOOKUP_KEYWORDS = Set.of(
             "lookup", "look", "find", "search", "query", "match", "compare", "retrieve", "fetch", "check");
 
-    public PlanQualityValidationResult validate(ExecutionPlan plan, List<ToolCallback> visibleTools) {
+    public PlanQualityValidationResult validate(ExecutionPlan plan, List<ToolCallback> visibleTools)
+    {
         Objects.requireNonNull(plan, "plan must not be null");
-        List<ToolCallback> safeVisibleTools = visibleTools == null ? List.of() : visibleTools.stream()
-                .filter(Objects::nonNull)
-                .filter(tool -> tool.getToolDefinition() != null)
-                .toList();
+
+        List<ToolCallback> safeVisibleTools = visibleTools == null ? List.of()
+                : visibleTools.stream()
+                        .filter(Objects::nonNull)
+                        .filter(tool -> tool.getToolDefinition() != null)
+                        .toList();
 
         Map<String, ToolSummary> toolSummaries = summarizeTools(safeVisibleTools);
         List<PlanQualityIssue> warnings = new ArrayList<>();
@@ -36,21 +41,24 @@ public class PlanQualityValidator {
 
         warnings.addAll(findSuspiciousReportBindings(plan, toolSummaries));
         warnings.addAll(findDiverseRepeatedToolUsage(plan));
-        classifySingleToolOveruse(plan, toolSummaries).ifPresent(issue ->
-                (issue.severity() == PlanQualityIssue.Severity.ERROR ? errors : warnings).add(issue));
+        classifySingleToolOveruse(plan, toolSummaries).ifPresent(issue -> (issue.severity() == PlanQualityIssue.Severity.ERROR ? errors : warnings).add(issue));
 
         return new PlanQualityValidationResult(warnings, errors);
     }
 
-    private List<PlanQualityIssue> findSuspiciousReportBindings(ExecutionPlan plan, Map<String, ToolSummary> toolSummaries) {
+    private List<PlanQualityIssue> findSuspiciousReportBindings(ExecutionPlan plan, Map<String, ToolSummary> toolSummaries)
+    {
         List<PlanQualityIssue> issues = new ArrayList<>();
-        for (PlanTask task : plan.tasks()) {
+        for (PlanTask task : plan.tasks())
+        {
             TaskRole taskRole = inferTaskRole(task);
-            if (taskRole != TaskRole.REPORT) {
+            if (taskRole != TaskRole.REPORT)
+            {
                 continue;
             }
             ToolSummary tool = toolSummaries.get(task.capabilityName());
-            if (tool == null || !tool.isExtractionOrLookupOnly()) {
+            if (tool == null || !tool.isExtractionOrLookupOnly())
+            {
                 continue;
             }
             issues.add(new PlanQualityIssue(
@@ -62,21 +70,28 @@ public class PlanQualityValidator {
         return issues;
     }
 
-    private List<PlanQualityIssue> findDiverseRepeatedToolUsage(ExecutionPlan plan) {
+    private List<PlanQualityIssue> findDiverseRepeatedToolUsage(ExecutionPlan plan)
+    {
         List<PlanQualityIssue> issues = new ArrayList<>();
         Map<String, Set<TaskRole>> rolesByTool = new LinkedHashMap<>();
-        for (PlanTask task : plan.tasks()) {
-            if (task.capabilityName() == null || task.capabilityName().isBlank()) {
+        for (PlanTask task : plan.tasks())
+        {
+            if (task.capabilityName() == null || task.capabilityName().isBlank())
+            {
                 continue;
             }
             TaskRole role = inferTaskRole(task);
-            if (role == TaskRole.OTHER) {
+            if (role == TaskRole.OTHER)
+            {
                 continue;
             }
             rolesByTool.computeIfAbsent(task.capabilityName(), ignored -> new LinkedHashSet<>()).add(role);
         }
-        rolesByTool.forEach((toolName, roles) -> {
-            if (roles.size() > 1) {
+
+        rolesByTool.forEach((toolName, roles) ->
+        {
+            if (roles.size() > 1)
+            {
                 issues.add(new PlanQualityIssue(
                         "REPEATED_TOOL_DIVERSE_INTENTS",
                         PlanQualityIssue.Severity.WARNING,
@@ -87,23 +102,29 @@ public class PlanQualityValidator {
         return issues;
     }
 
-    private java.util.Optional<PlanQualityIssue> classifySingleToolOveruse(ExecutionPlan plan, Map<String, ToolSummary> toolSummaries) {
+    private Optional<PlanQualityIssue> classifySingleToolOveruse(ExecutionPlan plan, Map<String, ToolSummary> toolSummaries)
+    {
         List<PlanTask> boundTasks = plan.tasks().stream()
                 .filter(task -> task.capabilityName() != null && !task.capabilityName().isBlank())
                 .toList();
-        if (toolSummaries.size() < 2 || boundTasks.size() < 3) {
-            return java.util.Optional.empty();
+
+        if (toolSummaries.size() < 2 || boundTasks.size() < 3)
+        {
+            return Optional.empty();
         }
 
         List<PlanTask> nonReportTasks = boundTasks.stream()
                 .filter(task -> inferTaskRole(task) != TaskRole.REPORT)
                 .toList();
+
         List<PlanTask> candidateTasks = nonReportTasks.isEmpty() ? boundTasks : nonReportTasks;
         Set<String> usedTools = candidateTasks.stream()
                 .map(PlanTask::capabilityName)
-                .collect(java.util.stream.Collectors.toSet());
-        if (usedTools.size() != 1) {
-            return java.util.Optional.empty();
+                .collect(Collectors.toSet());
+
+        if (usedTools.size() != 1)
+        {
+            return Optional.empty();
         }
 
         String dominantToolName = candidateTasks.getFirst().capabilityName();
@@ -111,45 +132,56 @@ public class PlanQualityValidator {
         List<ToolSummary> unusedTools = toolSummaries.values().stream()
                 .filter(tool -> !tool.name().equals(dominantToolName))
                 .toList();
-        if (dominantTool == null || unusedTools.isEmpty()) {
-            return java.util.Optional.empty();
+
+        if (dominantTool == null || unusedTools.isEmpty())
+        {
+            return Optional.empty();
         }
 
         Set<TaskRole> taskRoles = boundTasks.stream()
                 .map(this::inferTaskRole)
                 .filter(role -> role != TaskRole.OTHER)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
         boolean hasMixedTaskRoles = taskRoles.size() > 1;
         boolean hasDifferentAvailableRole = unusedTools.stream()
                 .anyMatch(tool -> tool.primaryRole() != dominantTool.primaryRole());
-        if (!hasDifferentAvailableRole) {
-            return java.util.Optional.of(new PlanQualityIssue(
+
+        if (!hasDifferentAvailableRole)
+        {
+            return Optional.of(new PlanQualityIssue(
                     "SINGLE_TOOL_OVERUSE_WARNING",
                     PlanQualityIssue.Severity.WARNING,
                     "The plan routes every bound task through '%s' even though multiple tools are visible."
                             .formatted(dominantToolName)));
         }
-        if (!hasMixedTaskRoles && !containsReportTask(boundTasks)) {
-            return java.util.Optional.empty();
+
+        if (!hasMixedTaskRoles && !containsReportTask(boundTasks))
+        {
+            return Optional.empty();
         }
 
         String unusedToolNames = unusedTools.stream().map(ToolSummary::name).toList().toString();
-        return java.util.Optional.of(new PlanQualityIssue(
+        return Optional.of(new PlanQualityIssue(
                 "SINGLE_TOOL_OVERUSE",
                 PlanQualityIssue.Severity.ERROR,
                 "The plan overuses '%s' across distinct tasks and skips other visible tools %s."
                         .formatted(dominantToolName, unusedToolNames)));
     }
 
-    private boolean containsReportTask(List<PlanTask> tasks) {
+    private boolean containsReportTask(List<PlanTask> tasks)
+    {
         return tasks.stream().anyMatch(task -> inferTaskRole(task) == TaskRole.REPORT);
     }
 
-    private Map<String, ToolSummary> summarizeTools(List<ToolCallback> visibleTools) {
+    private Map<String, ToolSummary> summarizeTools(List<ToolCallback> visibleTools)
+    {
         Map<String, ToolSummary> summaries = new LinkedHashMap<>();
-        for (ToolCallback tool : visibleTools) {
+        for (ToolCallback tool : visibleTools)
+        {
             ToolDefinition definition = tool.getToolDefinition();
-            if (definition == null || definition.name() == null || definition.name().isBlank()) {
+            if (definition == null || definition.name() == null || definition.name().isBlank())
+            {
                 continue;
             }
             summaries.put(definition.name(), ToolSummary.from(definition));
@@ -157,50 +189,63 @@ public class PlanQualityValidator {
         return summaries;
     }
 
-    private TaskRole inferTaskRole(PlanTask task) {
+    private TaskRole inferTaskRole(PlanTask task)
+    {
         String text = normalizeText(task.title() + " " + nullSafe(task.intent()) + " " + String.join(" ", task.expectedOutputs()));
-        if (containsAny(text, REPORT_KEYWORDS)) {
+        if (containsAny(text, REPORT_KEYWORDS))
+        {
             return TaskRole.REPORT;
         }
-        if (containsAny(text, LOOKUP_KEYWORDS)) {
+        if (containsAny(text, LOOKUP_KEYWORDS))
+        {
             return TaskRole.LOOKUP;
         }
-        if (containsAny(text, EXTRACT_KEYWORDS)) {
+        if (containsAny(text, EXTRACT_KEYWORDS))
+        {
             return TaskRole.EXTRACT;
         }
         return TaskRole.OTHER;
     }
 
-    private static boolean containsAny(String text, Set<String> keywords) {
-        for (String keyword : keywords) {
-            if (text.contains(keyword)) {
+    private static boolean containsAny(String text, Set<String> keywords)
+    {
+        for (String keyword : keywords)
+        {
+            if (text.contains(keyword))
+            {
                 return true;
             }
         }
         return false;
     }
 
-    private static String normalizeText(String text) {
+    private static String normalizeText(String text)
+    {
         return text == null ? "" : text.toLowerCase(Locale.ROOT);
     }
 
-    private static String nullSafe(String text) {
+    private static String nullSafe(String text)
+    {
         return text == null ? "" : text;
     }
 
-    private enum TaskRole {
+    private enum TaskRole
+    {
         EXTRACT,
         LOOKUP,
         REPORT,
         OTHER
     }
 
-    private record ToolSummary(String name, TaskRole primaryRole, boolean extraction, boolean lookup, boolean report) {
+    private record ToolSummary(String name, TaskRole primaryRole, boolean extraction, boolean lookup, boolean report)
+    {
 
-        static ToolSummary from(ToolDefinition definition) {
+        static ToolSummary from(ToolDefinition definition)
+        {
             String description = definition.description() == null || definition.description().isBlank()
                     ? "No description provided."
                     : definition.description();
+
             String normalized = normalizeText(definition.name() + " " + description);
             boolean extraction = containsAny(normalized, EXTRACT_KEYWORDS);
             boolean lookup = containsAny(normalized, LOOKUP_KEYWORDS);
@@ -209,18 +254,23 @@ public class PlanQualityValidator {
             return new ToolSummary(definition.name(), primaryRole, extraction, lookup, report);
         }
 
-        boolean isExtractionOrLookupOnly() {
+        boolean isExtractionOrLookupOnly()
+        {
             return (extraction || lookup) && !report;
         }
 
-        String conciseRoleDescription() {
-            if (report) {
+        String conciseRoleDescription()
+        {
+            if (report)
+            {
                 return "report/synthesis";
             }
-            if (lookup) {
+            if (lookup)
+            {
                 return extraction ? "extraction/lookup" : "lookup";
             }
-            if (extraction) {
+            if (extraction)
+            {
                 return "extraction";
             }
             return "general-purpose";

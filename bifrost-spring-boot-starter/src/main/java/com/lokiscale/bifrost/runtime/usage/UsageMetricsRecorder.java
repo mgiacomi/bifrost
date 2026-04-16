@@ -2,8 +2,8 @@ package com.lokiscale.bifrost.runtime.usage;
 
 import com.lokiscale.bifrost.linter.LinterOutcome;
 
-public interface UsageMetricsRecorder {
-
+public interface UsageMetricsRecorder
+{
     void recordSkillInvocation(String skillName);
 
     void recordModelUsage(String skillName, ModelUsageRecord usageRecord);

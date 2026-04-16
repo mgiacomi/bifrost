@@ -5,10 +5,11 @@ import org.springframework.ai.chat.client.advisor.api.Advisor;
 
 import java.util.List;
 
-public final class NoOpSkillAdvisorResolver implements SkillAdvisorResolver {
-
+public final class NoOpSkillAdvisorResolver implements SkillAdvisorResolver
+{
     @Override
-    public List<Advisor> resolve(YamlSkillDefinition definition) {
+    public List<Advisor> resolve(YamlSkillDefinition definition)
+    {
         return List.of();
     }
 }

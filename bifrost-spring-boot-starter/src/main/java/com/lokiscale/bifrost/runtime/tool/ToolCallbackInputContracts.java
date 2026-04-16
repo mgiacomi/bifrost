@@ -5,28 +5,37 @@ import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 
-public final class ToolCallbackInputContracts {
-
+public final class ToolCallbackInputContracts
+{
     private static final SkillInputContractResolver INPUT_CONTRACT_RESOLVER = new SkillInputContractResolver();
 
-    private ToolCallbackInputContracts() {
+    private ToolCallbackInputContracts()
+    {
     }
 
-    public static SkillInputContract resolve(@Nullable ToolCallback callback) {
-        if (callback instanceof ContractAwareToolCallback contractAwareToolCallback) {
+    public static SkillInputContract resolve(@Nullable ToolCallback callback)
+    {
+        if (callback instanceof ContractAwareToolCallback contractAwareToolCallback)
+        {
             return contractAwareToolCallback.inputContract();
         }
-        if (callback == null || callback.getToolDefinition() == null) {
+        if (callback == null || callback.getToolDefinition() == null)
+        {
             return SkillInputContract.genericObject();
         }
+
         String inputSchema = callback.getToolDefinition().inputSchema();
-        if (inputSchema == null || inputSchema.isBlank()) {
+        if (inputSchema == null || inputSchema.isBlank())
+        {
             return SkillInputContract.genericObject();
         }
-        try {
+
+        try
+        {
             return INPUT_CONTRACT_RESOLVER.resolveFromToolSchema(inputSchema);
         }
-        catch (RuntimeException ignored) {
+        catch (RuntimeException ignored)
+        {
             return SkillInputContract.genericObject();
         }
     }

@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.core;
 
-public enum TraceRecordType {
+public enum TraceRecordType
+{
     TRACE_STARTED,
     TRACE_CAPTURE_POLICY_RECORDED,
     FRAME_OPENED,

@@ -634,10 +634,6 @@ class PlanningServiceTest {
                 .contains("invoiceParser", "expenseLookup");
     }
 
-    private static ToolCallback toolCallbackWithName(String name) {
-        return toolCallback(name, name);
-    }
-
     private static ToolCallback toolCallback(String name, String description) {
         ToolCallback callback = mock(ToolCallback.class);
         ToolDefinition definition = ToolDefinition.builder().name(name).description(description).inputSchema("{}").build();

@@ -7,20 +7,22 @@ import org.springframework.lang.Nullable;
 
 import java.util.Map;
 
-public final class MissionInputMessageFormatter {
-
+public final class MissionInputMessageFormatter
+{
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder().findAndAddModules().build();
 
-    private MissionInputMessageFormatter() {
+    private MissionInputMessageFormatter()
+    {
     }
 
-    public static String buildMissionContext(String objective,
-                                             @Nullable Map<String, Object> missionInput,
-                                             @Nullable String capabilityName) {
+    public static String buildMissionContext(String objective, @Nullable Map<String, Object> missionInput, @Nullable String capabilityName)
+    {
         String normalizedObjective = sanitizeObjective(objective, capabilityName);
-        if (missionInput == null || missionInput.isEmpty()) {
+        if (missionInput == null || missionInput.isEmpty())
+        {
             return normalizedObjective;
         }
+
         return """
                 %s
 
@@ -31,10 +33,13 @@ public final class MissionInputMessageFormatter {
                 prettyPrint(missionInput));
     }
 
-    public static String buildUserMessage(String objective, @Nullable Map<String, Object> missionInput) {
-        if (missionInput == null || missionInput.isEmpty()) {
+    public static String buildUserMessage(String objective, @Nullable Map<String, Object> missionInput)
+    {
+        if (missionInput == null || missionInput.isEmpty())
+        {
             return objective;
         }
+
         return """
                 Mission objective:
                 %s
@@ -48,28 +53,37 @@ public final class MissionInputMessageFormatter {
                 prettyPrint(missionInput));
     }
 
-    private static String sanitizeObjective(String objective, @Nullable String capabilityName) {
-        if (objective == null || objective.isBlank()) {
+    private static String sanitizeObjective(String objective, @Nullable String capabilityName)
+    {
+        if (objective == null || objective.isBlank())
+        {
             return "(none)";
         }
+
         String sanitized = objective;
-        if (capabilityName != null && !capabilityName.isBlank()) {
+        if (capabilityName != null && !capabilityName.isBlank())
+        {
             String exactPrefix = "Execute YAML skill '" + capabilityName + "' using the provided mission input object.";
-            if (sanitized.startsWith(exactPrefix)) {
+            if (sanitized.startsWith(exactPrefix))
+            {
                 return "Use the provided mission inputs.";
             }
             sanitized = sanitized.replace("YAML skill '" + capabilityName + "'", "the mission");
             sanitized = sanitized.replace("'" + capabilityName + "'", "the mission");
             sanitized = sanitized.replace(capabilityName, "the mission");
         }
+
         return sanitized;
     }
 
-    private static String prettyPrint(Map<String, Object> missionInput) {
-        try {
+    private static String prettyPrint(Map<String, Object> missionInput)
+    {
+        try
+        {
             return OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(missionInput);
         }
-        catch (JsonProcessingException ex) {
+        catch (JsonProcessingException ex)
+        {
             throw new IllegalStateException("Failed to serialize canonical mission input", ex);
         }
     }

@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.autoconfigure;
 
-public enum AiProvider {
+public enum AiProvider
+{
     OPENAI,
     ANTHROPIC,
     GEMINI,

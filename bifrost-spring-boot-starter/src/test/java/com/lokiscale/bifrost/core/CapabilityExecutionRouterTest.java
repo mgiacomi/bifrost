@@ -1,6 +1,5 @@
 package com.lokiscale.bifrost.core;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.state.PlanSnapshot;
@@ -35,7 +34,6 @@ class CapabilityExecutionRouterTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 beanFactory.getBeanProvider(ExecutionCoordinator.class),
-                new ObjectMapper(),
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);
@@ -76,7 +74,6 @@ class CapabilityExecutionRouterTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 new StaticListableBeanFactory().getBeanProvider(ExecutionCoordinator.class),
-                new ObjectMapper(),
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);
@@ -117,7 +114,6 @@ class CapabilityExecutionRouterTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 beanFactory.getBeanProvider(ExecutionCoordinator.class),
-                new ObjectMapper(),
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);
@@ -217,7 +213,6 @@ class CapabilityExecutionRouterTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 beanFactory.getBeanProvider(ExecutionCoordinator.class),
-                new ObjectMapper(),
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);
@@ -240,7 +235,6 @@ class CapabilityExecutionRouterTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 beanFactory.getBeanProvider(ExecutionCoordinator.class),
-                new ObjectMapper(),
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);
@@ -291,7 +285,6 @@ class CapabilityExecutionRouterTest {
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
                 refResolver,
                 new StaticListableBeanFactory().getBeanProvider(ExecutionCoordinator.class),
-                new ObjectMapper(),
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);

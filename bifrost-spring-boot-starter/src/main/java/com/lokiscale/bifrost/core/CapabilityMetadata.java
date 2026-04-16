@@ -17,9 +17,10 @@ public record CapabilityMetadata(
         CapabilityKind kind,
         CapabilityToolDescriptor tool,
         SkillInputContract inputContract,
-        @Nullable String mappedTargetId) {
-
-    public CapabilityMetadata {
+        @Nullable String mappedTargetId)
+{
+    public CapabilityMetadata
+    {
         id = requireNonBlank(id, "id");
         name = requireNonBlank(name, "name");
         description = requireNonBlank(description, "description");
@@ -33,21 +34,24 @@ public record CapabilityMetadata(
     }
 
     public CapabilityMetadata(String id,
-                              String name,
-                              String description,
-                              ModelPreference modelPreference,
-                              SkillExecutionDescriptor skillExecution,
-                              Set<String> rbacRoles,
-                              CapabilityInvoker invoker,
-                              CapabilityKind kind,
-                              CapabilityToolDescriptor tool,
-                              @Nullable String mappedTargetId) {
+            String name,
+            String description,
+            ModelPreference modelPreference,
+            SkillExecutionDescriptor skillExecution,
+            Set<String> rbacRoles,
+            CapabilityInvoker invoker,
+            CapabilityKind kind,
+            CapabilityToolDescriptor tool,
+            @Nullable String mappedTargetId)
+    {
         this(id, name, description, modelPreference, skillExecution, rbacRoles, invoker, kind, tool, null, mappedTargetId);
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;

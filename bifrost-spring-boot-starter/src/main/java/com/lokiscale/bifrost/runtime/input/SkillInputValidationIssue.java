@@ -1,8 +1,9 @@
 package com.lokiscale.bifrost.runtime.input;
 
 public record SkillInputValidationIssue(
-        String path,
-        String code,
-        String message,
-        Object rejectedValue) {
+                String path,
+                String code,
+                String message,
+                Object rejectedValue)
+{
 }

@@ -1,13 +1,16 @@
 package com.lokiscale.bifrost.core;
 
-public interface AdvisorTraceRecorder {
-
+public interface AdvisorTraceRecorder
+{
     void record(AdvisorTraceFact fact);
 
-    static AdvisorTraceRecorder noOp() {
-        return new AdvisorTraceRecorder() {
+    static AdvisorTraceRecorder noOp()
+    {
+        return new AdvisorTraceRecorder()
+        {
             @Override
-            public void record(AdvisorTraceFact fact) {
+            public void record(AdvisorTraceFact fact)
+            {
             }
         };
     }

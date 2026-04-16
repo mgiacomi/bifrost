@@ -10,8 +10,8 @@ import org.springframework.security.core.Authentication;
 import java.util.List;
 import java.util.Map;
 
-public interface MissionExecutionEngine {
-
+public interface MissionExecutionEngine
+{
     String executeMission(
             BifrostSession session,
             YamlSkillDefinition definition,

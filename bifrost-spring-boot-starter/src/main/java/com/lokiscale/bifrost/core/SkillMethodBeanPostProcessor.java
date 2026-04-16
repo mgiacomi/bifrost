@@ -30,9 +30,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
-
+public class SkillMethodBeanPostProcessor implements BeanPostProcessor
+{
     private static final Logger log = LoggerFactory.getLogger(SkillMethodBeanPostProcessor.class);
 
     private final CapabilityRegistry capabilityRegistry;
@@ -40,12 +41,14 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
     private final BifrostExceptionTransformer bifrostExceptionTransformer;
     private final SkillInputContractResolver inputContractResolver;
 
-    public SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry) {
+    public SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry)
+    {
         this(capabilityRegistry, new ObjectMapper(), new DefaultBifrostExceptionTransformer(), new SkillInputContractResolver());
     }
 
     public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
-                                                      BifrostExceptionTransformer bifrostExceptionTransformer) {
+            BifrostExceptionTransformer bifrostExceptionTransformer)
+    {
         return new SkillMethodBeanPostProcessor(
                 capabilityRegistry,
                 new ObjectMapper(),
@@ -54,9 +57,10 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
     }
 
     public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
-                                                      ObjectMapper objectMapper,
-                                                      BifrostExceptionTransformer bifrostExceptionTransformer,
-                                                      SkillInputContractResolver inputContractResolver) {
+            ObjectMapper objectMapper,
+            BifrostExceptionTransformer bifrostExceptionTransformer,
+            SkillInputContractResolver inputContractResolver)
+    {
         return new SkillMethodBeanPostProcessor(
                 capabilityRegistry,
                 objectMapper,
@@ -65,25 +69,25 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
     }
 
     SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry,
-                                 ObjectMapper objectMapper,
-                                 BifrostExceptionTransformer bifrostExceptionTransformer,
-                                 SkillInputContractResolver inputContractResolver) {
+            ObjectMapper objectMapper,
+            BifrostExceptionTransformer bifrostExceptionTransformer,
+            SkillInputContractResolver inputContractResolver)
+    {
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
-        this.bifrostExceptionTransformer = Objects.requireNonNull(
-                bifrostExceptionTransformer,
-                "bifrostExceptionTransformer must not be null");
+        this.bifrostExceptionTransformer = Objects.requireNonNull(bifrostExceptionTransformer, "bifrostExceptionTransformer must not be null");
         this.inputContractResolver = Objects.requireNonNull(inputContractResolver, "inputContractResolver must not be null");
     }
 
     @Override
-    public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-        ReflectionUtils.doWithMethods(bean.getClass(), method -> registerSkillMethod(bean, beanName, method),
-                method -> method.isAnnotationPresent(SkillMethod.class));
+    public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException
+    {
+        ReflectionUtils.doWithMethods(bean.getClass(), method -> registerSkillMethod(bean, beanName, method), method -> method.isAnnotationPresent(SkillMethod.class));
         return bean;
     }
 
-    private void registerSkillMethod(Object bean, String beanName, Method method) {
+    private void registerSkillMethod(Object bean, String beanName, Method method)
+    {
         SkillMethod annotation = method.getAnnotation(SkillMethod.class);
         String capabilityName = annotation.name().isBlank() ? method.getName() : annotation.name();
         String capabilityDescription = annotation.description().isBlank() ? method.getName() : annotation.description();
@@ -113,120 +117,154 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
         capabilityRegistry.register(capabilityName, metadata);
     }
 
-    private String buildInputSchema(Method method) {
-        try {
+    private String buildInputSchema(Method method)
+    {
+        try
+        {
             JsonNode schema = objectMapper.readTree(JsonSchemaGenerator.generateForMethodInput(method));
             JsonNode propertiesNode = schema.path("properties");
-            if (propertiesNode instanceof ObjectNode propertiesObject) {
-                for (Parameter parameter : method.getParameters()) {
+            if (propertiesNode instanceof ObjectNode propertiesObject)
+            {
+                for (Parameter parameter : method.getParameters())
+                {
                     JsonNode parameterSchema = propertiesObject.get(parameter.getName());
-                    if (parameterSchema != null) {
+                    if (parameterSchema != null)
+                    {
                         applyRuntimeInputSemantics(parameterSchema, objectMapper.constructType(parameter.getParameterizedType()));
                     }
                 }
             }
             return objectMapper.writeValueAsString(schema);
         }
-        catch (JsonProcessingException ex) {
+        catch (JsonProcessingException ex)
+        {
             throw new IllegalStateException("Failed to build method input schema for " + method, ex);
         }
     }
 
-    private void applyRuntimeInputSemantics(JsonNode schemaNode, JavaType targetType) {
-        if (!(schemaNode instanceof ObjectNode objectSchema) || targetType == null) {
+    private void applyRuntimeInputSemantics(JsonNode schemaNode, JavaType targetType)
+    {
+        if (!(schemaNode instanceof ObjectNode objectSchema) || targetType == null)
+        {
             return;
         }
 
         Class<?> rawClass = targetType.getRawClass();
-        if (isRefCapableBindableType(rawClass)) {
+        if (isRefCapableBindableType(rawClass))
+        {
             rewriteAsRefFriendlyString(objectSchema, rawClass);
             return;
         }
 
-        if (targetType.isCollectionLikeType() || rawClass.isArray()) {
+        if (targetType.isCollectionLikeType() || rawClass.isArray())
+        {
             JsonNode itemsNode = objectSchema.get("items");
-            if (itemsNode != null) {
+            if (itemsNode != null)
+            {
                 applyRuntimeInputSemantics(itemsNode, targetType.getContentType());
             }
             return;
         }
 
-        if (targetType.isMapLikeType()) {
+        if (targetType.isMapLikeType())
+        {
             JsonNode additionalPropertiesNode = objectSchema.get("additionalProperties");
-            if (additionalPropertiesNode != null && additionalPropertiesNode.isObject()) {
+            if (additionalPropertiesNode != null && additionalPropertiesNode.isObject())
+            {
                 applyRuntimeInputSemantics(additionalPropertiesNode, targetType.getContentType());
             }
             return;
         }
 
-        if (isSimpleBindableType(rawClass)) {
+        if (isSimpleBindableType(rawClass))
+        {
             return;
         }
 
         JsonNode propertiesNode = objectSchema.get("properties");
-        if (!(propertiesNode instanceof ObjectNode propertiesObject)) {
+        if (!(propertiesNode instanceof ObjectNode propertiesObject))
+        {
             return;
         }
-        propertyTypes(targetType).forEach((propertyName, propertyType) -> {
+
+        propertyTypes(targetType).forEach((propertyName, propertyType) ->
+        {
             JsonNode propertySchema = propertiesObject.get(propertyName);
-            if (propertySchema != null) {
+            if (propertySchema != null)
+            {
                 applyRuntimeInputSemantics(propertySchema, propertyType);
             }
         });
     }
 
-    private void rewriteAsRefFriendlyString(ObjectNode schemaNode, Class<?> rawClass) {
+    private void rewriteAsRefFriendlyString(ObjectNode schemaNode, Class<?> rawClass)
+    {
         schemaNode.removeAll();
         schemaNode.put("type", "string");
         schemaNode.put("description", refFriendlyDescription(rawClass));
         schemaNode.put("x-bifrost-runtime-ref-capable", true);
     }
 
-    private String refFriendlyDescription(Class<?> rawClass) {
-        if (byte[].class.equals(rawClass)) {
+    private String refFriendlyDescription(Class<?> rawClass)
+    {
+        if (byte[].class.equals(rawClass))
+        {
             return "Provide a ref:// URI for binary content or an inline string value when appropriate.";
         }
-        if (Resource.class.isAssignableFrom(rawClass)) {
+        if (Resource.class.isAssignableFrom(rawClass))
+        {
             return "Provide a ref:// URI for the resource content.";
         }
-        if (InputStream.class.isAssignableFrom(rawClass)) {
+        if (InputStream.class.isAssignableFrom(rawClass))
+        {
             return "Provide a ref:// URI for the stream content.";
         }
         return "Provide the value inline or as a ref:// URI.";
     }
 
-    private Object invokeSkillMethod(Object bean, Method method, String capabilityName, Map<String, Object> arguments) {
+    private Object invokeSkillMethod(Object bean, Method method, String capabilityName, Map<String, Object> arguments)
+    {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         ArrayList<InputStream> openedStreams = new ArrayList<>();
-        try {
+
+        try
+        {
             Object[] invocationArguments = bindArguments(method, safeArguments, openedStreams);
             ReflectionUtils.makeAccessible(method);
             Object result = ReflectionUtils.invokeMethod(method, bean, invocationArguments);
             return objectMapper.writeValueAsString(result);
         }
-        catch (JsonProcessingException ex) {
+        catch (JsonProcessingException ex)
+        {
             throw new IllegalStateException("Failed to serialize capability result for " + capabilityName, ex);
         }
-        catch (IllegalArgumentException ex) {
+        catch (IllegalArgumentException ex)
+        {
             throw ex;
         }
-        catch (RuntimeException ex) {
+        catch (RuntimeException ex)
+        {
             log.warn("Capability '{}' failed during deterministic execution", capabilityName, ex);
             return bifrostExceptionTransformer.transform(ex);
         }
-        finally {
+        finally
+        {
             closeStreams(capabilityName, openedStreams);
         }
     }
 
-    private Object[] bindArguments(Method method, Map<String, Object> arguments, java.util.List<InputStream> openedStreams) {
+    private Object[] bindArguments(Method method, Map<String, Object> arguments, List<InputStream> openedStreams)
+    {
         Parameter[] parameters = method.getParameters();
         Object[] bound = new Object[parameters.length];
-        for (int index = 0; index < parameters.length; index++) {
+
+        for (int index = 0; index < parameters.length; index++)
+        {
             Parameter parameter = parameters[index];
             Object rawValue = arguments.get(parameter.getName());
             ToolParam toolParam = parameter.getAnnotation(ToolParam.class);
-            if (rawValue == null && toolParam != null && !toolParam.required()) {
+            if (rawValue == null && toolParam != null && !toolParam.required())
+            {
                 bound[index] = null;
                 continue;
             }
@@ -235,57 +273,73 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
         return bound;
     }
 
-    private Object convertArgument(Parameter parameter, Object rawValue, java.util.List<InputStream> openedStreams) {
-        if (rawValue == null) {
+    private Object convertArgument(Parameter parameter, Object rawValue, List<InputStream> openedStreams)
+    {
+        if (rawValue == null)
+        {
             return null;
         }
 
         JavaType parameterJavaType = objectMapper.constructType(parameter.getParameterizedType());
         Class<?> parameterType = parameterJavaType.getRawClass();
-        if (Resource.class.isAssignableFrom(parameterType)) {
+
+        if (Resource.class.isAssignableFrom(parameterType))
+        {
             return convertToResource(parameter, rawValue);
         }
-        if (byte[].class.equals(parameterType)) {
+        if (byte[].class.equals(parameterType))
+        {
             return convertToBytes(parameter, rawValue);
         }
-        if (InputStream.class.isAssignableFrom(parameterType)) {
+        if (InputStream.class.isAssignableFrom(parameterType))
+        {
             InputStream stream = convertToInputStream(parameter, rawValue);
             openedStreams.add(stream);
             return stream;
         }
-        if (String.class.equals(parameterType) && rawValue instanceof Resource resource) {
+        if (String.class.equals(parameterType) && rawValue instanceof Resource resource)
+        {
             return convertResourceToString(parameter, resource);
         }
         if (parameterType.isInstance(rawValue)
                 && !parameterJavaType.isContainerType()
-                && isSimpleBindableType(parameterType)) {
+                && isSimpleBindableType(parameterType))
+        {
             return rawValue;
         }
+
         Object materializedValue = materializeValue(rawValue, parameterJavaType, openedStreams);
         return objectMapper.convertValue(materializedValue, parameterJavaType);
     }
 
-    private Object materializeValue(Object rawValue, JavaType targetType, java.util.List<InputStream> openedStreams) {
-        if (rawValue == null) {
+    private Object materializeValue(Object rawValue, JavaType targetType, List<InputStream> openedStreams)
+    {
+        if (rawValue == null)
+        {
             return null;
         }
 
         Class<?> rawClass = targetType.getRawClass();
-        if (Resource.class.isAssignableFrom(rawClass)) {
+        if (Resource.class.isAssignableFrom(rawClass))
+        {
             return rawValue;
         }
-        if (String.class.equals(rawClass) && rawValue instanceof Resource resource) {
+        if (String.class.equals(rawClass) && rawValue instanceof Resource resource)
+        {
             return convertResourceToString(null, resource);
         }
-        if (byte[].class.equals(rawClass) && rawValue instanceof Resource resource) {
+        if (byte[].class.equals(rawClass) && rawValue instanceof Resource resource)
+        {
             return convertToBytes(null, resource);
         }
-        if (InputStream.class.isAssignableFrom(rawClass) && rawValue instanceof Resource resource) {
+        if (InputStream.class.isAssignableFrom(rawClass) && rawValue instanceof Resource resource)
+        {
             InputStream stream = convertToInputStream(null, resource);
             openedStreams.add(stream);
             return stream;
         }
-        if (targetType.isMapLikeType() && rawValue instanceof Map<?, ?> mapValue) {
+        if (targetType.isMapLikeType() && rawValue instanceof Map<?, ?> mapValue)
+        {
             JavaType valueType = targetType.getContentType() == null
                     ? objectMapper.constructType(Object.class)
                     : targetType.getContentType();
@@ -293,7 +347,8 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
             mapValue.forEach((key, value) -> materialized.put(key, materializeValue(value, valueType, openedStreams)));
             return materialized;
         }
-        if (targetType.isCollectionLikeType() && rawValue instanceof List<?> listValue) {
+        if (targetType.isCollectionLikeType() && rawValue instanceof List<?> listValue)
+        {
             JavaType contentType = targetType.getContentType() == null
                     ? objectMapper.constructType(Object.class)
                     : targetType.getContentType();
@@ -301,7 +356,8 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
                     .map(value -> materializeValue(value, contentType, openedStreams))
                     .toList();
         }
-        if (rawClass.isArray() && rawValue instanceof List<?> listValue) {
+        if (rawClass.isArray() && rawValue instanceof List<?> listValue)
+        {
             JavaType contentType = targetType.getContentType() == null
                     ? objectMapper.constructType(Object.class)
                     : targetType.getContentType();
@@ -309,10 +365,12 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
                     .map(value -> materializeValue(value, contentType, openedStreams))
                     .toList();
         }
-        if (rawValue instanceof Map<?, ?> mapValue && !isSimpleBindableType(rawClass)) {
+        if (rawValue instanceof Map<?, ?> mapValue && !isSimpleBindableType(rawClass))
+        {
             Map<String, JavaType> propertyTypes = propertyTypes(targetType);
             Map<String, Object> materialized = new LinkedHashMap<>();
-            mapValue.forEach((key, value) -> {
+            mapValue.forEach((key, value) ->
+            {
                 String propertyName = String.valueOf(key);
                 JavaType propertyType = propertyTypes.getOrDefault(propertyName, objectMapper.constructType(Object.class));
                 materialized.put(propertyName, materializeValue(value, propertyType, openedStreams));
@@ -322,20 +380,22 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
         return rawValue;
     }
 
-    private Map<String, JavaType> propertyTypes(JavaType targetType) {
+    private Map<String, JavaType> propertyTypes(JavaType targetType)
+    {
         return objectMapper.getDeserializationConfig()
                 .introspect(targetType)
                 .findProperties()
                 .stream()
                 .filter(definition -> definition.getPrimaryMember() != null)
-                .collect(java.util.stream.Collectors.toMap(
+                .collect(Collectors.toMap(
                         BeanPropertyDefinition::getName,
                         definition -> definition.getPrimaryMember().getType(),
                         (left, right) -> left,
                         LinkedHashMap::new));
     }
 
-    private boolean isSimpleBindableType(Class<?> rawClass) {
+    private boolean isSimpleBindableType(Class<?> rawClass)
+    {
         return rawClass.isPrimitive()
                 || Number.class.isAssignableFrom(rawClass)
                 || CharSequence.class.isAssignableFrom(rawClass)
@@ -344,68 +404,89 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor {
                 || Object.class.equals(rawClass);
     }
 
-    private boolean isRefCapableBindableType(Class<?> rawClass) {
+    private boolean isRefCapableBindableType(Class<?> rawClass)
+    {
         return byte[].class.equals(rawClass)
                 || Resource.class.isAssignableFrom(rawClass)
                 || InputStream.class.isAssignableFrom(rawClass);
     }
 
-    private Resource convertToResource(Parameter parameter, Object rawValue) {
-        if (rawValue instanceof Resource resource) {
+    private Resource convertToResource(Parameter parameter, Object rawValue)
+    {
+        if (rawValue instanceof Resource resource)
+        {
             return resource;
         }
         throw new IllegalArgumentException("Parameter '" + parameterName(parameter) + "' requires a Resource-backed ref payload");
     }
 
-    private byte[] convertToBytes(Parameter parameter, Object rawValue) {
-        if (rawValue instanceof byte[] bytes) {
+    private byte[] convertToBytes(Parameter parameter, Object rawValue)
+    {
+        if (rawValue instanceof byte[] bytes)
+        {
             return bytes;
         }
-        if (rawValue instanceof Resource resource) {
-            try {
+        if (rawValue instanceof Resource resource)
+        {
+            try
+            {
                 return StreamUtils.copyToByteArray(resource.getInputStream());
             }
-            catch (IOException ex) {
+            catch (IOException ex)
+            {
                 throw new IllegalStateException("Failed to read binary payload for parameter '" + parameterName(parameter) + "'", ex);
             }
         }
         return objectMapper.convertValue(rawValue, byte[].class);
     }
 
-    private InputStream convertToInputStream(Parameter parameter, Object rawValue) {
-        if (rawValue instanceof InputStream stream) {
+    private InputStream convertToInputStream(Parameter parameter, Object rawValue)
+    {
+        if (rawValue instanceof InputStream stream)
+        {
             return stream;
         }
-        if (rawValue instanceof Resource resource) {
-            try {
+        if (rawValue instanceof Resource resource)
+        {
+            try
+            {
                 return resource.getInputStream();
             }
-            catch (IOException ex) {
+            catch (IOException ex)
+            {
                 throw new IllegalStateException("Failed to open stream for parameter '" + parameterName(parameter) + "'", ex);
             }
         }
         throw new IllegalArgumentException("Parameter '" + parameterName(parameter) + "' requires a Resource-backed ref payload");
     }
 
-    private String convertResourceToString(Parameter parameter, Resource resource) {
-        try {
+    private String convertResourceToString(Parameter parameter, Resource resource)
+    {
+        try
+        {
             return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         }
-        catch (IOException ex) {
+        catch (IOException ex)
+        {
             throw new IllegalStateException("Failed to read text payload for parameter '" + parameterName(parameter) + "'", ex);
         }
     }
 
-    private String parameterName(Parameter parameter) {
+    private String parameterName(Parameter parameter)
+    {
         return parameter == null ? "<nested>" : parameter.getName();
     }
 
-    private void closeStreams(String capabilityName, java.util.List<InputStream> openedStreams) {
-        for (InputStream stream : openedStreams) {
-            try {
+    private void closeStreams(String capabilityName, List<InputStream> openedStreams)
+    {
+        for (InputStream stream : openedStreams)
+        {
+            try
+            {
                 stream.close();
             }
-            catch (IOException ex) {
+            catch (IOException ex)
+            {
                 log.warn("Capability '{}' failed while closing opened ref stream", capabilityName, ex);
             }
         }

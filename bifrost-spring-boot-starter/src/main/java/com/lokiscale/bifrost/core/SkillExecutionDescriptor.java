@@ -10,13 +10,15 @@ public record SkillExecutionDescriptor(
         @Nullable String frameworkModel,
         @Nullable AiProvider provider,
         @Nullable String providerModel,
-        @Nullable String thinkingLevel) {
-
-    public static SkillExecutionDescriptor none() {
+        @Nullable String thinkingLevel)
+{
+    public static SkillExecutionDescriptor none()
+    {
         return new SkillExecutionDescriptor(null, null, null, null);
     }
 
-    public static SkillExecutionDescriptor from(EffectiveSkillExecutionConfiguration configuration) {
+    public static SkillExecutionDescriptor from(EffectiveSkillExecutionConfiguration configuration)
+    {
         Objects.requireNonNull(configuration, "configuration must not be null");
         return new SkillExecutionDescriptor(
                 configuration.frameworkModel(),
@@ -25,7 +27,8 @@ public record SkillExecutionDescriptor(
                 configuration.thinkingLevel());
     }
 
-    public boolean configured() {
+    public boolean configured()
+    {
         return frameworkModel != null;
     }
 }

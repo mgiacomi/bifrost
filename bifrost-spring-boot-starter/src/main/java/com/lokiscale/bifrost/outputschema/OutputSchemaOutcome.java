@@ -9,9 +9,10 @@ public record OutputSchemaOutcome(
         int retryCount,
         int maxRetries,
         OutputSchemaOutcomeStatus status,
-        List<OutputSchemaValidationIssue> issues) {
-
-    public OutputSchemaOutcome {
+        List<OutputSchemaValidationIssue> issues)
+{
+    public OutputSchemaOutcome
+    {
         issues = issues == null ? List.of() : List.copyOf(issues);
     }
 }

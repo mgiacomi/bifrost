@@ -1,13 +1,15 @@
 package com.lokiscale.bifrost.core;
 
+import java.util.Map;
+
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.outputschema.OutputSchemaOutcome;
 
-public interface ExecutionTraceRecorder {
-
+public interface ExecutionTraceRecorder
+{
     void recordFrameOpened(BifrostSession session, ExecutionFrame frame);
 
-    void recordFrameClosed(BifrostSession session, ExecutionFrame frame, java.util.Map<String, Object> metadata);
+    void recordFrameClosed(BifrostSession session, ExecutionFrame frame, Map<String, Object> metadata);
 
     void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
 

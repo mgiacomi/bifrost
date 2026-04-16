@@ -21,22 +21,24 @@ import java.util.stream.Collectors;
 /**
  * Builds a concise, task-focused system prompt for each iteration of the plan-step execution loop.
  */
-public final class StepPromptBuilder {
-
+public final class StepPromptBuilder
+{
     private static final int MAX_LAST_RESULT_CHARS = 1000;
     private static final SkillInputPromptRenderer INPUT_PROMPT_RENDERER = new SkillInputPromptRenderer();
 
-    private StepPromptBuilder() {
+    private StepPromptBuilder()
+    {
     }
 
     public static String buildStepPrompt(ExecutionPlan plan,
-                                         String objective,
-                                         int stepNumber,
-                                         @Nullable String lastToolResult,
-                                         @Nullable String executionSummary,
-                                         List<ToolCallback> visibleTools,
-                                         boolean finalResponseOnly,
-                                         @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+            String objective,
+            int stepNumber,
+            @Nullable String lastToolResult,
+            @Nullable String executionSummary,
+            List<ToolCallback> visibleTools,
+            boolean finalResponseOnly,
+            @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema)
+    {
         return buildStepPrompt(
                 plan,
                 objective,
@@ -51,14 +53,15 @@ public final class StepPromptBuilder {
     }
 
     public static String buildStepPrompt(ExecutionPlan plan,
-                                         String objective,
-                                         @Nullable Map<String, Object> missionInput,
-                                         int stepNumber,
-                                         @Nullable String lastToolResult,
-                                         @Nullable String executionSummary,
-                                         List<ToolCallback> visibleTools,
-                                         boolean finalResponseOnly,
-                                         @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+            String objective,
+            @Nullable Map<String, Object> missionInput,
+            int stepNumber,
+            @Nullable String lastToolResult,
+            @Nullable String executionSummary,
+            List<ToolCallback> visibleTools,
+            boolean finalResponseOnly,
+            @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema)
+    {
         return buildStepPrompt(
                 plan,
                 objective,
@@ -73,15 +76,16 @@ public final class StepPromptBuilder {
     }
 
     public static String buildStepPrompt(ExecutionPlan plan,
-                                         String objective,
-                                         @Nullable Map<String, Object> missionInput,
-                                         int stepNumber,
-                                         @Nullable String lastToolResult,
-                                         @Nullable String executionSummary,
-                                         List<ToolCallback> visibleTools,
-                                         boolean finalResponseOnly,
-                                         boolean forceVerboseToolArgumentGuidance,
-                                         @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
+            String objective,
+            @Nullable Map<String, Object> missionInput,
+            int stepNumber,
+            @Nullable String lastToolResult,
+            @Nullable String executionSummary,
+            List<ToolCallback> visibleTools,
+            boolean finalResponseOnly,
+            boolean forceVerboseToolArgumentGuidance,
+            @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema)
+    {
         Objects.requireNonNull(plan, "plan must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
 
@@ -100,6 +104,7 @@ public final class StepPromptBuilder {
                         .map(t -> "- " + t.getToolDefinition().name())
                         .reduce((a, b) -> a + "\n" + b)
                         .orElse("(none)");
+
         String currentStepInstructions = formatCurrentStepInstructions(plan.readyTasks());
         String missionContext = MissionInputMessageFormatter.buildMissionContext(objective, null, plan.capabilityName());
 
@@ -117,19 +122,25 @@ public final class StepPromptBuilder {
         sb.append("\n\n--- READY TASKS (you should work on one of these) ---\n").append(readyTaskLines);
         sb.append("\n\n--- PENDING TASKS WAITING ON DEPENDENCIES ---\n").append(waitingTaskLines);
         sb.append("\n\n--- BLOCKED TASKS (failed or cannot continue) ---\n").append(blockedTaskLines);
-        if (currentStepInstructions != null) {
+
+        if (currentStepInstructions != null)
+        {
             sb.append("\n\n--- CURRENT EXECUTABLE TASK ---\n").append(currentStepInstructions);
         }
+
         String toolArgumentGuidance = formatToolArgumentGuidance(plan.readyTasks(), visibleTools, forceVerboseToolArgumentGuidance);
-        if (toolArgumentGuidance != null) {
+        if (toolArgumentGuidance != null)
+        {
             sb.append("\n\n--- TOOL ARGUMENT SHAPE ---\n").append(toolArgumentGuidance);
         }
 
-        if (executionSummary != null && !executionSummary.isBlank()) {
+        if (executionSummary != null && !executionSummary.isBlank())
+        {
             sb.append("\n\n--- EXECUTION SUMMARY ---\n").append(executionSummary);
         }
 
-        if (lastToolResult != null && !lastToolResult.isBlank()) {
+        if (lastToolResult != null && !lastToolResult.isBlank())
+        {
             String trimmedResult = lastToolResult.length() > MAX_LAST_RESULT_CHARS
                     ? lastToolResult.substring(0, MAX_LAST_RESULT_CHARS) + "... (truncated)"
                     : lastToolResult;
@@ -138,7 +149,8 @@ public final class StepPromptBuilder {
 
         sb.append("\n\n--- AVAILABLE TOOLS ---\n").append(toolNameList);
 
-        if (finalResponseOnly) {
+        if (finalResponseOnly)
+        {
             sb.append("""
 
 
@@ -152,6 +164,7 @@ public final class StepPromptBuilder {
                       "finalResponse": { <your complete response to the mission objective> }
                     }
                     """);
+
             appendOutputSchemaGuidance(sb, outputSchema);
             sb.append("""
 
@@ -160,7 +173,9 @@ public final class StepPromptBuilder {
                     - finalResponse must be a raw JSON object matching the required schema, not a string containing escaped JSON.
                     - Return raw JSON only.
                     """);
-        } else {
+        }
+        else
+        {
             String expectedTaskJson = """
                     {
                       "stepAction": "CALL_TOOL",
@@ -168,18 +183,21 @@ public final class StepPromptBuilder {
                       "toolName": "<exact tool name from the list above>",
                       "toolArguments": { <arguments for this tool> }
                     }""";
+
             List<PlanTask> readyTasks = plan.readyTasks();
-            if (readyTasks != null && readyTasks.size() == 1) {
+            if (readyTasks != null && readyTasks.size() == 1)
+            {
                 PlanTask singleTask = readyTasks.getFirst();
                 String toolName = singleTask.capabilityName() == null ? "unspecified" : singleTask.capabilityName();
                 expectedTaskJson = """
-                    {
-                      "stepAction": "CALL_TOOL",
-                      "taskId": "%s",
-                      "toolName": "%s",
-                      "toolArguments": { <arguments for this tool> }
-                    }""".formatted(singleTask.taskId(), toolName);
+                        {
+                          "stepAction": "CALL_TOOL",
+                          "taskId": "%s",
+                          "toolName": "%s",
+                          "toolArguments": { <arguments for this tool> }
+                        }""".formatted(singleTask.taskId(), toolName);
             }
+
             sb.append("""
 
 
@@ -200,13 +218,13 @@ public final class StepPromptBuilder {
         return sb.toString();
     }
 
-    public static String buildStepUserMessage(ExecutionPlan plan, String objective) {
+    public static String buildStepUserMessage(ExecutionPlan plan, String objective)
+    {
         return buildStepUserMessage(plan, objective, null);
     }
 
-    public static String buildStepUserMessage(ExecutionPlan plan,
-                                              String objective,
-                                              @Nullable Map<String, Object> missionInput) {
+    public static String buildStepUserMessage(ExecutionPlan plan, String objective, @Nullable Map<String, Object> missionInput)
+    {
         Objects.requireNonNull(plan, "plan must not be null");
         Objects.requireNonNull(objective, "objective must not be null");
         return MissionInputMessageFormatter.buildUserMessage(
@@ -214,10 +232,13 @@ public final class StepPromptBuilder {
                 missionInput);
     }
 
-    private static String formatTasks(List<PlanTask> tasks, ExecutionPlan plan) {
-        if (tasks.isEmpty()) {
+    private static String formatTasks(List<PlanTask> tasks, ExecutionPlan plan)
+    {
+        if (tasks.isEmpty())
+        {
             return "  (none)";
         }
+
         return tasks.stream()
                 .sorted(Comparator.comparingInt(plan.tasks()::indexOf))
                 .map(task -> "  - [%s] %s: %s (tool: %s)%s".formatted(
@@ -230,11 +251,13 @@ public final class StepPromptBuilder {
                 .orElse("  (none)");
     }
 
-    private static String formatTasksByStatus(ExecutionPlan plan, PlanTaskStatus status) {
+    private static String formatTasksByStatus(ExecutionPlan plan, PlanTaskStatus status)
+    {
         List<PlanTask> matching = plan.tasks().stream()
                 .filter(task -> task.status() == status)
                 .toList();
-        if (matching.isEmpty()) {
+        if (matching.isEmpty())
+        {
             return "  (none)";
         }
         return matching.stream()
@@ -246,16 +269,21 @@ public final class StepPromptBuilder {
                 .orElse("  (none)");
     }
 
-    private static String formatWaitingTasks(ExecutionPlan plan) {
-        java.util.Map<String, PlanTask> tasksById = plan.tasks().stream()
+    private static String formatWaitingTasks(ExecutionPlan plan)
+    {
+        Map<String, PlanTask> tasksById = plan.tasks().stream()
                 .collect(Collectors.toMap(PlanTask::taskId, task -> task, (left, right) -> left));
+
         List<PlanTask> waiting = plan.tasks().stream()
                 .filter(task -> task.status() == PlanTaskStatus.PENDING)
                 .filter(task -> !task.isReady(tasksById))
                 .toList();
-        if (waiting.isEmpty()) {
+
+        if (waiting.isEmpty())
+        {
             return "  (none)";
         }
+
         return waiting.stream()
                 .map(task -> "  - %s: %s (waiting on: %s)%s".formatted(
                         task.taskId(),
@@ -267,13 +295,16 @@ public final class StepPromptBuilder {
     }
 
     private static void appendOutputSchemaGuidance(StringBuilder sb,
-                                                   @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema) {
-        if (outputSchema == null) {
+            @Nullable YamlSkillManifest.OutputSchemaManifest outputSchema)
+    {
+        if (outputSchema == null)
+        {
             return;
         }
         sb.append("\n\n--- REQUIRED FINAL RESPONSE SHAPE ---\n");
         sb.append(renderSchemaExample(outputSchema, 0));
-        if (outputSchema.getRequired() != null && !outputSchema.getRequired().isEmpty()) {
+        if (outputSchema.getRequired() != null && !outputSchema.getRequired().isEmpty())
+        {
             sb.append("\nRequired top-level fields: ")
                     .append(String.join(", ", outputSchema.getRequired()))
                     .append("\n");
@@ -281,13 +312,16 @@ public final class StepPromptBuilder {
         sb.append("Do not add fields that are not in this schema.\n");
     }
 
-    private static String renderSchemaExample(YamlSkillManifest.OutputSchemaManifest schema, int depth) {
+    private static String renderSchemaExample(YamlSkillManifest.OutputSchemaManifest schema, int depth)
+    {
         String indent = "  ".repeat(depth);
-        if ("object".equals(schema.getType())) {
+        if ("object".equals(schema.getType()))
+        {
             StringBuilder sb = new StringBuilder();
             sb.append("{\n");
             List<String> propertyNames = schema.getProperties().keySet().stream().sorted().toList();
-            for (int i = 0; i < propertyNames.size(); i++) {
+            for (int i = 0; i < propertyNames.size(); i++)
+            {
                 String propertyName = propertyNames.get(i);
                 YamlSkillManifest.OutputSchemaManifest child = schema.getProperties().get(propertyName);
                 sb.append(indent)
@@ -295,7 +329,8 @@ public final class StepPromptBuilder {
                         .append(propertyName)
                         .append("\": ")
                         .append(renderSchemaExample(child, depth + 1));
-                if (i < propertyNames.size() - 1) {
+                if (i < propertyNames.size() - 1)
+                {
                     sb.append(",");
                 }
                 sb.append("\n");
@@ -303,14 +338,17 @@ public final class StepPromptBuilder {
             sb.append(indent).append("}");
             return sb.toString();
         }
-        if ("array".equals(schema.getType())) {
+        if ("array".equals(schema.getType()))
+        {
             String items = schema.getItems() == null ? "\"<value>\"" : renderSchemaExample(schema.getItems(), depth + 1);
             return "[ " + items + " ]";
         }
-        if (schema.getEnumValues() != null && !schema.getEnumValues().isEmpty()) {
+        if (schema.getEnumValues() != null && !schema.getEnumValues().isEmpty())
+        {
             return "\"<one of: " + String.join(", ", schema.getEnumValues()) + ">\"";
         }
-        return switch (schema.getType() == null ? "" : schema.getType()) {
+        return switch (schema.getType() == null ? "" : schema.getType())
+        {
             case "string" -> "\"<string>\"";
             case "number", "integer" -> "<number>";
             case "boolean" -> "<boolean>";
@@ -319,11 +357,15 @@ public final class StepPromptBuilder {
     }
 
     @Nullable
-    private static String formatCurrentStepInstructions(List<PlanTask> readyTasks) {
-        if (readyTasks == null || readyTasks.isEmpty()) {
+    private static String formatCurrentStepInstructions(List<PlanTask> readyTasks)
+    {
+        if (readyTasks == null || readyTasks.isEmpty())
+        {
             return null;
         }
-        if (readyTasks.size() == 1) {
+
+        if (readyTasks.size() == 1)
+        {
             PlanTask task = readyTasks.getFirst();
             String toolName = task.capabilityName() == null ? "unspecified" : task.capabilityName();
             return """
@@ -332,6 +374,7 @@ public final class StepPromptBuilder {
                     Do not call the parent mission skill or invent a new tool name.
                     """.formatted(task.taskId(), toolName);
         }
+
         return readyTasks.stream()
                 .map(task -> "  - taskId %s must use toolName %s".formatted(
                         task.taskId(),
@@ -342,11 +385,14 @@ public final class StepPromptBuilder {
 
     @Nullable
     private static String formatToolArgumentGuidance(List<PlanTask> readyTasks,
-                                                     List<ToolCallback> visibleTools,
-                                                     boolean forceVerboseToolArgumentGuidance) {
-        if (readyTasks == null || readyTasks.isEmpty() || visibleTools == null || visibleTools.isEmpty()) {
+            List<ToolCallback> visibleTools,
+            boolean forceVerboseToolArgumentGuidance)
+    {
+        if (readyTasks == null || readyTasks.isEmpty() || visibleTools == null || visibleTools.isEmpty())
+        {
             return null;
         }
+
         return readyTasks.stream()
                 .map(task -> formatToolArgumentGuidance(task, visibleTools, forceVerboseToolArgumentGuidance))
                 .filter(Objects::nonNull)
@@ -356,60 +402,80 @@ public final class StepPromptBuilder {
 
     @Nullable
     private static String formatToolArgumentGuidance(PlanTask task,
-                                                     List<ToolCallback> visibleTools,
-                                                     boolean forceVerboseToolArgumentGuidance) {
-        if (task.capabilityName() == null || task.capabilityName().isBlank()) {
+            List<ToolCallback> visibleTools,
+            boolean forceVerboseToolArgumentGuidance)
+    {
+        if (task.capabilityName() == null || task.capabilityName().isBlank())
+        {
             return null;
         }
+
         ToolCallback tool = visibleTools.stream()
                 .filter(candidate -> candidate != null && candidate.getToolDefinition() != null)
                 .filter(candidate -> task.capabilityName().equals(candidate.getToolDefinition().name()))
                 .findFirst()
                 .orElse(null);
-        if (tool == null) {
+
+        if (tool == null)
+        {
             return null;
         }
+
         SkillInputContract contract = ToolCallbackInputContracts.resolve(tool);
-        if (contract.isGeneric()) {
+        if (contract.isGeneric())
+        {
             return null;
         }
+
         SkillInputPromptRenderer.DetailLevel detailLevel = forceVerboseToolArgumentGuidance || useVerboseDetail(contract.schema())
                 ? SkillInputPromptRenderer.DetailLevel.VERBOSE
                 : SkillInputPromptRenderer.DetailLevel.COMPACT;
+
         return """
                 Task %s / tool %s:
                 %s
                 """.formatted(task.taskId(), task.capabilityName(), INPUT_PROMPT_RENDERER.renderToolArgumentsExample(contract, detailLevel));
     }
 
-    private static boolean useVerboseDetail(SkillInputSchemaNode schema) {
+    private static boolean useVerboseDetail(SkillInputSchemaNode schema)
+    {
         return maxDepth(schema, 1) > 2 || countProperties(schema) > 6;
     }
 
-    private static int maxDepth(SkillInputSchemaNode schema, int depth) {
-        if (schema == null) {
+    private static int maxDepth(SkillInputSchemaNode schema, int depth)
+    {
+        if (schema == null)
+        {
             return depth;
         }
-        if (schema.isArray()) {
+        if (schema.isArray())
+        {
             return maxDepth(schema.items(), depth + 1);
         }
-        if (!schema.isObject()) {
+        if (!schema.isObject())
+        {
             return depth;
         }
+
         int propertyDepth = schema.properties().values().stream()
                 .mapToInt(child -> maxDepth(child, depth + 1))
                 .max()
                 .orElse(depth);
+
         int additionalDepth = schema.additionalPropertiesSchema() == null
                 ? depth
                 : maxDepth(schema.additionalPropertiesSchema(), depth + 1);
+
         return Math.max(propertyDepth, additionalDepth);
     }
 
-    private static int countProperties(SkillInputSchemaNode schema) {
-        if (schema == null || !schema.isObject()) {
+    private static int countProperties(SkillInputSchemaNode schema)
+    {
+        if (schema == null || !schema.isObject())
+        {
             return 0;
         }
+
         return schema.properties().size()
                 + schema.properties().values().stream().mapToInt(StepPromptBuilder::countProperties).sum()
                 + countProperties(schema.additionalPropertiesSchema());

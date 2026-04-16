@@ -20,8 +20,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-public interface ExecutionStateService {
-
+public interface ExecutionStateService
+{
     ExecutionFrame openMissionFrame(BifrostSession session, String route, Map<String, Object> parameters);
 
     ExecutionFrame openFrame(BifrostSession session, TraceFrameType traceFrameType, String route, Map<String, Object> parameters);
@@ -49,10 +49,10 @@ public interface ExecutionStateService {
     void logPlanUpdated(BifrostSession session, ExecutionPlan plan);
 
     void recordPlanningEvent(BifrostSession session,
-                             ExecutionFrame frame,
-                             TraceRecordType recordType,
-                             Map<String, Object> metadata,
-                             Object payload);
+            ExecutionFrame frame,
+            TraceRecordType recordType,
+            Map<String, Object> metadata,
+            Object payload);
 
     void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
 
@@ -61,10 +61,10 @@ public interface ExecutionStateService {
     void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
 
     <T> T traceModelCall(BifrostSession session,
-                         ExecutionFrame frame,
-                         ModelTraceContext context,
-                         Object preparedPayload,
-                         ModelTraceCallback<T> callback);
+            ExecutionFrame frame,
+            ModelTraceContext context,
+            Object preparedPayload,
+            ModelTraceCallback<T> callback);
 
     void logToolCall(BifrostSession session, TaskExecutionEvent event);
 
@@ -79,15 +79,15 @@ public interface ExecutionStateService {
     Set<String> currentEvidenceTypes(BifrostSession session);
 
     void recordProducedEvidence(BifrostSession session,
-                                String capabilityName,
-                                @Nullable String linkedTaskId,
-                                boolean unplanned,
-                                Collection<String> evidenceTypes);
+            String capabilityName,
+            @Nullable String linkedTaskId,
+            boolean unplanned,
+            Collection<String> evidenceTypes);
 
     void recordEvidenceValidation(BifrostSession session,
-                                  boolean passed,
-                                  Map<String, Object> metadata,
-                                  Object payload);
+            boolean passed,
+            Map<String, Object> metadata,
+            Object payload);
 
     void recordLinterOutcome(BifrostSession session, LinterOutcome outcome);
 
@@ -100,11 +100,12 @@ public interface ExecutionStateService {
     void logError(BifrostSession session, Map<String, Object> payload);
 
     void recordStepEvent(BifrostSession session, ExecutionFrame frame, TraceRecordType recordType,
-                         Map<String, Object> metadata, Object payload);
+            Map<String, Object> metadata, Object payload);
 
     void finalizeTrace(BifrostSession session, Map<String, Object> metadata);
 
-    default void finalizeTrace(BifrostSession session, TraceCompletion completion) {
+    default void finalizeTrace(BifrostSession session, TraceCompletion completion)
+    {
         finalizeTrace(session, completion == null ? Map.of() : completion.metadata());
     }
 }

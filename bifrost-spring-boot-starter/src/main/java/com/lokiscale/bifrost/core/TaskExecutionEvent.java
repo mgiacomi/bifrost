@@ -6,14 +6,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-public record TaskExecutionEvent(
-        String eventId,
-        String capabilityName,
-        @Nullable String linkedTaskId,
-        Map<String, Object> details,
-        @Nullable String note) {
-
-    public TaskExecutionEvent {
+public record TaskExecutionEvent(String eventId, String capabilityName, @Nullable String linkedTaskId, Map<String, Object> details, @Nullable String note)
+{
+    public TaskExecutionEvent
+    {
         eventId = requireNonBlank(eventId, "eventId");
         capabilityName = requireNonBlank(capabilityName, "capabilityName");
         linkedTaskId = normalizeNullable(linkedTaskId);
@@ -21,29 +17,30 @@ public record TaskExecutionEvent(
         note = normalizeNullable(note);
     }
 
-    public static TaskExecutionEvent linked(String capabilityName,
-                                            String linkedTaskId,
-                                            Map<String, Object> details,
-                                            @Nullable String note) {
+    public static TaskExecutionEvent linked(String capabilityName, String linkedTaskId, Map<String, Object> details, @Nullable String note)
+    {
         return new TaskExecutionEvent(UUID.randomUUID().toString(), capabilityName, linkedTaskId, details, note);
     }
 
-    public static TaskExecutionEvent unlinked(String capabilityName,
-                                              Map<String, Object> details,
-                                              @Nullable String note) {
+    public static TaskExecutionEvent unlinked(String capabilityName, Map<String, Object> details, @Nullable String note)
+    {
         return new TaskExecutionEvent(UUID.randomUUID().toString(), capabilityName, null, details, note);
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
     }
 
-    private static String normalizeNullable(String value) {
-        if (value == null || value.isBlank()) {
+    private static String normalizeNullable(String value)
+    {
+        if (value == null || value.isBlank())
+        {
             return null;
         }
         return value;

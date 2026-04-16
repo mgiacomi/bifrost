@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.core;
 
-public enum PlanTaskStatus {
+public enum PlanTaskStatus
+{
     PENDING,
     IN_PROGRESS,
     COMPLETED,

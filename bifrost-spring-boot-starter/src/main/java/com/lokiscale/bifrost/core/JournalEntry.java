@@ -14,12 +14,13 @@ public record JournalEntry(
         JournalEntryType type,
         JsonNode payload,
         @Nullable String frameId,
-        @Nullable String route) {
-
+        @Nullable String route)
+{
     public JournalEntry(Instant timestamp,
-                        JournalLevel level,
-                        JournalEntryType type,
-                        JsonNode payload) {
+            JournalLevel level,
+            JournalEntryType type,
+            JsonNode payload)
+    {
         this(timestamp, level, type, payload, null, null);
     }
 
@@ -30,7 +31,8 @@ public record JournalEntry(
             @JsonProperty("type") JournalEntryType type,
             @JsonProperty("payload") JsonNode payload,
             @JsonProperty("frameId") @Nullable String frameId,
-            @JsonProperty("route") @Nullable String route) {
+            @JsonProperty("route") @Nullable String route)
+    {
         timestamp = Objects.requireNonNull(timestamp, "timestamp must not be null");
         level = Objects.requireNonNull(level, "level must not be null");
         type = Objects.requireNonNull(type, "type must not be null");
@@ -45,8 +47,10 @@ public record JournalEntry(
         this.route = route;
     }
 
-    private static String normalizeNullable(String value) {
-        if (value == null || value.isBlank()) {
+    private static String normalizeNullable(String value)
+    {
+        if (value == null || value.isBlank())
+        {
             return null;
         }
         return value;

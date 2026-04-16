@@ -10,23 +10,28 @@ public record AdvisorTraceContext(
         String advisorName,
         @Nullable String skillName,
         int attempt,
-        String status) {
-
-    public AdvisorTraceContext {
+        String status)
+{
+    public AdvisorTraceContext
+    {
         advisorName = requireNonBlank(advisorName, "advisorName");
-        if (skillName != null && skillName.isBlank()) {
+        if (skillName != null && skillName.isBlank())
+        {
             throw new IllegalArgumentException("skillName must not be blank");
         }
-        if (attempt <= 0) {
+        if (attempt <= 0)
+        {
             throw new IllegalArgumentException("attempt must be greater than zero");
         }
         status = requireNonBlank(status, "status");
     }
 
-    public Map<String, Object> metadata() {
+    public Map<String, Object> metadata()
+    {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("advisorName", advisorName);
-        if (skillName != null) {
+        if (skillName != null)
+        {
             metadata.put("skillName", skillName);
         }
         metadata.put("attempt", attempt);
@@ -34,9 +39,11 @@ public record AdvisorTraceContext(
         return Map.copyOf(metadata);
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;

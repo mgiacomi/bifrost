@@ -13,35 +13,44 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-public final class OutputSchemaValidator {
-
+public final class OutputSchemaValidator
+{
     private final ObjectMapper objectMapper;
 
-    public OutputSchemaValidator() {
+    public OutputSchemaValidator()
+    {
         this(new ObjectMapper());
     }
 
-    public OutputSchemaValidator(ObjectMapper objectMapper) {
+    public OutputSchemaValidator(ObjectMapper objectMapper)
+    {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     }
 
-    public OutputSchemaValidationResult validate(String rawOutput, YamlSkillManifest.OutputSchemaManifest schema) {
+    public OutputSchemaValidationResult validate(String rawOutput, YamlSkillManifest.OutputSchemaManifest schema)
+    {
         Objects.requireNonNull(schema, "schema must not be null");
-        if (!StringUtils.hasText(rawOutput)) {
+        if (!StringUtils.hasText(rawOutput))
+        {
             return OutputSchemaValidationResult.failed(
                     OutputSchemaFailureMode.INVALID_JSON,
                     List.of(new OutputSchemaValidationIssue("$", "Response is not valid JSON.", null)));
         }
+
         JsonNode root;
-        try {
+        try
+        {
             root = objectMapper.readTree(rawOutput);
         }
-        catch (JsonProcessingException ex) {
+        catch (JsonProcessingException ex)
+        {
             return OutputSchemaValidationResult.failed(
                     OutputSchemaFailureMode.INVALID_JSON,
                     List.of(new OutputSchemaValidationIssue("$", "Response is not valid JSON.", null)));
         }
-        if (root == null) {
+
+        if (root == null)
+        {
             return OutputSchemaValidationResult.failed(
                     OutputSchemaFailureMode.INVALID_JSON,
                     List.of(new OutputSchemaValidationIssue("$", "Response is not valid JSON.", null)));
@@ -49,18 +58,23 @@ public final class OutputSchemaValidator {
 
         List<OutputSchemaValidationIssue> issues = new ArrayList<>();
         validateNode(root, schema, "$", null, issues);
-        if (issues.isEmpty()) {
+
+        if (issues.isEmpty())
+        {
             return OutputSchemaValidationResult.passed();
         }
+
         return OutputSchemaValidationResult.failed(OutputSchemaFailureMode.SCHEMA_VALIDATION_FAILED, issues);
     }
 
     private void validateNode(JsonNode node,
-                              YamlSkillManifest.OutputSchemaManifest schema,
-                              String path,
-                              String canonicalField,
-                              List<OutputSchemaValidationIssue> issues) {
-        switch (schema.getType()) {
+            YamlSkillManifest.OutputSchemaManifest schema,
+            String path,
+            String canonicalField,
+            List<OutputSchemaValidationIssue> issues)
+    {
+        switch (schema.getType())
+        {
             case "object" -> validateObject(node, schema, path, canonicalField, issues);
             case "array" -> validateArray(node, schema, path, canonicalField, issues);
             case "string" -> validateString(node, schema, path, canonicalField, issues);
@@ -72,44 +86,52 @@ public final class OutputSchemaValidator {
     }
 
     private void validateObject(JsonNode node,
-                                YamlSkillManifest.OutputSchemaManifest schema,
-                                String path,
-                                String canonicalField,
-                                List<OutputSchemaValidationIssue> issues) {
-        if (!node.isObject()) {
+            YamlSkillManifest.OutputSchemaManifest schema,
+            String path,
+            String canonicalField,
+            List<OutputSchemaValidationIssue> issues)
+    {
+        if (!node.isObject())
+        {
             issues.add(new OutputSchemaValidationIssue(path, "should be an object", canonicalField));
             return;
         }
 
         Map<String, String> canonicalByLowercase = new LinkedHashMap<>();
-        schema.getProperties().keySet().forEach(property ->
-                canonicalByLowercase.put(property.toLowerCase(Locale.ROOT), property));
+        schema.getProperties().keySet().forEach(property -> canonicalByLowercase.put(property.toLowerCase(Locale.ROOT), property));
 
         Map<String, List<String>> actualByLowercase = new LinkedHashMap<>();
-        node.fieldNames().forEachRemaining(fieldName ->
-                actualByLowercase.computeIfAbsent(fieldName.toLowerCase(Locale.ROOT), ignored -> new ArrayList<>()).add(fieldName));
+        node.fieldNames().forEachRemaining(fieldName -> actualByLowercase.computeIfAbsent(fieldName.toLowerCase(Locale.ROOT), ignored -> new ArrayList<>()).add(fieldName));
 
-        for (Map.Entry<String, List<String>> entry : actualByLowercase.entrySet()) {
+        for (Map.Entry<String, List<String>> entry : actualByLowercase.entrySet())
+        {
             String canonicalName = canonicalByLowercase.get(entry.getKey());
-            if (entry.getValue().size() > 1) {
+            if (entry.getValue().size() > 1)
+            {
                 issues.add(new OutputSchemaValidationIssue(
                         path,
                         "ambiguous fields " + entry.getValue() + " differ only by case",
                         canonicalName));
                 continue;
             }
+
             String actualField = entry.getValue().getFirst();
-            if (canonicalName == null) {
-                if (!Boolean.TRUE.equals(schema.getAdditionalProperties())) {
+            if (canonicalName == null)
+            {
+                if (!Boolean.TRUE.equals(schema.getAdditionalProperties()))
+                {
                     issues.add(new OutputSchemaValidationIssue(pathOf(path, actualField), "unknown field '" + actualField + "'", actualField));
                 }
                 continue;
             }
+
             validateNode(node.get(actualField), schema.getProperties().get(canonicalName), pathOf(path, canonicalName), canonicalName, issues);
         }
 
-        for (String requiredField : schema.getRequired()) {
-            if (!actualByLowercase.containsKey(requiredField.toLowerCase(Locale.ROOT))) {
+        for (String requiredField : schema.getRequired())
+        {
+            if (!actualByLowercase.containsKey(requiredField.toLowerCase(Locale.ROOT)))
+            {
                 issues.add(new OutputSchemaValidationIssue(
                         pathOf(path, requiredField),
                         "missing required field '" + requiredField + "'",
@@ -119,29 +141,31 @@ public final class OutputSchemaValidator {
     }
 
     private void validateArray(JsonNode node,
-                               YamlSkillManifest.OutputSchemaManifest schema,
-                               String path,
-                               String canonicalField,
-                               List<OutputSchemaValidationIssue> issues) {
-        if (!node.isArray()) {
+            YamlSkillManifest.OutputSchemaManifest schema,
+            String path,
+            String canonicalField,
+            List<OutputSchemaValidationIssue> issues)
+    {
+        if (!node.isArray())
+        {
             issues.add(new OutputSchemaValidationIssue(path, "should be an array", canonicalField));
             return;
         }
-        for (int index = 0; index < node.size(); index++) {
+        for (int index = 0; index < node.size(); index++)
+        {
             validateNode(node.get(index), schema.getItems(), path + "[" + index + "]", canonicalField, issues);
         }
     }
 
-    private void validateString(JsonNode node,
-                                YamlSkillManifest.OutputSchemaManifest schema,
-                                String path,
-                                String canonicalField,
-                                List<OutputSchemaValidationIssue> issues) {
-        if (!node.isTextual()) {
+    private void validateString(JsonNode node, YamlSkillManifest.OutputSchemaManifest schema, String path, String canonicalField, List<OutputSchemaValidationIssue> issues)
+    {
+        if (!node.isTextual())
+        {
             issues.add(new OutputSchemaValidationIssue(path, "should be a string", canonicalField));
             return;
         }
-        if (!schema.getEnumValues().isEmpty() && !schema.getEnumValues().contains(node.textValue())) {
+        if (!schema.getEnumValues().isEmpty() && !schema.getEnumValues().contains(node.textValue()))
+        {
             issues.add(new OutputSchemaValidationIssue(
                     path,
                     "must be one of " + schema.getEnumValues(),
@@ -149,17 +173,16 @@ public final class OutputSchemaValidator {
         }
     }
 
-    private void validateType(boolean condition,
-                              String path,
-                              String canonicalField,
-                              String message,
-                              List<OutputSchemaValidationIssue> issues) {
-        if (!condition) {
+    private void validateType(boolean condition, String path, String canonicalField, String message, List<OutputSchemaValidationIssue> issues)
+    {
+        if (!condition)
+        {
             issues.add(new OutputSchemaValidationIssue(path, message, canonicalField));
         }
     }
 
-    private String pathOf(String parent, String child) {
+    private String pathOf(String parent, String child)
+    {
         return "$".equals(parent) ? "$." + child : parent + "." + child;
     }
 }

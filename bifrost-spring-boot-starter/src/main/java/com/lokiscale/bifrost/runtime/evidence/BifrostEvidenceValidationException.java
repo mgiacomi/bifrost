@@ -3,8 +3,8 @@ package com.lokiscale.bifrost.runtime.evidence;
 import java.util.List;
 import java.util.Objects;
 
-public final class BifrostEvidenceValidationException extends RuntimeException {
-
+public final class BifrostEvidenceValidationException extends RuntimeException
+{
     private final String skillName;
     private final String rawOutput;
     private final List<EvidenceCoverageIssue> issues;
@@ -12,10 +12,11 @@ public final class BifrostEvidenceValidationException extends RuntimeException {
     private final int maxRetries;
 
     public BifrostEvidenceValidationException(String skillName,
-                                              String rawOutput,
-                                              List<EvidenceCoverageIssue> issues,
-                                              int attemptCount,
-                                              int maxRetries) {
+            String rawOutput,
+            List<EvidenceCoverageIssue> issues,
+            int attemptCount,
+            int maxRetries)
+    {
         super(buildMessage(skillName, issues, attemptCount, maxRetries));
         this.skillName = Objects.requireNonNull(skillName, "skillName must not be null");
         this.rawOutput = rawOutput;
@@ -24,30 +25,36 @@ public final class BifrostEvidenceValidationException extends RuntimeException {
         this.maxRetries = maxRetries;
     }
 
-    public String getSkillName() {
+    public String getSkillName()
+    {
         return skillName;
     }
 
-    public String getRawOutput() {
+    public String getRawOutput()
+    {
         return rawOutput;
     }
 
-    public List<EvidenceCoverageIssue> getIssues() {
+    public List<EvidenceCoverageIssue> getIssues()
+    {
         return issues;
     }
 
-    public int getAttemptCount() {
+    public int getAttemptCount()
+    {
         return attemptCount;
     }
 
-    public int getMaxRetries() {
+    public int getMaxRetries()
+    {
         return maxRetries;
     }
 
     private static String buildMessage(String skillName,
-                                       List<EvidenceCoverageIssue> issues,
-                                       int attemptCount,
-                                       int maxRetries) {
+            List<EvidenceCoverageIssue> issues,
+            int attemptCount,
+            int maxRetries)
+    {
         String summary = issues == null || issues.isEmpty()
                 ? "No evidence validation issues recorded."
                 : issues.getFirst().message();

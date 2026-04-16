@@ -14,9 +14,10 @@ public record SkillInputSchemaNode(
         List<String> enumValues,
         String description,
         String format,
-        boolean runtimeRefCapable) {
-
-    public SkillInputSchemaNode {
+        boolean runtimeRefCapable)
+{
+    public SkillInputSchemaNode
+    {
         type = requireNonBlank(type, "type");
         properties = properties == null ? Map.of() : Map.copyOf(properties);
         required = required == null ? List.of() : List.copyOf(required);
@@ -24,36 +25,43 @@ public record SkillInputSchemaNode(
     }
 
     public SkillInputSchemaNode(String type,
-                                Map<String, SkillInputSchemaNode> properties,
-                                List<String> required,
-                                Boolean additionalProperties,
-                                SkillInputSchemaNode items,
-                                List<String> enumValues,
-                                String description,
-                                String format,
-                                boolean runtimeRefCapable) {
+            Map<String, SkillInputSchemaNode> properties,
+            List<String> required,
+            Boolean additionalProperties,
+            SkillInputSchemaNode items,
+            List<String> enumValues,
+            String description,
+            String format,
+            boolean runtimeRefCapable)
+    {
         this(type, properties, required, additionalProperties, null, items, enumValues, description, format, runtimeRefCapable);
     }
 
-    public boolean isObject() {
+    public boolean isObject()
+    {
         return "object".equals(type);
     }
 
-    public boolean isArray() {
+    public boolean isArray()
+    {
         return "array".equals(type);
     }
 
-    public boolean isString() {
+    public boolean isString()
+    {
         return "string".equals(type);
     }
 
-    public boolean allowsAdditionalProperties() {
+    public boolean allowsAdditionalProperties()
+    {
         return !Boolean.FALSE.equals(additionalProperties) || additionalPropertiesSchema != null;
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;

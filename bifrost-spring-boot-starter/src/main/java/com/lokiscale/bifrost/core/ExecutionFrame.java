@@ -11,9 +11,10 @@ public record ExecutionFrame(
         TraceFrameType traceFrameType,
         String route,
         Map<String, Object> parameters,
-        Instant openedAt) {
-
-    public ExecutionFrame {
+        Instant openedAt)
+{
+    public ExecutionFrame
+    {
         frameId = requireNonBlank(frameId, "frameId");
         operationType = Objects.requireNonNull(operationType, "operationType must not be null");
         traceFrameType = Objects.requireNonNull(traceFrameType, "traceFrameType must not be null");
@@ -22,9 +23,11 @@ public record ExecutionFrame(
         openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;

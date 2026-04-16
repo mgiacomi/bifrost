@@ -12,26 +12,30 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
-public final class NdjsonTraceRecordWriter {
-
+public final class NdjsonTraceRecordWriter
+{
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
             .findAndAddModules()
             .build();
 
     private final Path tracePath;
 
-    public NdjsonTraceRecordWriter(Path tracePath) {
+    public NdjsonTraceRecordWriter(Path tracePath)
+    {
         this.tracePath = Objects.requireNonNull(tracePath, "tracePath must not be null");
     }
 
-    public synchronized void append(TraceRecord record) throws IOException {
+    public synchronized void append(TraceRecord record) throws IOException
+    {
         Files.createDirectories(tracePath.getParent());
+
         try (Writer writer = Files.newBufferedWriter(
                 tracePath,
                 StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE,
-                StandardOpenOption.APPEND)) {
+                StandardOpenOption.APPEND))
+        {
             writer.write(OBJECT_MAPPER.writeValueAsString(record));
             writer.write('\n');
         }

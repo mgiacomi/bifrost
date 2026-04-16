@@ -9,8 +9,8 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface SkillMethod {
-
+public @interface SkillMethod
+{
     String name() default "";
 
     String description();

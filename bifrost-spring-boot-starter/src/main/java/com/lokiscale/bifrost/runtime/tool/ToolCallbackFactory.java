@@ -9,8 +9,8 @@ import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
-public interface ToolCallbackFactory {
-
+public interface ToolCallbackFactory
+{
     List<ToolCallback> createToolCallbacks(
             BifrostSession session,
             YamlSkillDefinition definition,

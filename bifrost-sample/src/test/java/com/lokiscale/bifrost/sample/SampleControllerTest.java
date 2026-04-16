@@ -23,7 +23,6 @@ class SampleControllerTest {
         SampleController controller = new SampleController(skillTemplate);
         ExecutionJournal journal = new ExecutionJournal(java.util.List.of());
         doAnswer(invocation -> {
-            @SuppressWarnings("unchecked")
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
             observer.accept(new SkillExecutionView("session-123", journal));
             return "\"ok\"";

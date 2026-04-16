@@ -13,20 +13,23 @@ import java.util.Set;
 
 @Validated
 @ConfigurationProperties(prefix = "bifrost")
-public class BifrostModelsProperties {
-
+public class BifrostModelsProperties
+{
     @Valid
     private Map<String, ModelCatalogEntry> models = new LinkedHashMap<>();
 
-    public Map<String, ModelCatalogEntry> getModels() {
+    public Map<String, ModelCatalogEntry> getModels()
+    {
         return models;
     }
 
-    public void setModels(Map<String, ModelCatalogEntry> models) {
+    public void setModels(Map<String, ModelCatalogEntry> models)
+    {
         this.models = models == null ? new LinkedHashMap<>() : new LinkedHashMap<>(models);
     }
 
-    public static class ModelCatalogEntry {
+    public static class ModelCatalogEntry
+    {
 
         @NotNull
         private AiProvider provider;
@@ -36,36 +39,45 @@ public class BifrostModelsProperties {
 
         private Set<@NotBlank String> thinkingLevels = new LinkedHashSet<>();
 
-        public AiProvider getProvider() {
+        public AiProvider getProvider()
+        {
             return provider;
         }
 
-        public void setProvider(AiProvider provider) {
+        public void setProvider(AiProvider provider)
+        {
             this.provider = provider;
         }
 
-        public String getProviderModel() {
+        public String getProviderModel()
+        {
             return providerModel;
         }
 
-        public void setProviderModel(String providerModel) {
+        public void setProviderModel(String providerModel)
+        {
             this.providerModel = providerModel;
         }
 
-        public Set<String> getThinkingLevels() {
+        public Set<String> getThinkingLevels()
+        {
             return Set.copyOf(thinkingLevels);
         }
 
-        public void setThinkingLevels(Set<String> thinkingLevels) {
+        public void setThinkingLevels(Set<String> thinkingLevels)
+        {
             this.thinkingLevels = thinkingLevels == null ? new LinkedHashSet<>() : new LinkedHashSet<>(thinkingLevels);
         }
 
-        public boolean supportsThinking() {
+        public boolean supportsThinking()
+        {
             return !thinkingLevels.isEmpty();
         }
 
-        public boolean supportsThinkingLevel(String thinkingLevel) {
-            if (thinkingLevel == null || thinkingLevel.isBlank()) {
+        public boolean supportsThinkingLevel(String thinkingLevel)
+        {
+            if (thinkingLevel == null || thinkingLevel.isBlank())
+            {
                 return !supportsThinking();
             }
             return thinkingLevels.contains(thinkingLevel);

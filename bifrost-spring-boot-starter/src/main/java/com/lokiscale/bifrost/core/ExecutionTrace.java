@@ -13,8 +13,8 @@ public record ExecutionTrace(
         @Nullable String filePath,
         TracePersistencePolicy persistencePolicy,
         boolean errored,
-        boolean completed) {
-
+        boolean completed)
+{
     @JsonCreator
     public ExecutionTrace(
             @JsonProperty("traceId") String traceId,
@@ -22,7 +22,8 @@ public record ExecutionTrace(
             @JsonProperty("filePath") @Nullable String filePath,
             @JsonProperty("persistencePolicy") TracePersistencePolicy persistencePolicy,
             @JsonProperty("errored") boolean errored,
-            @JsonProperty("completed") boolean completed) {
+            @JsonProperty("completed") boolean completed)
+    {
         this.traceId = requireNonBlank(traceId, "traceId");
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         this.filePath = filePath == null || filePath.isBlank() ? null : filePath;
@@ -32,13 +33,16 @@ public record ExecutionTrace(
     }
 
     @Nullable
-    public Path tracePath() {
+    public Path tracePath()
+    {
         return filePath == null ? null : Path.of(filePath);
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;

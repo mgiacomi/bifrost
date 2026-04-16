@@ -10,86 +10,105 @@ import com.lokiscale.bifrost.core.JournalLevel;
 import com.lokiscale.bifrost.core.TraceRecord;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public final class ExecutionJournalProjector {
-
+public final class ExecutionJournalProjector
+{
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
             .findAndAddModules()
             .build();
 
-    public ExecutionJournal project(List<TraceRecord> records) {
+    public ExecutionJournal project(List<TraceRecord> records)
+    {
         // The journal is the single developer-facing projection we keep in the runtime.
         List<JournalEntry> entries = new ArrayList<>();
         TraceRecord previousRecord = null;
-        for (TraceRecord record : records == null ? List.<TraceRecord>of() : records) {
+
+        for (TraceRecord record : records == null ? List.<TraceRecord>of() : records)
+        {
             appendRecord(entries, previousRecord, record);
             previousRecord = record;
         }
+
         return new ExecutionJournal(entries);
     }
 
-    public ExecutionJournal project(com.lokiscale.bifrost.core.ExecutionTraceHandle traceHandle) throws java.io.IOException {
+    public ExecutionJournal project(com.lokiscale.bifrost.core.ExecutionTraceHandle traceHandle) throws java.io.IOException
+    {
         List<JournalEntry> entries = new ArrayList<>();
         final TraceRecord[] previousRecord = new TraceRecord[1];
-        traceHandle.readRecords(record -> {
+
+        traceHandle.readRecords(record ->
+        {
             appendRecord(entries, previousRecord[0], record);
             previousRecord[0] = record;
         });
+
         return new ExecutionJournal(entries);
     }
 
-    private void appendRecord(List<JournalEntry> entries, TraceRecord previousRecord, TraceRecord record) {
+    private void appendRecord(List<JournalEntry> entries, TraceRecord previousRecord, TraceRecord record)
+    {
         JournalEntry entry = toJournalEntry(record);
-        if (entry != null) {
+        if (entry != null)
+        {
             entries.add(entry);
         }
     }
 
-    private JournalEntry toJournalEntry(TraceRecord record) {
-        if (record == null) {
+    private JournalEntry toJournalEntry(TraceRecord record)
+    {
+        if (record == null)
+        {
             return null;
         }
-        return switch (record.recordType()) {
+
+        return switch (record.recordType())
+        {
             case MODEL_THOUGHT_CAPTURED -> entry(record, JournalLevel.INFO, JournalEntryType.THOUGHT, sanitize(record.data()));
             case PLAN_CREATED -> entry(record, JournalLevel.INFO, JournalEntryType.PLAN_CREATED, sanitize(record.data()));
             case PLAN_UPDATED -> entry(record, JournalLevel.INFO, JournalEntryType.PLAN_UPDATED, sanitize(record.data()));
             case LINTER_RECORDED -> entry(record, JournalLevel.INFO, JournalEntryType.LINTER, sanitize(record.data()));
             case STRUCTURED_OUTPUT_RECORDED -> entry(record, JournalLevel.INFO, JournalEntryType.OUTPUT_SCHEMA, sanitize(record.data()));
-            case TOOL_CALL_REQUESTED ->
-                    entry(record, JournalLevel.INFO, toolCallType(record), summarizeToolCall(record));
-            case TOOL_CALL_FAILED ->
-                    entry(record, JournalLevel.ERROR, JournalEntryType.TOOL_FAILURE, summarizeToolFailure(record));
-            case TOOL_CALL_COMPLETED ->
-                    entry(record, JournalLevel.INFO, JournalEntryType.TOOL_RESULT, summarizeToolResult(record));
-            case ERROR_RECORDED ->
-                    entry(record, JournalLevel.ERROR, JournalEntryType.ERROR, summarizeError(record));
+            case TOOL_CALL_REQUESTED -> entry(record, JournalLevel.INFO, toolCallType(record), summarizeToolCall(record));
+            case TOOL_CALL_FAILED -> entry(record, JournalLevel.ERROR, JournalEntryType.TOOL_FAILURE, summarizeToolFailure(record));
+            case TOOL_CALL_COMPLETED -> entry(record, JournalLevel.INFO, JournalEntryType.TOOL_RESULT, summarizeToolResult(record));
+            case ERROR_RECORDED -> entry(record, JournalLevel.ERROR, JournalEntryType.ERROR, summarizeError(record));
             default -> null;
         };
     }
 
-    private JournalEntryType toolCallType(TraceRecord record) {
-        if (Boolean.TRUE.equals(record.metadata().get("unplanned"))) {
+    private JournalEntryType toolCallType(TraceRecord record)
+    {
+        if (Boolean.TRUE.equals(record.metadata().get("unplanned")))
+        {
             return JournalEntryType.UNPLANNED_TOOL_EXECUTION;
         }
+
         String linkedTaskId = linkedTask(record);
-        if (linkedTaskId != null) {
+        if (linkedTaskId != null)
+        {
             return JournalEntryType.TOOL_CALL;
         }
+
         JsonNode data = record.data();
-        if (data != null && data.hasNonNull("linkedTaskId")) {
+        if (data != null && data.hasNonNull("linkedTaskId"))
+        {
             return JournalEntryType.TOOL_CALL;
         }
         return JournalEntryType.TOOL_CALL;
     }
 
-    private String linkedTask(TraceRecord record) {
+    private String linkedTask(TraceRecord record)
+    {
         Object linkedTaskId = record.metadata().get("linkedTaskId");
         return linkedTaskId == null ? null : String.valueOf(linkedTaskId);
     }
 
-    private JournalEntry entry(TraceRecord record, JournalLevel level, JournalEntryType type, Object payload) {
+    private JournalEntry entry(TraceRecord record, JournalLevel level, JournalEntryType type, Object payload)
+    {
         return new JournalEntry(
                 record.timestamp(),
                 level,
@@ -99,151 +118,202 @@ public final class ExecutionJournalProjector {
                 record.route());
     }
 
-    private Object summarizeToolCall(TraceRecord record) {
+    private Object summarizeToolCall(TraceRecord record)
+    {
         JsonNode data = record.data();
-        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+
         String capabilityName = firstNonBlank(
                 metadataText(record, "capabilityName"),
                 jsonText(data, "capabilityName"),
                 jsonText(data, "route"),
                 jsonText(data, "tool"),
                 record.route());
+
         String linkedTaskId = firstNonBlank(linkedTask(record), jsonText(data, "linkedTaskId"));
-        if (capabilityName != null) {
+        if (capabilityName != null)
+        {
             payload.put("capabilityName", capabilityName);
         }
-        if (linkedTaskId != null) {
+        if (linkedTaskId != null)
+        {
             payload.put("linkedTaskId", linkedTaskId);
         }
-        if (data != null && data.isObject()) {
+        if (data != null && data.isObject())
+        {
             JsonNode details = data.has("details") ? data.get("details") : data;
             payload.put("details", sanitize(details));
-        } else {
+        }
+        else
+        {
             payload.put("details", Map.of("summary", "Tool call requested"));
         }
+
         return payload;
     }
 
-    private Object summarizeToolResult(TraceRecord record) {
+    private Object summarizeToolResult(TraceRecord record)
+    {
         JsonNode data = record.data();
-        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+
         String capabilityName = firstNonBlank(
                 metadataText(record, "capabilityName"),
                 jsonText(data, "capabilityName"),
                 jsonText(data, "route"),
                 jsonText(data, "tool"),
                 record.route());
+
         String linkedTaskId = firstNonBlank(linkedTask(record), jsonText(data, "linkedTaskId"));
-        if (capabilityName != null) {
+        if (capabilityName != null)
+        {
             payload.put("capabilityName", capabilityName);
         }
-        if (linkedTaskId != null) {
+        if (linkedTaskId != null)
+        {
             payload.put("linkedTaskId", linkedTaskId);
         }
-        if (data != null && data.isObject()) {
+        if (data != null && data.isObject())
+        {
             JsonNode details = data.has("details") ? data.get("details") : data;
             payload.put("details", sanitize(details));
-        } else {
+        }
+        else
+        {
             payload.put("details", Map.of("summary", "Tool result recorded"));
         }
         return payload;
     }
 
-    private Object summarizeError(TraceRecord record) {
+    private Object summarizeError(TraceRecord record)
+    {
         JsonNode data = record.data();
-        if (data != null && data.isTextual()) {
+        if (data != null && data.isTextual())
+        {
             return data;
         }
-        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         payload.put("sourceRecordType", record.recordType().name());
+
         String tool = firstNonBlank(
                 metadataText(record, "capabilityName"),
                 jsonText(data, "tool"),
                 jsonText(data, "capabilityName"),
                 jsonText(data, "route"));
-        if (tool != null) {
+
+        if (tool != null)
+        {
             payload.put("tool", tool);
         }
+
         String linkedTaskId = firstNonBlank(linkedTask(record), jsonText(data, "linkedTaskId"));
-        if (linkedTaskId != null) {
+        if (linkedTaskId != null)
+        {
             payload.put("linkedTaskId", linkedTaskId);
         }
+
         payload.put("message", firstNonBlank(
                 metadataText(record, "message"),
                 jsonText(data, "message"),
                 record.data() != null && record.data().isTextual() ? record.data().asText() : null,
                 "Error recorded"));
+
         String exceptionType = firstNonBlank(metadataText(record, "exceptionType"), jsonText(data, "exceptionType"));
-        if (exceptionType != null) {
+        if (exceptionType != null)
+        {
             payload.put("exceptionType", exceptionType);
         }
+
         return payload;
     }
 
-    private Object summarizeToolFailure(TraceRecord record) {
+    private Object summarizeToolFailure(TraceRecord record)
+    {
         JsonNode data = record.data();
         JsonNode failure = nestedObject(data, "failure");
-        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         payload.put("sourceRecordType", record.recordType().name());
+
         String capabilityName = firstNonBlank(
                 metadataText(record, "capabilityName"),
                 jsonText(failure, "capabilityName"),
                 jsonText(data, "tool"),
                 jsonText(data, "capabilityName"),
                 record.route());
-        if (capabilityName != null) {
+
+        if (capabilityName != null)
+        {
             payload.put("tool", capabilityName);
         }
+
         String linkedTaskId = firstNonBlank(
                 linkedTask(record),
                 jsonText(failure, "linkedTaskId"),
                 jsonText(data, "linkedTaskId"));
-        if (linkedTaskId != null) {
+
+        if (linkedTaskId != null)
+        {
             payload.put("linkedTaskId", linkedTaskId);
         }
+
         payload.put("message", firstNonBlank(
                 metadataText(record, "message"),
                 jsonText(failure, "message"),
                 jsonText(data, "message"),
                 "Tool execution failed"));
+
         String exceptionType = firstNonBlank(
                 metadataText(record, "exceptionType"),
                 jsonText(failure, "exceptionType"),
                 jsonText(data, "exceptionType"));
-        if (exceptionType != null) {
+
+        if (exceptionType != null)
+        {
             payload.put("exceptionType", exceptionType);
         }
-        if (data != null && data.isObject()) {
+        if (data != null && data.isObject())
+        {
             JsonNode details = failure != null ? failure : data;
             payload.put("details", sanitize(details));
         }
+
         return payload;
     }
 
-    private JsonNode sanitize(JsonNode node) {
-        if (node == null) {
+    private JsonNode sanitize(JsonNode node)
+    {
+        if (node == null)
+        {
             return OBJECT_MAPPER.nullNode();
         }
-        if (node.isObject()) {
+        if (node.isObject())
+        {
             var copy = OBJECT_MAPPER.createObjectNode();
             node.fields().forEachRemaining(entry -> copy.set(entry.getKey(), shouldRedact(entry.getKey())
                     ? OBJECT_MAPPER.getNodeFactory().textNode("[redacted]")
                     : sanitize(entry.getValue())));
             return copy;
         }
-        if (node.isArray()) {
+        if (node.isArray())
+        {
             var copy = OBJECT_MAPPER.createArrayNode();
             node.forEach(value -> copy.add(sanitize(value)));
             return copy;
         }
+
         return node.deepCopy();
     }
 
-    private boolean shouldRedact(String fieldName) {
-        if (fieldName == null) {
+    private boolean shouldRedact(String fieldName)
+    {
+        if (fieldName == null)
+        {
             return false;
         }
+
         String normalized = fieldName.toLowerCase();
+
         return normalized.contains("secret")
                 || normalized.contains("token")
                 || normalized.contains("authorization")
@@ -255,33 +325,45 @@ public final class ExecutionJournalProjector {
                 || normalized.contains("password");
     }
 
-    private String metadataText(TraceRecord record, String fieldName) {
+    private String metadataText(TraceRecord record, String fieldName)
+    {
         Object value = record.metadata().get(fieldName);
         return value == null ? null : String.valueOf(value);
     }
 
-    private String jsonText(JsonNode node, String fieldName) {
-        if (node == null || !node.isObject()) {
+    private String jsonText(JsonNode node, String fieldName)
+    {
+        if (node == null || !node.isObject())
+        {
             return null;
         }
+
         JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull() || value.isContainerNode()) {
+        if (value == null || value.isNull() || value.isContainerNode())
+        {
             return null;
         }
+
         return value.asText();
     }
 
-    private JsonNode nestedObject(JsonNode node, String fieldName) {
-        if (node == null || !node.isObject()) {
+    private JsonNode nestedObject(JsonNode node, String fieldName)
+    {
+        if (node == null || !node.isObject())
+        {
             return null;
         }
+
         JsonNode value = node.get(fieldName);
         return value != null && value.isObject() ? value : null;
     }
 
-    private String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
+    private String firstNonBlank(String... values)
+    {
+        for (String value : values)
+        {
+            if (value != null && !value.isBlank())
+            {
                 return value;
             }
         }

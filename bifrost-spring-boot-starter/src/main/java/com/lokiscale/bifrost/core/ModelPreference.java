@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.core;
 
-public enum ModelPreference {
+public enum ModelPreference
+{
     LIGHT,
     HEAVY
 }

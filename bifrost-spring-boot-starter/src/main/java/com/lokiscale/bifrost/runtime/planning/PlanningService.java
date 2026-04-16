@@ -13,8 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-public interface PlanningService {
-
+public interface PlanningService
+{
     Optional<ExecutionPlan> initializePlan(
             BifrostSession session,
             String objective,
@@ -28,10 +28,10 @@ public interface PlanningService {
     Optional<ExecutionPlan> markTaskStarted(BifrostSession session, String taskId, String capabilityName, @Nullable Map<String, Object> arguments);
 
     Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
-                                              String taskId,
-                                              String capabilityName,
-                                              @Nullable Object result,
-                                              EvidenceContract evidenceContract);
+            String taskId,
+            String capabilityName,
+            @Nullable Object result,
+            EvidenceContract evidenceContract);
 
     Optional<ExecutionPlan> markToolFailed(BifrostSession session, String taskId, String capabilityName, RuntimeException ex);
 }

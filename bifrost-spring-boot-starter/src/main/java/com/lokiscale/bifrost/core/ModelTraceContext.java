@@ -8,16 +8,18 @@ public record ModelTraceContext(
         String provider,
         String providerModel,
         String skillName,
-        String segment) {
-
-    public ModelTraceContext {
+        String segment)
+{
+    public ModelTraceContext
+    {
         provider = requireNonBlank(provider, "provider");
         providerModel = requireNonBlank(providerModel, "providerModel");
         skillName = requireNonBlank(skillName, "skillName");
         segment = requireNonBlank(segment, "segment");
     }
 
-    public Map<String, Object> metadata() {
+    public Map<String, Object> metadata()
+    {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("provider", provider);
         metadata.put("providerModel", providerModel);
@@ -26,9 +28,11 @@ public record ModelTraceContext(
         return Map.copyOf(metadata);
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;

@@ -7,36 +7,47 @@ import org.springframework.core.io.Resource;
 import java.nio.file.Path;
 import java.util.Objects;
 
-public class SessionLocalVirtualFileSystem implements VirtualFileSystem {
-
+public class SessionLocalVirtualFileSystem implements VirtualFileSystem
+{
     private final Path rootDirectory;
 
-    public SessionLocalVirtualFileSystem(Path rootDirectory) {
+    public SessionLocalVirtualFileSystem(Path rootDirectory)
+    {
         this.rootDirectory = Objects.requireNonNull(rootDirectory, "rootDirectory must not be null").toAbsolutePath().normalize();
     }
 
     @Override
-    public Resource resolve(BifrostSession session, VfsRef ref) {
+    public Resource resolve(BifrostSession session, VfsRef ref)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(ref, "ref must not be null");
         Path sessionRoot = sessionRoot(session);
         Path resolved = sessionRoot.resolve(ref.relativePath()).normalize();
-        if (!resolved.startsWith(sessionRoot)) {
+ 
+        if (!resolved.startsWith(sessionRoot))
+        {
             throw new IllegalArgumentException("Ref '" + ref.raw() + "' escapes the session namespace");
         }
+ 
         Resource resource = new FileSystemResource(resolved);
-        if (!resource.exists()) {
+        if (!resource.exists())
+        {
             throw new IllegalArgumentException("Unknown ref '" + ref.raw() + "' for session '" + session.getSessionId() + "'");
         }
+ 
         return resource;
     }
 
-    public Path sessionRoot(BifrostSession session) {
+    public Path sessionRoot(BifrostSession session)
+    {
         Objects.requireNonNull(session, "session must not be null");
         Path sessionRoot = rootDirectory.resolve(session.getSessionId()).normalize();
-        if (!sessionRoot.startsWith(rootDirectory)) {
+ 
+        if (!sessionRoot.startsWith(rootDirectory))
+        {
             throw new IllegalArgumentException("Session '" + session.getSessionId() + "' escapes the VFS root");
         }
+ 
         return sessionRoot;
     }
 }

@@ -22,8 +22,8 @@ public record TraceRecord(
         @Nullable String route,
         String threadName,
         Map<String, Object> metadata,
-        @Nullable JsonNode data) {
-
+        @Nullable JsonNode data)
+{
     public static final int CURRENT_SCHEMA_VERSION = 1;
 
     @JsonCreator
@@ -40,7 +40,8 @@ public record TraceRecord(
             @JsonProperty("route") @Nullable String route,
             @JsonProperty("threadName") String threadName,
             @JsonProperty("metadata") Map<String, Object> metadata,
-            @JsonProperty("data") @Nullable JsonNode data) {
+            @JsonProperty("data") @Nullable JsonNode data)
+    {
         this.schemaVersion = schemaVersion <= 0 ? CURRENT_SCHEMA_VERSION : schemaVersion;
         this.traceId = requireNonBlank(traceId, "traceId");
         this.sessionId = requireNonBlank(sessionId, "sessionId");
@@ -56,17 +57,21 @@ public record TraceRecord(
         this.data = data == null ? null : data.deepCopy();
     }
 
-    private static String requireNonBlank(String value, String fieldName) {
+    private static String requireNonBlank(String value, String fieldName)
+    {
         Objects.requireNonNull(value, fieldName + " must not be null");
-        if (value.isBlank()) {
+        if (value.isBlank())
+        {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
     }
 
     @Nullable
-    private static String normalizeNullable(@Nullable String value) {
-        if (value == null || value.isBlank()) {
+    private static String normalizeNullable(@Nullable String value)
+    {
+        if (value == null || value.isBlank())
+        {
             return null;
         }
         return value;

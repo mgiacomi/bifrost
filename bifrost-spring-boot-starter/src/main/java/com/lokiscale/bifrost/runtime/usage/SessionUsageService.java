@@ -3,8 +3,8 @@ package com.lokiscale.bifrost.runtime.usage;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 
-public interface SessionUsageService {
-
+public interface SessionUsageService
+{
     SessionUsageSnapshot snapshot(BifrostSession session);
 
     void recordMissionStart(BifrostSession session, String skillName);

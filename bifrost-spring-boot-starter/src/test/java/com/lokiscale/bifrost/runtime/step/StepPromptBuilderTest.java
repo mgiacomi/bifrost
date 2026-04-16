@@ -4,7 +4,6 @@ import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
-import com.lokiscale.bifrost.runtime.input.SkillInputContract;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.runtime.tool.ContractAwareToolCallback;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;

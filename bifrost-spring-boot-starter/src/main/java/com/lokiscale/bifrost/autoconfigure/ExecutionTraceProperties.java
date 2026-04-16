@@ -7,16 +7,18 @@ import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties(prefix = "execution-trace")
-public class ExecutionTraceProperties {
-
+public class ExecutionTraceProperties
+{
     @NotNull
     private TracePersistencePolicy persistence = TracePersistencePolicy.ONERROR;
 
-    public TracePersistencePolicy getPersistence() {
+    public TracePersistencePolicy getPersistence()
+    {
         return persistence;
     }
 
-    public void setPersistence(TracePersistencePolicy persistence) {
+    public void setPersistence(TracePersistencePolicy persistence)
+    {
         this.persistence = persistence == null ? TracePersistencePolicy.ONERROR : persistence;
     }
 }

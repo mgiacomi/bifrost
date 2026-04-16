@@ -7,9 +7,9 @@ import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
-public interface ToolSurfaceService {
-
+public interface ToolSurfaceService
+{
     List<CapabilityMetadata> visibleToolsFor(String rootSkillName,
-                                             BifrostSession session,
-                                             @Nullable Authentication authentication);
+            BifrostSession session,
+            @Nullable Authentication authentication);
 }

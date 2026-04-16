@@ -3,8 +3,8 @@ package com.lokiscale.bifrost.outputschema;
 import java.util.List;
 import java.util.Objects;
 
-public final class BifrostOutputSchemaValidationException extends RuntimeException {
-
+public final class BifrostOutputSchemaValidationException extends RuntimeException
+{
     private final String skillName;
     private final String rawOutput;
     private final List<OutputSchemaValidationIssue> validationIssues;
@@ -13,11 +13,12 @@ public final class BifrostOutputSchemaValidationException extends RuntimeExcepti
     private final OutputSchemaFailureMode failureMode;
 
     public BifrostOutputSchemaValidationException(String skillName,
-                                                  String rawOutput,
-                                                  List<OutputSchemaValidationIssue> validationIssues,
-                                                  int attemptCount,
-                                                  int maxRetries,
-                                                  OutputSchemaFailureMode failureMode) {
+            String rawOutput,
+            List<OutputSchemaValidationIssue> validationIssues,
+            int attemptCount,
+            int maxRetries,
+            OutputSchemaFailureMode failureMode)
+    {
         super(buildMessage(skillName, failureMode, attemptCount, maxRetries, validationIssues));
         this.skillName = Objects.requireNonNull(skillName, "skillName must not be null");
         this.rawOutput = rawOutput;
@@ -27,35 +28,42 @@ public final class BifrostOutputSchemaValidationException extends RuntimeExcepti
         this.failureMode = Objects.requireNonNull(failureMode, "failureMode must not be null");
     }
 
-    public String getSkillName() {
+    public String getSkillName()
+    {
         return skillName;
     }
 
-    public String getRawOutput() {
+    public String getRawOutput()
+    {
         return rawOutput;
     }
 
-    public List<OutputSchemaValidationIssue> getValidationIssues() {
+    public List<OutputSchemaValidationIssue> getValidationIssues()
+    {
         return validationIssues;
     }
 
-    public int getAttemptCount() {
+    public int getAttemptCount()
+    {
         return attemptCount;
     }
 
-    public int getMaxRetries() {
+    public int getMaxRetries()
+    {
         return maxRetries;
     }
 
-    public OutputSchemaFailureMode getFailureMode() {
+    public OutputSchemaFailureMode getFailureMode()
+    {
         return failureMode;
     }
 
     private static String buildMessage(String skillName,
-                                       OutputSchemaFailureMode failureMode,
-                                       int attemptCount,
-                                       int maxRetries,
-                                       List<OutputSchemaValidationIssue> validationIssues) {
+            OutputSchemaFailureMode failureMode,
+            int attemptCount,
+            int maxRetries,
+            List<OutputSchemaValidationIssue> validationIssues)
+    {
         String summary = validationIssues == null || validationIssues.isEmpty()
                 ? "No validation issues recorded."
                 : validationIssues.getFirst().message();
