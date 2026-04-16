@@ -15,6 +15,3 @@ bifrost:
     ollama-llama3:
       provider: ollama
       provider-model: llama3.2
-    taalas-llama:
-      provider: taalas
-      provider-model: llama3.1-8B

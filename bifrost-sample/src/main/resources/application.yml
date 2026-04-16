@@ -2,11 +2,6 @@ spring:
   application:
     name: bifrost-sample
   ai:
-    taalas:
-      enabled: true
-      api-key: ${TAALAS_API_KEY:sample-taalas-api-key}
-      base-url: ${TAALAS_BASE_URL:https://api.taalas.com}
-      model: ${TAALAS_MODEL:llama3.1-8B}
     ollama:
       enabled: true
       base-url: http://localhost:11434
@@ -38,9 +33,6 @@ bifrost:
       - classpath:/skills/**/*.yml
       - classpath:/skills/**/*.yaml
   models:
-    default-model:
-      provider: taalas
-      provider-model: ${TAALAS_MODEL:llama3.1-8B}
     granite4-tiny:
       provider: ollama
       provider-model: ibm/granite4:tiny-h
@@ -53,6 +45,9 @@ bifrost:
     gemma4-e4b:
       provider: ollama
       provider-model: gemma4:e4b
+    default-model:
+      provider: ollama
+      provider-model: ibm/granite4:tiny-h
 
 execution-trace:
   persistence: ALWAYS

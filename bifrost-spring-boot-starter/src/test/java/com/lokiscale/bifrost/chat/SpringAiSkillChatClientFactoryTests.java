@@ -181,13 +181,6 @@ class SpringAiSkillChatClientFactoryTests {
                 null))).options();
         assertThat(ollama).isInstanceOf(OllamaChatOptions.class);
         assertThat(((OllamaChatOptions) ollama).getModel()).isEqualTo("llama3.2");
-
-        ChatOptions taalas = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
-                "taalas-llama",
-                AiProvider.TAALAS,
-                "llama3.1-8B",
-                null))).options();
-        assertThat(taalas.getModel()).isEqualTo("llama3.1-8B");
     }
 
     @Test

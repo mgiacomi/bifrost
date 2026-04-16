@@ -5,6 +5,5 @@ public enum AiProvider
     OPENAI,
     ANTHROPIC,
     GEMINI,
-    OLLAMA,
-    TAALAS
+    OLLAMA
 }

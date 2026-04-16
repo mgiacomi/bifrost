@@ -7,7 +7,6 @@ import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.chat.SkillChatModelResolver;
 import com.lokiscale.bifrost.chat.SkillChatOptionsAdapter;
 import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
-import com.lokiscale.bifrost.chat.TaalasChatModel;
 import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
@@ -59,15 +58,11 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Role;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.net.http.HttpClient;
 import java.nio.file.Paths;
 import java.time.Clock;
 import java.util.EnumMap;
@@ -81,8 +76,7 @@ import java.util.concurrent.Executors;
         BifrostSessionProperties.class,
         ExecutionTraceProperties.class,
         BifrostModelsProperties.class,
-        BifrostSkillProperties.class,
-        TaalasChatProperties.class
+        BifrostSkillProperties.class
 })
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 public class BifrostAutoConfiguration
@@ -359,40 +353,18 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "spring.ai.taalas", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean(name = "taalasHttpClient")
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public HttpClient taalasHttpClient()
-    {
-        return HttpClient.newHttpClient();
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "spring.ai.taalas", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean(name = "taalasChatModel")
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public TaalasChatModel taalasChatModel(@Qualifier("taalasHttpClient") HttpClient taalasHttpClient,
-            ObjectProvider<ObjectMapper> objectMapperProvider,
-            TaalasChatProperties taalasChatProperties)
-    {
-        return new TaalasChatModel(taalasHttpClient, objectMapperProvider.getIfAvailable(ObjectMapper::new), taalasChatProperties);
-    }
-
-    @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public SkillChatModelResolver skillChatModelResolver(ObjectProvider<OpenAiChatModel> openAiChatModelProvider,
             ObjectProvider<AnthropicChatModel> anthropicChatModelProvider,
             ObjectProvider<GoogleGenAiChatModel> googleGenAiChatModelProvider,
-            ObjectProvider<OllamaChatModel> ollamaChatModelProvider,
-            @Qualifier("taalasChatModel") ObjectProvider<TaalasChatModel> taalasChatModelProvider)
+            ObjectProvider<OllamaChatModel> ollamaChatModelProvider)
     {
         Map<AiProvider, ChatModel> modelsByProvider = new EnumMap<>(AiProvider.class);
         registerChatModel(modelsByProvider, AiProvider.OPENAI, openAiChatModelProvider.getIfAvailable());
         registerChatModel(modelsByProvider, AiProvider.ANTHROPIC, anthropicChatModelProvider.getIfAvailable());
         registerChatModel(modelsByProvider, AiProvider.GEMINI, googleGenAiChatModelProvider.getIfAvailable());
         registerChatModel(modelsByProvider, AiProvider.OLLAMA, ollamaChatModelProvider.getIfAvailable());
-        registerChatModel(modelsByProvider, AiProvider.TAALAS, taalasChatModelProvider.getIfAvailable());
         return new DefaultSkillChatModelResolver(modelsByProvider);
     }
 
@@ -426,14 +398,6 @@ public class BifrostAutoConfiguration
     public SkillChatOptionsAdapter ollamaSkillChatOptionsAdapter()
     {
         return SpringAiSkillChatClientFactory.defaultAdapters().get(3);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(name = "taalasSkillChatOptionsAdapter")
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatOptionsAdapter taalasSkillChatOptionsAdapter()
-    {
-        return SpringAiSkillChatClientFactory.defaultAdapters().get(4);
     }
 
     @Bean

@@ -15,13 +15,10 @@ class DefaultSkillChatModelResolverTests {
     @Test
     void resolvesConfiguredProviderModel() {
         ChatModel ollamaChatModel = mock(ChatModel.class);
-        ChatModel taalasChatModel = mock(ChatModel.class);
         DefaultSkillChatModelResolver resolver = new DefaultSkillChatModelResolver(Map.of(
-                AiProvider.OLLAMA, ollamaChatModel,
-                AiProvider.TAALAS, taalasChatModel));
+                AiProvider.OLLAMA, ollamaChatModel));
 
         assertThat(resolver.resolve("invoiceParser", AiProvider.OLLAMA)).isSameAs(ollamaChatModel);
-        assertThat(resolver.resolve("taalasSkill", AiProvider.TAALAS)).isSameAs(taalasChatModel);
     }
 
     @Test

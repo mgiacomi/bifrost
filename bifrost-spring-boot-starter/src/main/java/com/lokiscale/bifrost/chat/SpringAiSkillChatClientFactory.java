@@ -130,8 +130,7 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
                 new OpenAiOptionsAdapter(),
                 new AnthropicOptionsAdapter(),
                 new GeminiOptionsAdapter(),
-                new OllamaOptionsAdapter(),
-                new TaalasOptionsAdapter());
+                new OllamaOptionsAdapter());
     }
 
     private static String advisorNames(List<Advisor> advisors)
@@ -218,23 +217,6 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
         public ChatOptions createOptions(EffectiveSkillExecutionConfiguration executionConfiguration)
         {
             return OllamaChatOptions.builder()
-                    .model(executionConfiguration.providerModel())
-                    .build();
-        }
-    }
-
-    private static final class TaalasOptionsAdapter implements SkillChatOptionsAdapter
-    {
-        @Override
-        public AiProvider provider()
-        {
-            return AiProvider.TAALAS;
-        }
-
-        @Override
-        public ChatOptions createOptions(EffectiveSkillExecutionConfiguration executionConfiguration)
-        {
-            return ChatOptions.builder()
                     .model(executionConfiguration.providerModel())
                     .build();
         }

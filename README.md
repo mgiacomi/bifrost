@@ -47,11 +47,6 @@ spring:
   application:
     name: bifrost-sample
   ai:
-    taalas:
-      enabled: true
-      api-key: ${TAALAS_API_KEY:sample-taalas-api-key}
-      base-url: ${TAALAS_BASE_URL:https://api.taalas.com}
-      model: ${TAALAS_MODEL:llama3.1-8B}
     ollama:
       enabled: true
       base-url: http://localhost:11434
@@ -75,10 +70,10 @@ bifrost:
       - classpath:/skills/**/*.yml
       - classpath:/skills/**/*.yaml
   models:
-    default-model:
-      provider: taalas
-      provider-model: ${TAALAS_MODEL:llama3.1-8B}
     granite4-tiny:
+      provider: ollama
+      provider-model: ibm/granite4:tiny-h
+    default-model:
       provider: ollama
       provider-model: ibm/granite4:tiny-h
 
@@ -173,4 +168,4 @@ On Windows PowerShell:
 .\mvnw.cmd -pl bifrost-sample spring-boot:run
 ```
 
-The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures a default Taalas-backed model in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).
+The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures an Ollama-backed default model in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).
