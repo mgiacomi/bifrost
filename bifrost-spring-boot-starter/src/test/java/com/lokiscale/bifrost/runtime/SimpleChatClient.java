@@ -6,13 +6,18 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.Resource;
+import org.springframework.util.MimeType;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.net.URL;
+import java.nio.charset.Charset;
 
 public class SimpleChatClient implements ChatClient {
 
@@ -24,6 +29,7 @@ public class SimpleChatClient implements ChatClient {
     private final String content;
     private final List<String> systemMessagesSeen = new ArrayList<>();
     private final List<String> userMessagesSeen = new ArrayList<>();
+    private final List<CapturedMedia> userMediaSeen = new ArrayList<>();
 
     public SimpleChatClient(ExecutionPlan plan, String content) {
         this.plan = plan;
@@ -36,6 +42,10 @@ public class SimpleChatClient implements ChatClient {
 
     public List<String> getUserMessagesSeen() {
         return userMessagesSeen;
+    }
+
+    public List<CapturedMedia> getUserMediaSeen() {
+        return userMediaSeen;
     }
 
     @Override
@@ -164,6 +174,7 @@ public class SimpleChatClient implements ChatClient {
 
         @Override
         public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+            consumer.accept(new SimplePromptUserSpec());
             return this;
         }
 
@@ -180,6 +191,64 @@ public class SimpleChatClient implements ChatClient {
         @Override
         public StreamResponseSpec stream() {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    public record CapturedMedia(MimeType mimeType, Resource resource) {
+    }
+
+    private final class SimplePromptUserSpec implements ChatClient.PromptUserSpec {
+
+        @Override
+        public PromptUserSpec text(String text) {
+            userMessagesSeen.add(text);
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec text(Resource resource) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec text(Resource resource, Charset charset) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec media(MimeType mimeType, Resource resource) {
+            userMediaSeen.add(new CapturedMedia(mimeType, resource));
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec media(MimeType mimeType, URL url) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec media(Media... media) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec param(String key, Object value) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec params(Map<String, Object> params) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec metadata(String key, Object value) {
+            return this;
+        }
+
+        @Override
+        public PromptUserSpec metadata(Map<String, Object> metadata) {
+            return this;
         }
     }
 

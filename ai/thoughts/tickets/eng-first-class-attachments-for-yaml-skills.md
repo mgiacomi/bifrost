@@ -83,7 +83,7 @@ So Java methods can consume refs as resources, but LLM-backed YAML skills cannot
 ## Goals
 
 - Allow YAML skills to declare attachment inputs.
-- Allow callers to pass attachments by `ref://...`, classpath resource, file path where explicitly allowed, `Resource`, `byte[]`, or equivalent application-provided artifact.
+- Allow callers to pass attachments by session-scoped `ref://...` values and already-materialized Spring `Resource` values.
 - Resolve attachments before LLM execution.
 - Pass image attachments to Spring AI as model media, not JSON text.
 - Keep structured mission input visible to the model without inlining large binary payloads into text.
@@ -98,6 +98,9 @@ So Java methods can consume refs as resources, but LLM-backed YAML skills cannot
 - Do not implement full PDF rendering in Bifrost as part of the first pass. PDF-to-image conversion can be a later feature or a Java skill.
 - Do not store raw attachment bytes in execution trace payloads.
 - Do not make planners inspect large attachments unless there is a deliberate mode for that.
+- Do not support arbitrary direct `file:` or `classpath:` string sources in the first pass. Callers should stage files into the session VFS and pass `ref://...`, or provide a `Resource`.
+- Do not expose `InputStream` as a first-pass YAML attachment input type unless Spring AI/provider APIs are verified to preserve streaming behavior end-to-end.
+- Do not implement attachment passing between step-loop tools/skills as part of the first implementation.
 
 ## Proposed Design
 
@@ -110,24 +113,26 @@ public record BifrostAttachment(
         String name,
         String contentType,
         Resource resource,
-        AttachmentKind kind,
+        AttachmentMediaType mediaType,
+        String source,
+        Long sizeBytes,
         Map<String, Object> metadata) {
 }
 ```
 
-Suggested `AttachmentKind` values:
+Suggested `AttachmentMediaType` values:
 
 - `IMAGE`
 - `PDF`
-- `TEXT`
 - `AUDIO`
-- `BINARY`
+- `VIDEO`
+- `FILE`
 
-The first implementation can focus on images.
+The pipeline should be generic enough to carry provider-supported media types as Spring AI/provider APIs allow. The first sample and primary tests can focus on images.
 
-### 2. Extend YAML input schema with an attachment marker
+### 2. Extend YAML input schema with a Bifrost-native attachment type
 
-Current schema validation accepts a constrained JSON-schema subset. Add one Bifrost-specific extension for input schemas, for example:
+Current schema validation accepts a constrained JSON-schema subset. For attachments, add one Bifrost-native schema type for input schemas, for example:
 
 ```yaml
 input_schema:
@@ -136,19 +141,24 @@ input_schema:
   additionalProperties: false
   properties:
     image:
-      type: string
-      format: binary
-      x-bifrost-attachment: true
-      x-bifrost-attachment-kind: image
+      type: attachment
+      media_type: image
+      allowed_content_types:
+        - image/jpeg
+        - image/png
       description: Feedstock weighmaster certificate image.
 ```
 
 Implementation notes:
 
-- `YamlSkillCatalog` currently rejects unsupported schema fields. It will need to allow the chosen `x-bifrost-*` fields for `input_schema`.
+- `attachment` is intentionally not a JSON Schema primitive. It is a Bifrost input contract type that means the runtime value is an attachment source, not inline text.
+- For `type: attachment`, `media_type` is the broad model-facing category and `allowed_content_types` is the precise MIME allowlist for that field.
+- The first-pass accepted runtime values should be strict `ref://...` strings and Spring `Resource` values. `byte[]` can be considered only if needed for Java caller ergonomics and should be documented as in-memory.
+- `InputStream` should be deferred unless the Spring AI/provider path is verified to stream without buffering and with a clear lifecycle.
+- `YamlSkillCatalog` currently rejects unsupported schema fields. It will need to allow and validate `type: attachment`, `media_type`, and `allowed_content_types` for `input_schema`.
 - `SkillInputSchemaNode` should carry attachment metadata, similar to the existing `runtimeRefCapable` flag.
 - `SkillInputContractResolver` should parse and render these markers.
-- `SkillInputValidator` should accept `String ref://...`, `Resource`, `byte[]`, and possibly `InputStream` for attachment-marked fields.
+- `SkillInputValidator` should validate attachment-marked fields against the supported runtime source types and declared content-type policy.
 
 ### 3. Add a mission input materializer
 
@@ -167,7 +177,7 @@ Responsibilities:
 
 - Walk the validated input schema and normalized mission input.
 - Resolve attachment fields through `RefResolver` / `VirtualFileSystem`.
-- Determine content type from explicit metadata, `Resource#getFilename`, or stream sniffing.
+- Determine content type from declared `allowed_content_types`, explicit resource metadata if available, `Resource#getFilename`, or bounded sniffing.
 - Replace attachment values in the text-safe mission input with descriptors, not bytes.
 
 Example text-safe JSON:
@@ -178,7 +188,7 @@ Example text-safe JSON:
     "attachment": true,
     "name": "feedstock-p1.jpg",
     "contentType": "image/jpeg",
-    "kind": "IMAGE",
+    "mediaType": "IMAGE",
     "source": "ref://forms/feedstock-p1.jpg"
   }
 }
@@ -289,10 +299,10 @@ input_schema:
   additionalProperties: false
   properties:
     image:
-      type: string
-      format: binary
-      x-bifrost-attachment: true
-      x-bifrost-attachment-kind: image
+      type: attachment
+      media_type: image
+      allowed_content_types:
+        - image/jpeg
       description: Feedstock weighmaster certificate image.
 output_schema:
   type: object
@@ -375,9 +385,14 @@ If classpath resources are preferred for samples, add an explicit safe resource 
 
 ## Suggested Implementation Steps
 
-1. Add `BifrostAttachment`, `AttachmentKind`, and `RenderedMissionInput` types.
-2. Extend `YamlSkillManifest.OutputSchemaManifest` or introduce a dedicated input schema manifest node to support attachment markers.
-3. Extend `YamlSkillCatalog` validation to allow documented `x-bifrost-*` fields on `input_schema`.
+0. Complete prework:
+   - Upgrade Spring AI from `1.1.2` to the latest stable `1.1.x` patch line.
+   - Run the full Bifrost test suite after the upgrade.
+   - Add a small implementation spike/test for the actual Spring AI multimodal request shape, using `UserMessage`/`Media` and `Resource`-backed data.
+   - Split YAML input schema modeling from output schema modeling before adding `type: attachment`.
+1. Add `BifrostAttachment`, `AttachmentMediaType`, and `RenderedMissionInput` types.
+2. Extend the dedicated input schema manifest node to support `type: attachment`, `media_type`, and `allowed_content_types`. Keep output schema manifests strict and do not teach them about input-only attachment types.
+3. Extend `YamlSkillCatalog` validation to allow and validate the Bifrost-native attachment schema fields on `input_schema`.
 4. Extend `SkillInputSchemaNode` and `SkillInputContractResolver` to preserve attachment metadata.
 5. Extend `SkillInputValidator` to validate attachment-marked fields.
 6. Add `MissionInputMaterializer`.
@@ -388,14 +403,38 @@ If classpath resources are preferred for samples, add an explicit safe resource 
 11. Add unit and integration tests with fake ChatClient / fake request capture.
 12. Add `feedstockTicketParserBySkill` sample once the library feature is in place.
 
-## Open Questions
+## Design Decisions
 
-- Should Bifrost support direct `classpath:` and `file:` attachment sources, or require callers to stage all files into `ref://...`?
-- Should attachment support be limited to `input_schema` fields, or should generic skills be able to receive attachments?
-- Should attachment metadata be declared in YAML using `x-bifrost-attachment` or a more Bifrost-native schema block?
-- Do we need attachment size limits at Bifrost level, separate from provider limits?
-- Should PDF support mean “send PDF directly when provider supports it” or “render PDF to images before model call”?
-- Should step-loop tools be able to pass attachments between skills as produced evidence/artifacts?
+- Source schemes: first pass supports strict session-scoped `ref://...` string values and Spring `Resource` values. Direct `file:` and `classpath:` string sources are outside the first-pass core path.
+- Input contract scope: attachment support must be declared in `input_schema`. Generic/untyped mission input should not be scanned for attachments.
+- Input/output schema modeling: introduce a dedicated input schema manifest/model before attachment implementation. `type: attachment` is a Bifrost input contract extension, not an output JSON Schema type.
+- YAML syntax: use a Bifrost-native schema type:
+
+  ```yaml
+  document:
+    type: attachment
+    media_type: image
+    allowed_content_types:
+      - image/jpeg
+  ```
+
+- `media_type` is a broad model-facing category such as `image`, `audio`, `video`, `pdf`, or `file`. `allowed_content_types` is the precise MIME policy for that field.
+- Bifrost should not be a permanent gatekeeper for all possible provider-supported file types. The attachment pipeline should be generic where Spring AI/provider APIs allow it, with declared content-type policy and clear provider-error wrapping.
+- Do not add a global content-type allowlist in the first pass. Developers should declare per-field MIME policy in YAML skill schemas.
+- A Bifrost-level maximum attachment size remains useful even without global content-type limits, because it protects runtime memory/storage and gives clearer errors before provider calls.
+- Traces should store trace-safe attachment descriptors only: field name/path, filename, content type, media type, source ref, size when known, and a stable digest such as SHA-256 when practical. Raw bytes and full base64 data URLs must not be stored in trace payloads.
+- Do not copy attachment files next to execution traces by default. If audit retention is needed later, add an explicit opt-in artifact store that records descriptor IDs/digests in trace metadata.
+- PDF rendering is not part of the first pass. Direct PDF/file forwarding can be supported later when the provider/Spring AI path supports it; PDF-to-image conversion remains a separate feature or Java skill.
+- Step-loop execution should receive original mission attachments when needed, but generated attachment passing between tools/skills is a follow-up feature.
+- Java caller ergonomics: leave `byte[]` out of the first public YAML attachment input shape. Start with `ref://...` and Spring `Resource`.
+
+## Resolved Open Questions
+
+- First-pass Java caller ergonomics should be limited to strict `ref://...` values and Spring `Resource`; leave `byte[]` for a later concrete caller use case.
+- Do not add global content-type limits. Use skill-declared `allowed_content_types` for MIME policy.
+- Keep a configurable Bifrost-level maximum attachment size, but choose the exact default during implementation after checking sample image sizes and provider limits.
+- First-pass content-type detection should use declared field policy plus resource metadata/filename. Bounded byte sniffing can be added if filename/resource metadata is insufficient or too fragile in practice.
+- Upgrade Spring AI to the latest stable `1.1.x` patch line before implementing attachments, then verify the real `UserMessage`/`Media` request shape with tests.
 
 ## Notes From Code Research
 

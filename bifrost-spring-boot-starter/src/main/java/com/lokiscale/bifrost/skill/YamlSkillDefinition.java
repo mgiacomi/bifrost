@@ -46,7 +46,7 @@ public record YamlSkillDefinition(
         return manifest.getOutputSchema();
     }
 
-    public YamlSkillManifest.OutputSchemaManifest inputSchema()
+    public YamlSkillManifest.InputSchemaManifest inputSchema()
     {
         return manifest.getInputSchema();
     }

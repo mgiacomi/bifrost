@@ -241,6 +241,51 @@ class YamlSkillCatalogTests {
     }
 
     @Test
+    void acceptsAttachmentOnlyInInputSchema() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/attachment-input-skill.yaml")
+                .run(context -> {
+                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("attachment.input.skill");
+
+                    assertThat(definition).isNotNull();
+                    assertThat(definition.inputSchema().getProperties().get("image").getType()).isEqualTo("attachment");
+                    assertThat(definition.inputSchema().getProperties().get("image").getMediaType()).isEqualTo("image");
+                    assertThat(definition.inputSchema().getProperties().get("image").getAllowedContentTypes())
+                            .containsExactly("image/jpeg");
+                });
+    }
+
+    @Test
+    void rejectsAttachmentFieldsOnOutputSchema() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/attachment-output-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("attachment-output-skill.yaml")
+                        .hasMessageContaining("field 'output_schema.properties.image.type'")
+                        .hasMessageContaining("unsupported schema type 'attachment'"));
+    }
+
+    @Test
+    void requiresAllowedContentTypesForAttachmentInputAndRejectsMediaFieldsElsewhere() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/attachment-missing-allowed-content-types-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("attachment-missing-allowed-content-types-skill.yaml")
+                        .hasMessageContaining("field 'input_schema.properties.image.allowed_content_types'")
+                        .hasMessageContaining("must declare at least one content type"));
+
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/non-attachment-media-field-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("non-attachment-media-field-skill.yaml")
+                        .hasMessageContaining("field 'input_schema.properties.payload.media_type'")
+                        .hasMessageContaining("is only supported for attachment schemas"));
+    }
+
+    @Test
     void failsStartupWhenInputSchemaUsesUnsupportedKeywordOrNonObjectRoot() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/input-schema-root-array-skill.yaml")

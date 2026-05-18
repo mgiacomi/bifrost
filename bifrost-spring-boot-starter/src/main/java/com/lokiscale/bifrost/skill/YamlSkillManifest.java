@@ -38,7 +38,7 @@ public class YamlSkillManifest
     private OutputSchemaManifest outputSchema;
 
     @JsonProperty("input_schema")
-    private OutputSchemaManifest inputSchema;
+    private InputSchemaManifest inputSchema;
 
     @JsonProperty("output_schema_max_retries")
     private Integer outputSchemaMaxRetries;
@@ -158,12 +158,12 @@ public class YamlSkillManifest
         this.outputSchema = outputSchema;
     }
 
-    public OutputSchemaManifest getInputSchema()
+    public InputSchemaManifest getInputSchema()
     {
         return inputSchema;
     }
 
-    public void setInputSchema(OutputSchemaManifest inputSchema)
+    public void setInputSchema(InputSchemaManifest inputSchema)
     {
         this.inputSchema = inputSchema;
     }
@@ -300,6 +300,133 @@ public class YamlSkillManifest
         public void setToolEvidence(Map<String, List<String>> toolEvidence)
         {
             this.toolEvidence = normalizeStringListMap(toolEvidence);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class InputSchemaManifest
+    {
+        private String type;
+        private Map<String, InputSchemaManifest> properties = Map.of();
+        private List<String> required = List.of();
+        private Boolean additionalProperties;
+        private InputSchemaManifest items;
+
+        @JsonProperty("enum")
+        private List<String> enumValues = List.of();
+
+        private String description;
+        private String format;
+
+        @JsonProperty("media_type")
+        private String mediaType;
+
+        @JsonProperty("allowed_content_types")
+        private List<String> allowedContentTypes = List.of();
+
+        public String getType()
+        {
+            return type;
+        }
+
+        public void setType(String type)
+        {
+            this.type = StringUtils.hasText(type) ? type.trim().toLowerCase(Locale.ROOT) : type;
+        }
+
+        public Map<String, InputSchemaManifest> getProperties()
+        {
+            return properties;
+        }
+
+        public void setProperties(Map<String, InputSchemaManifest> properties)
+        {
+            if (properties == null || properties.isEmpty())
+            {
+                this.properties = Map.of();
+                return;
+            }
+            this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
+        }
+
+        public List<String> getRequired()
+        {
+            return required;
+        }
+
+        public void setRequired(List<String> required)
+        {
+            this.required = required == null ? List.of() : List.copyOf(required);
+        }
+
+        public Boolean getAdditionalProperties()
+        {
+            return additionalProperties;
+        }
+
+        public void setAdditionalProperties(Boolean additionalProperties)
+        {
+            this.additionalProperties = additionalProperties;
+        }
+
+        public InputSchemaManifest getItems()
+        {
+            return items;
+        }
+
+        public void setItems(InputSchemaManifest items)
+        {
+            this.items = items;
+        }
+
+        public List<String> getEnumValues()
+        {
+            return enumValues;
+        }
+
+        public void setEnumValues(List<String> enumValues)
+        {
+            this.enumValues = enumValues == null ? List.of() : List.copyOf(enumValues);
+        }
+
+        public String getDescription()
+        {
+            return description;
+        }
+
+        public void setDescription(String description)
+        {
+            this.description = StringUtils.hasText(description) ? description.trim() : null;
+        }
+
+        public String getFormat()
+        {
+            return format;
+        }
+
+        public void setFormat(String format)
+        {
+            this.format = StringUtils.hasText(format) ? format.trim() : null;
+        }
+
+        public String getMediaType()
+        {
+            return mediaType;
+        }
+
+        public void setMediaType(String mediaType)
+        {
+            this.mediaType = StringUtils.hasText(mediaType) ? mediaType.trim().toLowerCase(Locale.ROOT) : null;
+        }
+
+        public List<String> getAllowedContentTypes()
+        {
+            return allowedContentTypes;
+        }
+
+        public void setAllowedContentTypes(List<String> allowedContentTypes)
+        {
+            this.allowedContentTypes = allowedContentTypes == null ? List.of() : List.copyOf(allowedContentTypes);
         }
     }
 

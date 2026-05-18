@@ -83,6 +83,30 @@ class PlanningServiceTest {
     }
 
     @Test
+    void planningReceivesAttachmentDescriptorsButNoMedia() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-planning-attachment", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(planJson("plan-attachment", PlanTaskStatus.PENDING));
+
+        planningService.initializePlan(
+                session,
+                "Extract ticket",
+                Map.of("image", Map.of(
+                        "attachment", true,
+                        "name", "ticket.jpg",
+                        "contentType", "image/jpeg",
+                        "mediaType", "IMAGE")),
+                rootDefinition(),
+                chatClient,
+                List.of());
+
+        assertThat(chatClient.userMessagesSeen()).hasSize(1);
+        assertThat(chatClient.userMessagesSeen().getFirst()).contains("\"attachment\" : true", "\"contentType\" : \"image/jpeg\"");
+        assertThat(chatClient.userConsumerCalls()).isZero();
+    }
+
+    @Test
     void recordsPlanningModelUsageAgainstTheSession() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         RecordingSessionUsageService usageService = new RecordingSessionUsageService();
@@ -859,6 +883,29 @@ class PlanningServiceTest {
                         "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null)));
     }
 
+    private static String planJson(String id, PlanTaskStatus status) {
+        return """
+                {
+                  "planId": "%s",
+                  "capabilityName": "root.visible.skill",
+                  "createdAt": "2026-03-15T12:00:00Z",
+                  "status": "VALID",
+                  "tasks": [
+                    {
+                      "taskId": "task-1",
+                      "title": "Use tool",
+                      "status": "%s",
+                      "capabilityName": "allowed.visible.skill",
+                      "intent": "Use tool",
+                      "dependsOn": [],
+                      "expectedOutputs": [],
+                      "autoCompletable": false
+                    }
+                  ]
+                }
+                """.formatted(id, status.name());
+    }
+
     private static List<TraceRecord> readRecords(BifrostSession session) {
         List<TraceRecord> records = new ArrayList<>();
         session.readTraceRecords(records::add);
@@ -900,6 +947,8 @@ class PlanningServiceTest {
 
         private final Deque<String> responses = new ArrayDeque<>();
         private final List<String> systemMessagesSeen = new ArrayList<>();
+        private final List<String> userMessagesSeen = new ArrayList<>();
+        private int userConsumerCalls;
 
         private SequencePlanningChatClient(String... responses) {
             this.responses.addAll(List.of(responses));
@@ -907,6 +956,14 @@ class PlanningServiceTest {
 
         private List<String> systemMessagesSeen() {
             return systemMessagesSeen;
+        }
+
+        private List<String> userMessagesSeen() {
+            return userMessagesSeen;
+        }
+
+        private int userConsumerCalls() {
+            return userConsumerCalls;
         }
 
         @Override
@@ -1019,6 +1076,7 @@ class PlanningServiceTest {
 
             @Override
             public ChatClientRequestSpec user(String text) {
+                userMessagesSeen.add(text);
                 return this;
             }
 
@@ -1034,6 +1092,7 @@ class PlanningServiceTest {
 
             @Override
             public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                userConsumerCalls++;
                 return this;
             }
 

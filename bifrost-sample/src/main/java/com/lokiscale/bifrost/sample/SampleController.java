@@ -5,6 +5,8 @@ import com.lokiscale.bifrost.skillapi.SkillTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,9 +24,11 @@ public class SampleController {
     private static final Logger log = LoggerFactory.getLogger(SampleController.class);
 
     private final SkillTemplate skillTemplate;
+    private final ResourceLoader resourceLoader;
 
-    public SampleController(SkillTemplate skillTemplate) {
+    public SampleController(SkillTemplate skillTemplate, ResourceLoader resourceLoader) {
         this.skillTemplate = skillTemplate;
+        this.resourceLoader = resourceLoader;
     }
 
     @GetMapping(value = "/expenses", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -38,6 +42,18 @@ public class SampleController {
         ViewHolder holder = new ViewHolder();
         String result = skillTemplate.invoke("feedstockTicketParser", Map.of(), holder::set);
         log.info("Completed feedstockTicketParser sessionId={} elapsedMs={}",
+                holder.view == null ? "unknown" : holder.view.sessionId(),
+                elapsedMillis(startedAtNanos));
+        return buildExecutionResponse(result, "classpath:/forms/feedstock-p1.jpg", holder.view);
+    }
+
+    @GetMapping(value = "/feedstock/parse-sample-by-skill", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Object parseSampleFeedstockTicketBySkill() {
+        Resource image = resourceLoader.getResource("classpath:/forms/feedstock-p1.jpg");
+        long startedAtNanos = System.nanoTime();
+        ViewHolder holder = new ViewHolder();
+        String result = skillTemplate.invoke("feedstockTicketParserBySkill", Map.of("image", image), holder::set);
+        log.info("Completed feedstockTicketParserBySkill sessionId={} elapsedMs={}",
                 holder.view == null ? "unknown" : holder.view.sessionId(),
                 elapsedMillis(startedAtNanos));
         return buildExecutionResponse(result, "classpath:/forms/feedstock-p1.jpg", holder.view);

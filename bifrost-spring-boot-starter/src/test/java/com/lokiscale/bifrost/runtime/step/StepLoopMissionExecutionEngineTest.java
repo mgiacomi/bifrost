@@ -32,11 +32,17 @@ import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
+import org.springframework.util.MimeType;
 
+import java.net.URL;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -533,6 +539,44 @@ class StepLoopMissionExecutionEngineTest {
     }
 
     @Test
+    void stepLoopSendsAttachmentMediaOnExecutionSteps() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        ExecutionPlan plan = singleTaskPlan();
+        PlanningService planningService = new InitializingPlanningService(stateService, plan);
+        SequenceChatClient chatClient = new SequenceChatClient(
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{"rawText":"INV-7"}}
+                """,
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":"Finished"}
+                """);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-attachment", 3);
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor, attachmentDefinition());
+
+            String response = executeMission(
+                    engine,
+                    session,
+                    attachmentDefinition(),
+                    "Extract ticket",
+                    Map.of("image", imageResource("ticket.jpg", "SECRET_IMAGE_BYTES")),
+                    chatClient,
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
+
+            assertThat(response).isEqualTo("Finished");
+        }
+
+        assertThat(chatClient.userMediaSeen()).hasSize(2);
+        assertThat(chatClient.userMediaSeen()).allSatisfy(media -> assertThat(media.mimeType().toString()).isEqualTo("image/jpeg"));
+        assertThat(chatClient.userMessagesSeen()).hasSize(2);
+        assertThat(chatClient.userMessagesSeen()).allSatisfy(message -> assertThat(message)
+                .contains("\"attachment\" : true", "\"contentType\" : \"image/jpeg\"")
+                .doesNotContain("SECRET_IMAGE_BYTES")
+                .doesNotContain("ByteArrayResource"));
+    }
+
+    @Test
     void retriesWhenModelUsesParentSkillNameInsteadOfBoundReadyTaskTool() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         ExecutionPlan plan = twoTaskPlan()
@@ -968,6 +1012,45 @@ class StepLoopMissionExecutionEngineTest {
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
     }
 
+    private static YamlSkillDefinition attachmentDefinition() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("root.visible.skill");
+        manifest.setModel("gpt-5");
+        manifest.setPlanningMode(true);
+        manifest.setInputSchema(attachmentInputSchema());
+        return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillManifest.InputSchemaManifest attachmentInputSchema() {
+        YamlSkillManifest.InputSchemaManifest root = new YamlSkillManifest.InputSchemaManifest();
+        root.setType("object");
+        root.setRequired(List.of("image"));
+        root.setAdditionalProperties(false);
+        YamlSkillManifest.InputSchemaManifest image = new YamlSkillManifest.InputSchemaManifest();
+        image.setType("attachment");
+        image.setMediaType("image");
+        image.setAllowedContentTypes(List.of("image/jpeg"));
+        root.setProperties(Map.of("image", image));
+        return root;
+    }
+
+    private static ByteArrayResource imageResource(String filename, String content) {
+        byte[] marker = content.getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = new byte[marker.length + 4];
+        bytes[0] = (byte) 0xFF;
+        bytes[1] = (byte) 0xD8;
+        bytes[2] = (byte) 0xFF;
+        System.arraycopy(marker, 0, bytes, 3, marker.length);
+        bytes[bytes.length - 1] = (byte) 0xD9;
+        return new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        };
+    }
+
     private static YamlSkillDefinition definitionWithOutputSchema() {
         YamlSkillManifest manifest = new YamlSkillManifest();
         manifest.setName("root.visible.skill");
@@ -1209,6 +1292,7 @@ class StepLoopMissionExecutionEngineTest {
         private final Deque<String> responses = new ArrayDeque<>();
         private final List<String> systemMessagesSeen = new ArrayList<>();
         private final List<String> userMessagesSeen = new ArrayList<>();
+        private final List<CapturedMedia> userMediaSeen = new ArrayList<>();
 
         private SequenceChatClient(String... responses) {
             this.responses.addAll(List.of(responses));
@@ -1220,6 +1304,10 @@ class StepLoopMissionExecutionEngineTest {
 
         List<String> userMessagesSeen() {
             return userMessagesSeen;
+        }
+
+        List<CapturedMedia> userMediaSeen() {
+            return userMediaSeen;
         }
 
         @Override
@@ -1348,6 +1436,7 @@ class StepLoopMissionExecutionEngineTest {
 
             @Override
             public ChatClientRequestSpec user(java.util.function.Consumer<PromptUserSpec> consumer) {
+                consumer.accept(new SequencePromptUserSpec());
                 return this;
             }
 
@@ -1368,6 +1457,64 @@ class StepLoopMissionExecutionEngineTest {
             @Override
             public StreamResponseSpec stream() {
                 throw new UnsupportedOperationException();
+            }
+        }
+
+        private record CapturedMedia(MimeType mimeType, Resource resource) {
+        }
+
+        private final class SequencePromptUserSpec implements ChatClient.PromptUserSpec {
+
+            @Override
+            public PromptUserSpec text(String text) {
+                userMessagesSeen.add(text);
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec text(Resource resource, Charset charset) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec text(Resource resource) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec media(MimeType mimeType, Resource resource) {
+                userMediaSeen.add(new CapturedMedia(mimeType, resource));
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec media(MimeType mimeType, URL url) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec media(Media... media) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec param(String key, Object value) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec params(Map<String, Object> params) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec metadata(String key, Object value) {
+                return this;
+            }
+
+            @Override
+            public PromptUserSpec metadata(Map<String, Object> metadata) {
+                return this;
             }
         }
 

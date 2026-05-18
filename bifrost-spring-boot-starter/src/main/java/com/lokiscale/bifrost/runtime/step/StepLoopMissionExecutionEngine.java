@@ -25,6 +25,11 @@ import com.lokiscale.bifrost.outputschema.OutputSchemaValidationResult;
 import com.lokiscale.bifrost.outputschema.OutputSchemaValidator;
 import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.attachment.DefaultMissionInputMaterializer;
+import com.lokiscale.bifrost.runtime.attachment.MissionInputMaterializer;
+import com.lokiscale.bifrost.runtime.attachment.MissionUserMessageSender;
+import com.lokiscale.bifrost.runtime.attachment.RenderedMissionInput;
+import com.lokiscale.bifrost.runtime.attachment.SpringAiMissionUserMessageSender;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceBackedOutputValidator;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceCoverageResult;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
@@ -35,6 +40,8 @@ import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
+import com.lokiscale.bifrost.vfs.DefaultRefResolver;
+import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -49,6 +56,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
 import java.time.Duration;
+import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -98,6 +106,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
     private final OutputSchemaValidator outputSchemaValidator;
     private final EvidenceBackedOutputValidator evidenceBackedOutputValidator;
     private final int defaultMaxSteps;
+    private final MissionInputMaterializer missionInputMaterializer;
+    private final MissionUserMessageSender missionUserMessageSender;
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
             ExecutionStateService executionStateService,
@@ -124,7 +134,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             int defaultMaxSteps)
     {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
-                sessionUsageService, modelUsageExtractor, defaultMaxSteps);
+                sessionUsageService, modelUsageExtractor, defaultMaxSteps, defaultMaterializer(), new SpringAiMissionUserMessageSender());
         this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
     }
 
@@ -148,6 +158,37 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor,
             int defaultMaxSteps)
+    {
+        this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
+                sessionUsageService, modelUsageExtractor, defaultMaxSteps, defaultMaterializer(), new SpringAiMissionUserMessageSender());
+    }
+
+    public StepLoopMissionExecutionEngine(PlanningService planningService,
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            YamlSkillCatalog ignoredYamlSkillCatalog,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor,
+            MissionInputMaterializer missionInputMaterializer,
+            MissionUserMessageSender missionUserMessageSender)
+    {
+        this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
+                sessionUsageService, modelUsageExtractor, DEFAULT_MAX_STEPS, missionInputMaterializer, missionUserMessageSender);
+        this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
+    }
+
+    public StepLoopMissionExecutionEngine(PlanningService planningService,
+            ExecutionStateService executionStateService,
+            CapabilityRegistry capabilityRegistry,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor,
+            int defaultMaxSteps,
+            MissionInputMaterializer missionInputMaterializer,
+            MissionUserMessageSender missionUserMessageSender)
     {
         this.planningService = Objects.requireNonNull(planningService, "planningService must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
@@ -161,6 +202,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
         this.outputSchemaValidator = new OutputSchemaValidator();
         this.evidenceBackedOutputValidator = new EvidenceBackedOutputValidator();
         this.defaultMaxSteps = defaultMaxSteps;
+        this.missionInputMaterializer = Objects.requireNonNull(missionInputMaterializer, "missionInputMaterializer must not be null");
+        this.missionUserMessageSender = Objects.requireNonNull(missionUserMessageSender, "missionUserMessageSender must not be null");
     }
 
     @Override
@@ -190,13 +233,14 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             try
             {
                 sessionUsageService.recordMissionStart(session, skillName);
+                RenderedMissionInput renderedInput = missionInputMaterializer.materialize(session, definition, objective, missionInput);
 
                 if (planningEnabled)
                 {
                     planningService.initializePlan(
                             session,
                             objective,
-                            missionInput,
+                            planningInput(missionInput, renderedInput),
                             definition,
                             chatClient,
                             visibleTools);
@@ -209,7 +253,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                             "Step-loop execution requires a plan but none was created for skill '" + skillName + "'");
                 }
 
-                return executeStepLoop(session, definition, objective, missionInput, executionConfiguration, chatClient, visibleTools);
+                return executeStepLoop(session, definition, objective, renderedInput, executionConfiguration, chatClient, visibleTools);
             }
             finally
             {
@@ -260,7 +304,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
     private String executeStepLoop(BifrostSession session,
             YamlSkillDefinition definition,
             String objective,
-            @Nullable Map<String, Object> missionInput,
+            RenderedMissionInput renderedInput,
             EffectiveSkillExecutionConfiguration executionConfiguration,
             ChatClient chatClient,
             List<ToolCallback> visibleTools)
@@ -272,7 +316,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             recordTerminalFailure(session, skillName, 0,
                     "Step-loop execution rejected invalid max_steps value: " + maxSteps);
             throw new IllegalStateException(
-                    "Step-loop execution requires max_steps > 0 for skill '%s' but was %d."
+                        "Step-loop execution requires max_steps > 0 for skill '%s' but was %d."
                             .formatted(skillName, maxSteps));
         }
 
@@ -317,7 +361,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                     session,
                     skillName,
                     objective,
-                    missionInput,
+                    renderedInput,
                     executionConfiguration,
                     chatClient,
                     visibleTools,
@@ -349,7 +393,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
     private StepResult executeOneStep(BifrostSession session,
             String skillName,
             String objective,
-            @Nullable Map<String, Object> missionInput,
+            RenderedMissionInput renderedInput,
             EffectiveSkillExecutionConfiguration executionConfiguration,
             ChatClient chatClient,
             List<ToolCallback> visibleTools,
@@ -386,7 +430,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                 String stepPrompt = StepPromptBuilder.buildStepPrompt(
                         plan,
                         objective,
-                        missionInput,
+                        renderedInput.traceSafeInput(),
                         stepNumber,
                         lastToolResult,
                         executionSummary,
@@ -394,14 +438,16 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                         finalResponseOnly,
                         forceVerboseToolArgumentGuidance,
                         skillDefinition == null ? null : skillDefinition.outputSchema());
-                String stepUserMessage = StepPromptBuilder.buildStepUserMessage(plan, objective, missionInput);
+                String stepUserMessage = StepPromptBuilder.buildStepUserMessage(plan, objective, renderedInput.traceSafeInput());
                 String effectivePrompt = invalidActionFeedback == null || invalidActionFeedback.isBlank()
                         ? stepPrompt
                         : stepPrompt + "\n\nYOUR PREVIOUS ACTION WAS INVALID: "
                                 + invalidActionFeedback + "\nPlease correct and try again.";
 
                 String modelResponse = callModelForStep(
-                        session, skillName, executionConfiguration, chatClient, effectivePrompt, stepUserMessage, stepNumber);
+                        session, skillName, executionConfiguration, chatClient, effectivePrompt,
+                        new RenderedMissionInput(stepUserMessage, renderedInput.attachments(), renderedInput.traceSafeInput()),
+                        stepNumber);
 
                 StepAction action = parseStepAction(modelResponse, finalResponseOnly);
                 if (action == null)
@@ -505,7 +551,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             EffectiveSkillExecutionConfiguration executionConfiguration,
             ChatClient chatClient,
             String stepPrompt,
-            String stepUserMessage,
+            RenderedMissionInput renderedInput,
             int stepNumber)
     {
         ExecutionFrame modelFrame = executionStateService.openFrame(
@@ -531,14 +577,24 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                     session,
                     modelFrame,
                     modelTraceContext,
-                    Map.of("system", stepPrompt, "user", stepUserMessage),
+                    Map.of("system", stepPrompt,
+                            "user", renderedInput.userText(),
+                            "attachments", attachmentDescriptors(renderedInput),
+                            "attachmentCount", renderedInput.attachments().size()),
                     markRequestSent ->
                     {
-                        Map<String, Object> sentPayload = Map.of("system", stepPrompt, "user", stepUserMessage);
-                        ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                                .system(stepPrompt)
-                                .user(stepUserMessage)
-                                .call();
+                        Map<String, Object> sentPayload = Map.of(
+                                "system", stepPrompt,
+                                "user", renderedInput.userText(),
+                                "attachments", attachmentDescriptors(renderedInput),
+                                "attachmentCount", renderedInput.attachments().size());
+                        ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
+                                chatClient,
+                                stepPrompt,
+                                renderedInput,
+                                List.of(),
+                                skillName,
+                                executionConfiguration);
 
                         markRequestSent.accept(sentPayload);
 
@@ -559,7 +615,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                         sessionUsageService.recordModelResponse(
                                 session,
                                 skillName,
-                                modelUsageExtractor.extract(chatResponse, stepUserMessage, stepPrompt, responseContent));
+                                modelUsageExtractor.extract(chatResponse, renderedInput.userText(), stepPrompt, responseContent));
 
                         return ModelTraceResult.of(
                                 responseContent,
@@ -1020,6 +1076,25 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
         {
             executionSummary.removeFirst();
         }
+    }
+
+    private List<Map<String, Object>> attachmentDescriptors(RenderedMissionInput renderedInput)
+    {
+        return renderedInput.attachments().stream()
+                .map(attachment -> attachment.descriptor())
+                .toList();
+    }
+
+    @Nullable
+    private Map<String, Object> planningInput(@Nullable Map<String, Object> originalInput, RenderedMissionInput renderedInput)
+    {
+        return renderedInput.attachments().isEmpty() ? originalInput : renderedInput.traceSafeInput();
+    }
+
+    private static MissionInputMaterializer defaultMaterializer()
+    {
+        return new DefaultMissionInputMaterializer(new DefaultRefResolver(
+                new SessionLocalVirtualFileSystem(Paths.get(System.getProperty("java.io.tmpdir"), "bifrost-vfs"))));
     }
 
     private void unwindMissionFrames(BifrostSession session, int baselineFrameDepth)

@@ -687,6 +687,61 @@ class ExecutionCoordinatorTest {
     }
 
     @Test
+    void redactsDeclaredAttachmentInputBeforeOpeningMissionFrame() {
+        EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
+                "gpt-5",
+                AiProvider.OPENAI,
+                "openai/gpt-5",
+                "medium");
+        StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
+                new ByteArrayResource(new byte[0]),
+                attachmentManifest("root.visible.skill"),
+                executionConfiguration));
+        CapabilityMetadata rootMetadata = new CapabilityMetadata(
+                "yaml:root",
+                "root.visible.skill",
+                "root",
+                ModelPreference.LIGHT,
+                SkillExecutionDescriptor.from(executionConfiguration),
+                java.util.Set.of(),
+                arguments -> "root",
+                CapabilityKind.YAML_SKILL,
+                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                null);
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        registry.register(rootMetadata.name(), rootMetadata);
+
+        ExecutionCoordinator coordinator = coordinator(
+                catalog,
+                registry,
+                (currentSkillName, sessionState, authentication) -> List.of(),
+                new RecordingSkillChatClientFactory(new FakeCoordinatorChatClient(null, "unused", null, false)),
+                (value, session) -> value,
+                null);
+        BifrostSession session = new BifrostSession("session-attachment-redaction", 3);
+
+        assertThatThrownBy(() -> coordinator.execute(
+                "root.visible.skill",
+                "Parse image",
+                Map.of("image", "data:image/jpeg;base64,SECRET_IMAGE_BYTES"),
+                session,
+                null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Attachment field 'image'");
+
+        TraceRecord rootFrameOpened = readTraceRecords(session).stream()
+                .filter(record -> record.recordType() == TraceRecordType.FRAME_OPENED)
+                .filter(record -> record.frameType() == TraceFrameType.ROOT_MISSION)
+                .findFirst()
+                .orElseThrow();
+        assertThat(String.valueOf(rootFrameOpened.data()))
+                .contains("\"attachment\":true")
+                .contains("\"source\":\"redacted\"")
+                .doesNotContain("SECRET_IMAGE_BYTES")
+                .doesNotContain("data:image/jpeg");
+    }
+
+    @Test
     void preservesMissionFailureWhenCleanupAlsoFails() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
@@ -1420,6 +1475,22 @@ class ExecutionCoordinatorTest {
     private static YamlSkillManifest plannedManifest(String name, List<String> allowedSkills) {
         YamlSkillManifest manifest = manifest(name, allowedSkills);
         manifest.setPlanningMode(true);
+        return manifest;
+    }
+
+    private static YamlSkillManifest attachmentManifest(String name) {
+        YamlSkillManifest manifest = manifest(name, List.of());
+        manifest.setPlanningMode(false);
+        YamlSkillManifest.InputSchemaManifest root = new YamlSkillManifest.InputSchemaManifest();
+        root.setType("object");
+        root.setRequired(List.of("image"));
+        root.setAdditionalProperties(false);
+        YamlSkillManifest.InputSchemaManifest image = new YamlSkillManifest.InputSchemaManifest();
+        image.setType("attachment");
+        image.setMediaType("image");
+        image.setAllowedContentTypes(List.of("image/jpeg"));
+        root.setProperties(Map.of("image", image));
+        manifest.setInputSchema(root);
         return manifest;
     }
 

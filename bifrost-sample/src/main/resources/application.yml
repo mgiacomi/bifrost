@@ -48,6 +48,9 @@ bifrost:
     default-model:
       provider: ollama
       provider-model: ibm/granite4:tiny-h
+    openai-vision:
+      provider: openai
+      provider-model: gpt-4.1-mini
 
 execution-trace:
   persistence: ALWAYS

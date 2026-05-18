@@ -55,6 +55,7 @@ public class SkillInputValidator
             case "number" -> validateNumber(value, schema, path, issues);
             case "boolean" -> validateBoolean(value, schema, path, issues);
             case "string" -> validateString(value, schema, path, issues);
+            case "attachment" -> validateAttachment(value, schema, path, issues);
             default -> value;
         };
     }
@@ -251,6 +252,25 @@ public class SkillInputValidator
         return value instanceof byte[]
                 || value instanceof Resource
                 || value instanceof InputStream;
+    }
+
+    private Object validateAttachment(Object value,
+            SkillInputSchemaNode schema,
+            String path,
+            List<SkillInputValidationIssue> issues)
+    {
+        if (value instanceof String text && text.matches("^ref://\\S+$"))
+        {
+            return text;
+        }
+        if (value instanceof Resource)
+        {
+            return value;
+        }
+
+        issues.add(issue(path, "type_mismatch",
+                "Expected attachment input as a strict ref:// value or Spring Resource.", value));
+        return value;
     }
 
     private String normalizeDate(String value)

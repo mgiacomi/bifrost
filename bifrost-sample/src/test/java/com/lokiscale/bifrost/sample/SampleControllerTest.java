@@ -4,6 +4,9 @@ import com.lokiscale.bifrost.core.ExecutionJournal;
 import com.lokiscale.bifrost.skillapi.SkillExecutionView;
 import com.lokiscale.bifrost.skillapi.SkillTemplate;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
 
 import java.util.Map;
 import java.util.function.Consumer;
@@ -20,7 +23,7 @@ class SampleControllerTest {
     @Test
     void sampleControllerDelegatesFeedstockSampleToSkillTemplate() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
-        SampleController controller = new SampleController(skillTemplate);
+        SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());
         ExecutionJournal journal = new ExecutionJournal(java.util.List.of());
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
@@ -40,7 +43,7 @@ class SampleControllerTest {
     @Test
     void sampleControllerDelegatesToSkillTemplate() throws Exception {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
-        SampleController controller = new SampleController(skillTemplate);
+        SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());
         ExecutionJournal journal = new ExecutionJournal(java.util.List.of());
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
@@ -55,5 +58,21 @@ class SampleControllerTest {
         assertThat(response.get("result")).isEqualTo("\"ok\"");
         assertThat(response.get("sessionId")).isEqualTo("session-123");
         assertThat(response.get("executionJournal")).isEqualTo(journal);
+    }
+
+    @Test
+    void sampleControllerDelegatesPureYamlFeedstockResourceToSkillTemplate() {
+        SkillTemplate skillTemplate = mock(SkillTemplate.class);
+        SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());
+        doAnswer(invocation -> "{\"ticket_no\":\"46843\"}")
+                .when(skillTemplate).invoke(eq("feedstockTicketParserBySkill"), any(Map.class), any());
+
+        Map<String, Object> response = (Map<String, Object>) controller.parseSampleFeedstockTicketBySkill();
+
+        ArgumentCaptor<Map<String, Object>> inputCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(skillTemplate).invoke(eq("feedstockTicketParserBySkill"), inputCaptor.capture(), any());
+        assertThat(inputCaptor.getValue().get("image")).isInstanceOf(Resource.class);
+        assertThat(response.get("result")).isEqualTo("{\"ticket_no\":\"46843\"}");
+        assertThat(response.get("filePath")).isEqualTo("classpath:/forms/feedstock-p1.jpg");
     }
 }

@@ -14,7 +14,10 @@ public record SkillInputSchemaNode(
         List<String> enumValues,
         String description,
         String format,
-        boolean runtimeRefCapable)
+        boolean runtimeRefCapable,
+        boolean attachment,
+        String attachmentMediaType,
+        List<String> allowedContentTypes)
 {
     public SkillInputSchemaNode
     {
@@ -22,6 +25,22 @@ public record SkillInputSchemaNode(
         properties = properties == null ? Map.of() : Map.copyOf(properties);
         required = required == null ? List.of() : List.copyOf(required);
         enumValues = enumValues == null ? List.of() : List.copyOf(enumValues);
+        allowedContentTypes = allowedContentTypes == null ? List.of() : List.copyOf(allowedContentTypes);
+    }
+
+    public SkillInputSchemaNode(String type,
+            Map<String, SkillInputSchemaNode> properties,
+            List<String> required,
+            Boolean additionalProperties,
+            SkillInputSchemaNode additionalPropertiesSchema,
+            SkillInputSchemaNode items,
+            List<String> enumValues,
+            String description,
+            String format,
+            boolean runtimeRefCapable)
+    {
+        this(type, properties, required, additionalProperties, additionalPropertiesSchema, items, enumValues,
+                description, format, runtimeRefCapable, false, null, List.of());
     }
 
     public SkillInputSchemaNode(String type,
@@ -34,7 +53,7 @@ public record SkillInputSchemaNode(
             String format,
             boolean runtimeRefCapable)
     {
-        this(type, properties, required, additionalProperties, null, items, enumValues, description, format, runtimeRefCapable);
+        this(type, properties, required, additionalProperties, null, items, enumValues, description, format, runtimeRefCapable, false, null, List.of());
     }
 
     public boolean isObject()
@@ -50,6 +69,11 @@ public record SkillInputSchemaNode(
     public boolean isString()
     {
         return "string".equals(type);
+    }
+
+    public boolean isAttachment()
+    {
+        return attachment || "attachment".equals(type);
     }
 
     public boolean allowsAdditionalProperties()

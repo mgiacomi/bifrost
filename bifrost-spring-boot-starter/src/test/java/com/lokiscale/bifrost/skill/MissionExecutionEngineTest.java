@@ -18,6 +18,7 @@ import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.core.io.ByteArrayResource;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -25,11 +26,13 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -138,6 +141,123 @@ class MissionExecutionEngineTest {
             assertThat(sentRecord.data().get("toolCallbackCount").asInt()).isEqualTo(1);
             assertThat(sentRecord.data().get("toolNames").isArray()).isTrue();
             assertThat(sentRecord.data().get("toolNames")).hasSize(1);
+        }
+    }
+
+    @Test
+    void sendsDeclaredImageAttachmentAsMediaInsteadOfTextOnlyUserMessage() {
+        PlanningService planningService = mock(PlanningService.class);
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofSeconds(5),
+                    missionExecutor);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-attachment", 2);
+            MissionChatClient chatClient = new MissionChatClient("mission complete");
+
+            String response = engine.executeMission(
+                    session,
+                    attachmentDefinition(),
+                    "Extract ticket",
+                    Map.of("image", imageResource("ticket.jpg", "SECRET_IMAGE_BYTES")),
+                    chatClient,
+                    List.of(),
+                    false,
+                    null);
+
+            assertThat(response).isEqualTo("mission complete");
+            assertThat(chatClient.getUserMediaSeen()).hasSize(1);
+            assertThat(chatClient.getUserMediaSeen().getFirst().mimeType().toString()).isEqualTo("image/jpeg");
+            assertThat(chatClient.getUserMessagesSeen()).hasSize(1);
+            assertThat(chatClient.getUserMessagesSeen().getFirst())
+                    .contains("\"attachment\" : true", "\"contentType\" : \"image/jpeg\"")
+                    .doesNotContain("SECRET_IMAGE_BYTES")
+                    .doesNotContain("ByteArrayResource");
+        }
+    }
+
+    @Test
+    void planningReceivesDescriptorsAndMissionTraceRedactsAttachmentBytes() {
+        PlanningService planningService = mock(PlanningService.class);
+        AtomicReference<Map<String, Object>> planningInput = new AtomicReference<>();
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofSeconds(5),
+                    missionExecutor);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-attachment-trace", 2);
+            MissionChatClient chatClient = new MissionChatClient("mission complete");
+            ExecutionPlan plan = new ExecutionPlan(
+                    "plan-attachment",
+                    "root.visible.skill",
+                    Instant.parse("2026-03-15T12:00:00Z"),
+                    List.of(new PlanTask("task-1", "Inspect ticket", PlanTaskStatus.PENDING, null)));
+            when(planningService.initializePlan(eq(session), eq("Extract ticket"), any(), any(YamlSkillDefinition.class), eq(chatClient), any()))
+                    .thenAnswer(invocation -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> input = (Map<String, Object>) invocation.getArgument(2);
+                        planningInput.set(input);
+                        stateService.storePlan(session, plan);
+                        return java.util.Optional.of(plan);
+                    });
+
+            engine.executeMission(
+                    session,
+                    attachmentDefinition(),
+                    "Extract ticket",
+                    Map.of("image", imageResource("ticket.jpg", "SECRET_IMAGE_BYTES")),
+                    chatClient,
+                    List.of(),
+                    true,
+                    null);
+
+            assertThat(planningInput.get().get("image")).isInstanceOf(Map.class);
+            assertThat(String.valueOf(planningInput.get())).contains("attachment=true").doesNotContain("SECRET_IMAGE_BYTES");
+            assertThat(chatClient.getUserMediaSeen()).hasSize(1);
+
+            List<String> modelTracePayloads = readRecords(session).stream()
+                    .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED
+                            || record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
+                    .map(record -> String.valueOf(record.data()))
+                    .toList();
+            assertThat(modelTracePayloads).isNotEmpty();
+            assertThat(modelTracePayloads).allSatisfy(payload -> assertThat(payload)
+                    .contains("attachment")
+                    .doesNotContain("SECRET_IMAGE_BYTES")
+                    .doesNotContain("base64")
+                    .doesNotContain("ByteArrayResource"));
+        }
+    }
+
+    @Test
+    void wrapsProviderFailureWithAttachmentContext() {
+        PlanningService planningService = mock(PlanningService.class);
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofSeconds(5),
+                    missionExecutor);
+
+            assertThatThrownBy(() -> engine.executeMission(
+                    com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-provider-failure", 2),
+                    attachmentDefinition(),
+                    "Extract ticket",
+                    Map.of("image", imageResource("ticket.jpg", "image bytes")),
+                    new FailingMissionChatClient(),
+                    List.of(),
+                    false,
+                    null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("root.visible.skill")
+                    .hasMessageContaining("openai/gpt-5")
+                    .hasMessageContaining("IMAGE/image/jpeg")
+                    .hasMessageContaining("supports the declared attachment media");
         }
     }
 
@@ -279,6 +399,44 @@ class MissionExecutionEngineTest {
         manifest.setDescription("root.visible.skill");
         manifest.setModel("gpt-5");
         return new YamlSkillDefinition(new org.springframework.core.io.ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillDefinition attachmentDefinition() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("root.visible.skill");
+        manifest.setModel("gpt-5");
+        manifest.setInputSchema(attachmentInputSchema());
+        return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillManifest.InputSchemaManifest attachmentInputSchema() {
+        YamlSkillManifest.InputSchemaManifest root = new YamlSkillManifest.InputSchemaManifest();
+        root.setType("object");
+        root.setRequired(List.of("image"));
+        root.setAdditionalProperties(false);
+        YamlSkillManifest.InputSchemaManifest image = new YamlSkillManifest.InputSchemaManifest();
+        image.setType("attachment");
+        image.setMediaType("image");
+        image.setAllowedContentTypes(List.of("image/jpeg"));
+        root.setProperties(Map.of("image", image));
+        return root;
+    }
+
+    private static ByteArrayResource imageResource(String filename, String content) {
+        byte[] marker = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] bytes = new byte[marker.length + 4];
+        bytes[0] = (byte) 0xFF;
+        bytes[1] = (byte) 0xD8;
+        bytes[2] = (byte) 0xFF;
+        System.arraycopy(marker, 0, bytes, 3, marker.length);
+        bytes[bytes.length - 1] = (byte) 0xD9;
+        return new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        };
     }
 
     private static final class MissionChatClient extends SimpleChatClient {

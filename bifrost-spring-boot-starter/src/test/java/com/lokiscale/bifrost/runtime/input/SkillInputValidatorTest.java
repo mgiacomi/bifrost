@@ -2,7 +2,9 @@ package com.lokiscale.bifrost.runtime.input;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 
+import java.io.ByteArrayInputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -252,5 +254,53 @@ class SkillInputValidatorTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.normalizedInput().get("values")).isEqualTo(List.of("alpha", 2, true));
+    }
+
+    @Test
+    void validatesFirstPassAttachmentInputShapes() {
+        SkillInputContract contract = new SkillInputContract(
+                SkillInputContract.SkillInputContractKind.YAML_EXPLICIT,
+                new SkillInputSchemaNode(
+                        "object",
+                        Map.of("image", new SkillInputSchemaNode(
+                                "attachment",
+                                Map.of(),
+                                List.of(),
+                                null,
+                                null,
+                                null,
+                                List.of(),
+                                "Ticket image",
+                                null,
+                                false,
+                                true,
+                                "image",
+                                List.of("image/jpeg"))),
+                        List.of("image"),
+                        Boolean.FALSE,
+                        null,
+                        List.of(),
+                        null,
+                        null,
+                        false));
+
+        Resource resource = new ByteArrayResource(new byte[]{1, 2, 3});
+        assertThat(validator.validate(Map.of("image", "ref://forms/ticket.jpg"), contract).valid()).isTrue();
+        assertThat(validator.validate(Map.of("image", resource), contract).valid()).isTrue();
+
+        List<Object> rejectedValues = List.of(
+                "forms/ticket.jpg",
+                "file:/tmp/ticket.jpg",
+                "classpath:/forms/ticket.jpg",
+                "data:image/jpeg;base64,AAAA",
+                new byte[]{1, 2, 3},
+                new ByteArrayInputStream(new byte[]{1, 2, 3}),
+                42);
+
+        for (Object rejectedValue : rejectedValues) {
+            SkillInputValidationResult result = validator.validate(Map.of("image", rejectedValue), contract);
+            assertThat(result.valid()).as("rejects %s", rejectedValue.getClass().getSimpleName()).isFalse();
+            assertThat(result.issues()).extracting(SkillInputValidationIssue::code).containsExactly("type_mismatch");
+        }
     }
 }

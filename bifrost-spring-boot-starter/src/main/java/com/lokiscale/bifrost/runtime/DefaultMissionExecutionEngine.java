@@ -6,7 +6,11 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.ModelTraceContext;
-import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
+import com.lokiscale.bifrost.runtime.attachment.DefaultMissionInputMaterializer;
+import com.lokiscale.bifrost.runtime.attachment.MissionInputMaterializer;
+import com.lokiscale.bifrost.runtime.attachment.MissionUserMessageSender;
+import com.lokiscale.bifrost.runtime.attachment.RenderedMissionInput;
+import com.lokiscale.bifrost.runtime.attachment.SpringAiMissionUserMessageSender;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
 import com.lokiscale.bifrost.core.TraceFrameType;
@@ -17,6 +21,8 @@ import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
+import com.lokiscale.bifrost.vfs.DefaultRefResolver;
+import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.messages.AbstractMessage;
@@ -28,6 +34,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
 import java.time.Duration;
+import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,6 +65,8 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
     private final ExecutorService missionExecutor;
     private final SessionUsageService sessionUsageService;
     private final ModelUsageExtractor modelUsageExtractor;
+    private final MissionInputMaterializer missionInputMaterializer;
+    private final MissionUserMessageSender missionUserMessageSender;
 
     public DefaultMissionExecutionEngine(PlanningService planningService,
             ExecutionStateService executionStateService,
@@ -74,12 +83,27 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor)
     {
+        this(planningService, executionStateService, missionTimeout, missionExecutor, sessionUsageService,
+                modelUsageExtractor, defaultMaterializer(), new SpringAiMissionUserMessageSender());
+    }
+
+    public DefaultMissionExecutionEngine(PlanningService planningService,
+            ExecutionStateService executionStateService,
+            Duration missionTimeout,
+            ExecutorService missionExecutor,
+            SessionUsageService sessionUsageService,
+            ModelUsageExtractor modelUsageExtractor,
+            MissionInputMaterializer missionInputMaterializer,
+            MissionUserMessageSender missionUserMessageSender)
+    {
         this.planningService = Objects.requireNonNull(planningService, "planningService must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
         this.missionTimeout = Objects.requireNonNull(missionTimeout, "missionTimeout must not be null");
         this.missionExecutor = Objects.requireNonNull(missionExecutor, "missionExecutor must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
         this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
+        this.missionInputMaterializer = Objects.requireNonNull(missionInputMaterializer, "missionInputMaterializer must not be null");
+        this.missionUserMessageSender = Objects.requireNonNull(missionUserMessageSender, "missionUserMessageSender must not be null");
     }
 
     public String executeMission(BifrostSession session,
@@ -108,10 +132,11 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
             {
                 sessionUsageService.recordMissionStart(session, skillName);
 
-                String userMessage = MissionInputMessageFormatter.buildUserMessage(objective, missionInput);
+                RenderedMissionInput renderedInput = missionInputMaterializer.materialize(session, definition, objective, missionInput);
+                String userMessage = renderedInput.userText();
                 if (planningEnabled)
                 {
-                    planningService.initializePlan(session, objective, missionInput, definition, chatClient, visibleTools);
+                    planningService.initializePlan(session, objective, planningInput(missionInput, renderedInput), definition, chatClient, visibleTools);
                 }
 
                 String executionPrompt = executionStateService.currentPlan(session)
@@ -143,15 +168,19 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                             modelTraceContext,
                             Map.of(
                                     "system", executionPrompt,
-                                    "user", userMessage),
+                                    "user", userMessage,
+                                    "attachments", attachmentDescriptors(renderedInput),
+                                    "attachmentCount", renderedInput.attachments().size()),
                             markRequestSent ->
                             {
-                                Map<String, Object> sentPayload = buildMissionSentPayload(executionPrompt, userMessage, visibleTools);
-                                ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                                        .system(executionPrompt)
-                                        .user(userMessage)
-                                        .toolCallbacks(visibleTools)
-                                        .call();
+                                Map<String, Object> sentPayload = buildMissionSentPayload(executionPrompt, renderedInput, visibleTools);
+                                ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
+                                        chatClient,
+                                        executionPrompt,
+                                        renderedInput,
+                                        visibleTools,
+                                        skillName,
+                                        executionConfiguration);
 
                                 markRequestSent.accept(sentPayload);
                                 ChatResponse chatResponse;
@@ -330,12 +359,14 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
     }
 
     private Map<String, Object> buildMissionSentPayload(String executionPrompt,
-            String userMessage,
+            RenderedMissionInput renderedInput,
             List<ToolCallback> visibleTools)
     {
         LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         payload.put("system", executionPrompt);
-        payload.put("user", userMessage);
+        payload.put("user", renderedInput.userText());
+        payload.put("attachments", attachmentDescriptors(renderedInput));
+        payload.put("attachmentCount", renderedInput.attachments().size());
         payload.put("toolCallbackCount", visibleTools.size());
 
         payload.put("toolNames", visibleTools.stream()
@@ -349,6 +380,25 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                 .toList());
 
         return Map.copyOf(payload);
+    }
+
+    private List<Map<String, Object>> attachmentDescriptors(RenderedMissionInput renderedInput)
+    {
+        return renderedInput.attachments().stream()
+                .map(attachment -> attachment.descriptor())
+                .toList();
+    }
+
+    @Nullable
+    private Map<String, Object> planningInput(@Nullable Map<String, Object> originalInput, RenderedMissionInput renderedInput)
+    {
+        return renderedInput.attachments().isEmpty() ? originalInput : renderedInput.traceSafeInput();
+    }
+
+    private static MissionInputMaterializer defaultMaterializer()
+    {
+        return new DefaultMissionInputMaterializer(new DefaultRefResolver(
+                new SessionLocalVirtualFileSystem(Paths.get(System.getProperty("java.io.tmpdir"), "bifrost-vfs"))));
     }
 
     @Nullable

@@ -1,0 +1,64 @@
+name: feedstockTicketParserBySkill
+description: >
+  Parses a feedstock weighmaster certificate image directly through the skill's
+  configured vision-capable LLM. Return only schema-shaped JSON for the
+  extracted certificate fields.
+model: openai-vision
+planning_mode: false
+input_schema:
+  type: object
+  required:
+    - image
+  additionalProperties: false
+  properties:
+    image:
+      type: attachment
+      media_type: image
+      allowed_content_types:
+        - image/jpeg
+      description: Feedstock weighmaster certificate image.
+output_schema:
+  type: object
+  properties:
+    zhcbz_tag:
+      type: string
+    ticket_no:
+      type: string
+    datetime_in:
+      type: string
+    datetime_out:
+      type: string
+    gross_weight:
+      type: number
+    tare_weight:
+      type: number
+    net_weight:
+      type: number
+    driver_name:
+      type: string
+    truck_no:
+      type: string
+    carrier_name:
+      type: string
+    notes:
+      type: string
+    cumulative_total:
+      type: number
+    total_tons:
+      type: number
+  required:
+    - zhcbz_tag
+    - ticket_no
+    - datetime_in
+    - datetime_out
+    - gross_weight
+    - tare_weight
+    - net_weight
+    - driver_name
+    - truck_no
+    - carrier_name
+    - notes
+    - cumulative_total
+    - total_tons
+  additionalProperties: false
+output_schema_max_retries: 2

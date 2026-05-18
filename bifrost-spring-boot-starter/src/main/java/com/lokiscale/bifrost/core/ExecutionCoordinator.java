@@ -8,11 +8,14 @@ import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
 import com.lokiscale.bifrost.security.AccessGuard;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
+import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +87,7 @@ public class ExecutionCoordinator
 
         if (missionInput != null && !missionInput.isEmpty())
         {
-            frameParameters.put("missionInput", missionInput);
+            frameParameters.put("missionInput", traceSafeMissionInput(definition, missionInput));
         }
 
         ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.copyOf(frameParameters));
@@ -195,6 +198,80 @@ public class ExecutionCoordinator
                 : failure.getMessage());
         payload.put("exceptionType", failure.getClass().getName());
         return payload;
+    }
+
+    private Object traceSafeMissionInput(YamlSkillDefinition definition, Object value)
+    {
+        if (!definition.hasDeclaredInputSchema())
+        {
+            return value;
+        }
+        return traceSafeNode(definition.inputSchema(), value, "");
+    }
+
+    private Object traceSafeNode(YamlSkillManifest.InputSchemaManifest schema, Object value, String path)
+    {
+        if (schema == null)
+        {
+            return value;
+        }
+        if ("attachment".equals(schema.getType()))
+        {
+            return attachmentPlaceholder(value, path, schema);
+        }
+        if ("object".equals(schema.getType()) && value instanceof Map<?, ?> map)
+        {
+            LinkedHashMap<String, Object> safe = new LinkedHashMap<>();
+            map.forEach((key, childValue) ->
+            {
+                String childName = String.valueOf(key);
+                safe.put(childName, traceSafeNode(
+                        schema.getProperties().get(childName),
+                        childValue,
+                        join(path, childName)));
+            });
+            return Map.copyOf(safe);
+        }
+        if ("array".equals(schema.getType()) && value instanceof List<?> list && schema.getItems() != null)
+        {
+            List<Object> safe = new ArrayList<>(list.size());
+            for (int index = 0; index < list.size(); index++)
+            {
+                safe.add(traceSafeNode(schema.getItems(), list.get(index), path + "[" + index + "]"));
+            }
+            return List.copyOf(safe);
+        }
+        return value;
+    }
+
+    private Map<String, Object> attachmentPlaceholder(Object value,
+            String path,
+            YamlSkillManifest.InputSchemaManifest schema)
+    {
+        LinkedHashMap<String, Object> placeholder = new LinkedHashMap<>();
+        placeholder.put("attachment", true);
+        placeholder.put("fieldPath", path);
+        placeholder.put("mediaType", schema.getMediaType());
+        placeholder.put("allowedContentTypes", schema.getAllowedContentTypes());
+        if (value instanceof String text && text.matches("^ref://\\S+$"))
+        {
+            placeholder.put("source", text);
+        }
+        else if (value instanceof Resource resource)
+        {
+            placeholder.put("source", "resource");
+            placeholder.put("name", resource.getFilename());
+        }
+        else
+        {
+            placeholder.put("source", "redacted");
+        }
+        return Map.copyOf(placeholder);
+    }
+
+    private String join(String parent, String child)
+    {
+        return parent == null || parent.isBlank() ? child : parent + "." + child;
     }
 
     private YamlSkillDefinition requireYamlSkill(String skillName)

@@ -19,6 +19,10 @@ import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
 import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
+import com.lokiscale.bifrost.runtime.attachment.DefaultMissionInputMaterializer;
+import com.lokiscale.bifrost.runtime.attachment.MissionInputMaterializer;
+import com.lokiscale.bifrost.runtime.attachment.MissionUserMessageSender;
+import com.lokiscale.bifrost.runtime.attachment.SpringAiMissionUserMessageSender;
 import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
@@ -199,6 +203,27 @@ public class BifrostAutoConfiguration
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public MissionInputMaterializer missionInputMaterializer(RefResolver refResolver,
+            SkillInputContractResolver skillInputContractResolver,
+            BifrostSessionProperties sessionProperties)
+    {
+        return new DefaultMissionInputMaterializer(
+                refResolver,
+                skillInputContractResolver,
+                sessionProperties.getAttachments().getMaxSize());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public MissionUserMessageSender missionUserMessageSender()
+    {
+        return new SpringAiMissionUserMessageSender();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public CapabilityExecutionRouter capabilityExecutionRouter(RefResolver refResolver,
             org.springframework.beans.factory.ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
             ExecutionStateService executionStateService,
@@ -341,6 +366,8 @@ public class BifrostAutoConfiguration
             BifrostSessionProperties sessionProperties,
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor,
+            MissionInputMaterializer missionInputMaterializer,
+            MissionUserMessageSender missionUserMessageSender,
             @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor)
     {
         return new DefaultMissionExecutionEngine(
@@ -349,7 +376,9 @@ public class BifrostAutoConfiguration
                 sessionProperties.getMissionTimeout(),
                 bifrostMissionExecutor,
                 sessionUsageService,
-                modelUsageExtractor);
+                modelUsageExtractor,
+                missionInputMaterializer,
+                missionUserMessageSender);
     }
 
     @Bean
@@ -430,6 +459,8 @@ public class BifrostAutoConfiguration
             BifrostSessionProperties sessionProperties,
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor,
+            MissionInputMaterializer missionInputMaterializer,
+            MissionUserMessageSender missionUserMessageSender,
             @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor)
     {
         return new com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine(
@@ -440,7 +471,9 @@ public class BifrostAutoConfiguration
                 sessionProperties.getMissionTimeout(),
                 bifrostMissionExecutor,
                 sessionUsageService,
-                modelUsageExtractor);
+                modelUsageExtractor,
+                missionInputMaterializer,
+                missionUserMessageSender);
     }
 
     @Bean

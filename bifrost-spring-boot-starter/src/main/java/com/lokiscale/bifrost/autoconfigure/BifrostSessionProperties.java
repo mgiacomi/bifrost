@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
@@ -19,6 +20,7 @@ public class BifrostSessionProperties
     private static final int DEFAULT_MAX_LINTER_RETRIES = 32;
     private static final int DEFAULT_MAX_MODEL_CALLS = 64;
     private static final int DEFAULT_MAX_USAGE_UNITS = 200_000;
+    private static final DataSize DEFAULT_MAX_ATTACHMENT_SIZE = DataSize.ofMegabytes(20);
 
     @Min(1)
     private int maxDepth = DEFAULT_MAX_DEPTH;
@@ -28,6 +30,9 @@ public class BifrostSessionProperties
 
     @Valid
     private Quotas quotas = new Quotas();
+
+    @Valid
+    private Attachments attachments = new Attachments();
 
     public int getMaxDepth()
     {
@@ -61,6 +66,36 @@ public class BifrostSessionProperties
     public void setQuotas(Quotas quotas)
     {
         this.quotas = quotas == null ? new Quotas() : quotas;
+    }
+
+    public Attachments getAttachments()
+    {
+        return attachments;
+    }
+
+    public void setAttachments(Attachments attachments)
+    {
+        this.attachments = attachments == null ? new Attachments() : attachments;
+    }
+
+    public static class Attachments
+    {
+        @NotNull
+        private DataSize maxSize = DEFAULT_MAX_ATTACHMENT_SIZE;
+
+        public DataSize getMaxSize()
+        {
+            return maxSize;
+        }
+
+        public void setMaxSize(DataSize maxSize)
+        {
+            if (maxSize == null || maxSize.toBytes() < 0)
+            {
+                throw new IllegalArgumentException("attachments.maxSize must be zero or greater");
+            }
+            this.maxSize = maxSize;
+        }
     }
 
     public static class Quotas

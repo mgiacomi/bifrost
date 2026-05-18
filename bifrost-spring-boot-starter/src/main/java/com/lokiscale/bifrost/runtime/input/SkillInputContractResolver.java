@@ -90,7 +90,7 @@ public class SkillInputContractResolver
         }
     }
 
-    public SkillInputSchemaNode fromManifest(YamlSkillManifest.OutputSchemaManifest manifest)
+    public SkillInputSchemaNode fromManifest(YamlSkillManifest.InputSchemaManifest manifest)
     {
         Objects.requireNonNull(manifest, "manifest must not be null");
         Map<String, SkillInputSchemaNode> properties = new LinkedHashMap<>();
@@ -106,7 +106,10 @@ public class SkillInputContractResolver
                 manifest.getEnumValues(),
                 manifest.getDescription(),
                 manifest.getFormat(),
-                false);
+                false,
+                "attachment".equals(manifest.getType()),
+                manifest.getMediaType(),
+                manifest.getAllowedContentTypes());
     }
 
     public SkillInputSchemaNode fromJsonSchema(String inputSchema)
@@ -165,6 +168,20 @@ public class SkillInputContractResolver
         {
             throw mismatch(fieldPath, "format mismatch: expected %s but found %s"
                     .formatted(expected.format(), actual.format()));
+        }
+        if (expected.isAttachment() != actual.isAttachment())
+        {
+            throw mismatch(fieldPath, "attachment marker mismatch");
+        }
+        if (!Objects.equals(expected.attachmentMediaType(), actual.attachmentMediaType()))
+        {
+            throw mismatch(fieldPath, "attachment media type mismatch: expected %s but found %s"
+                    .formatted(expected.attachmentMediaType(), actual.attachmentMediaType()));
+        }
+        if (!Objects.equals(new TreeSet<>(expected.allowedContentTypes()), new TreeSet<>(actual.allowedContentTypes())))
+        {
+            throw mismatch(fieldPath, "attachment allowed content types mismatch: expected %s but found %s"
+                    .formatted(expected.allowedContentTypes(), actual.allowedContentTypes()));
         }
         if (!new TreeSet<>(expected.properties().keySet()).equals(new TreeSet<>(actual.properties().keySet())))
         {
@@ -237,6 +254,15 @@ public class SkillInputContractResolver
         String description = schema.path("description").isTextual() ? schema.path("description").asText() : null;
         String format = schema.path("format").isTextual() ? schema.path("format").asText() : null;
         boolean runtimeRefCapable = schema.path("x-bifrost-runtime-ref-capable").asBoolean(false);
+        boolean attachment = schema.path("x-bifrost-attachment").asBoolean(false) || "attachment".equals(type);
+        String attachmentMediaType = schema.path("x-bifrost-media-type").isTextual()
+                ? schema.path("x-bifrost-media-type").asText()
+                : null;
+        List<String> allowedContentTypes = schema.path("x-bifrost-allowed-content-types").isArray()
+                ? StreamSupport.stream(schema.path("x-bifrost-allowed-content-types").spliterator(), false)
+                        .map(JsonNode::asText)
+                        .toList()
+                : List.of();
 
         return new SkillInputSchemaNode(
                 type,
@@ -248,7 +274,10 @@ public class SkillInputContractResolver
                 enumValues,
                 description,
                 format,
-                runtimeRefCapable);
+                runtimeRefCapable,
+                attachment,
+                attachmentMediaType,
+                allowedContentTypes);
     }
 
     private IllegalStateException mismatch(String fieldPath, String detail)
@@ -264,7 +293,7 @@ public class SkillInputContractResolver
     private Map<String, Object> toJsonSchemaNode(SkillInputSchemaNode schema)
     {
         Map<String, Object> jsonSchema = new LinkedHashMap<>();
-        jsonSchema.put("type", schema.type());
+        jsonSchema.put("type", schema.isAttachment() ? "string" : schema.type());
 
         if (!schema.properties().isEmpty())
         {
@@ -304,6 +333,12 @@ public class SkillInputContractResolver
         {
             jsonSchema.put("x-bifrost-runtime-ref-capable", true);
         }
+        if (schema.isAttachment())
+        {
+            jsonSchema.put("x-bifrost-attachment", true);
+            jsonSchema.put("x-bifrost-media-type", schema.attachmentMediaType());
+            jsonSchema.put("x-bifrost-allowed-content-types", schema.allowedContentTypes());
+        }
 
         return jsonSchema;
     }
@@ -334,6 +369,9 @@ public class SkillInputContractResolver
                 target.enumValues(),
                 target.description(),
                 target.format(),
-                source.runtimeRefCapable());
+                source.runtimeRefCapable(),
+                target.isAttachment(),
+                target.attachmentMediaType(),
+                target.allowedContentTypes());
     }
 }
