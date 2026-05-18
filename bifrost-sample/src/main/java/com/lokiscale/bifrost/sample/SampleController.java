@@ -32,6 +32,17 @@ public class SampleController {
         return skillTemplate.invoke("getLatestExpenses", Map.of());
     }
 
+    @GetMapping(value = "/feedstock/parse-sample", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Object parseSampleFeedstockTicket() {
+        long startedAtNanos = System.nanoTime();
+        ViewHolder holder = new ViewHolder();
+        String result = skillTemplate.invoke("feedstockTicketParser", Map.of(), holder::set);
+        log.info("Completed feedstockTicketParser sessionId={} elapsedMs={}",
+                holder.view == null ? "unknown" : holder.view.sessionId(),
+                elapsedMillis(startedAtNanos));
+        return buildExecutionResponse(result, "classpath:/forms/feedstock-p1.jpg", holder.view);
+    }
+
     @GetMapping(value = "/invoice/parse", produces = MediaType.APPLICATION_JSON_VALUE)
     public Object parseInvoice(@RequestParam String filePath) throws IOException {
         // Read invoice data from file

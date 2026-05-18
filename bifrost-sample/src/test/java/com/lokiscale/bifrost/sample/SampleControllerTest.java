@@ -18,6 +18,26 @@ import static org.mockito.Mockito.verify;
 class SampleControllerTest {
 
     @Test
+    void sampleControllerDelegatesFeedstockSampleToSkillTemplate() {
+        SkillTemplate skillTemplate = mock(SkillTemplate.class);
+        SampleController controller = new SampleController(skillTemplate);
+        ExecutionJournal journal = new ExecutionJournal(java.util.List.of());
+        doAnswer(invocation -> {
+            Consumer<SkillExecutionView> observer = invocation.getArgument(2);
+            observer.accept(new SkillExecutionView("feedstock-session", journal));
+            return "{\"ticket_no\":\"46843\"}";
+        }).when(skillTemplate).invoke(eq("feedstockTicketParser"), any(Map.class), any());
+
+        Map<String, Object> response = (Map<String, Object>) controller.parseSampleFeedstockTicket();
+
+        verify(skillTemplate).invoke(eq("feedstockTicketParser"), any(Map.class), any());
+        assertThat(response.get("result")).isEqualTo("{\"ticket_no\":\"46843\"}");
+        assertThat(response.get("filePath")).isEqualTo("classpath:/forms/feedstock-p1.jpg");
+        assertThat(response.get("sessionId")).isEqualTo("feedstock-session");
+        assertThat(response.get("executionJournal")).isEqualTo(journal);
+    }
+
+    @Test
     void sampleControllerDelegatesToSkillTemplate() throws Exception {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         SampleController controller = new SampleController(skillTemplate);
