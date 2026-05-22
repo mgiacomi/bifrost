@@ -1,0 +1,6 @@
+name: mapped.prompt.skill
+description: Mapped skill with an invalid prompt.
+model: gpt-5
+prompt: This should be rejected because mapped skills delegate execution.
+mapping:
+  target_id: targetBean#deterministicTarget

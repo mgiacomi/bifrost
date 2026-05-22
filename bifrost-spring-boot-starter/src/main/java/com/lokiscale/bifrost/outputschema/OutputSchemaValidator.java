@@ -73,6 +73,10 @@ public final class OutputSchemaValidator
             String canonicalField,
             List<OutputSchemaValidationIssue> issues)
     {
+        if (node.isNull() && Boolean.TRUE.equals(schema.getNullable()))
+        {
+            return;
+        }
         switch (schema.getType())
         {
             case "object" -> validateObject(node, schema, path, canonicalField, issues);

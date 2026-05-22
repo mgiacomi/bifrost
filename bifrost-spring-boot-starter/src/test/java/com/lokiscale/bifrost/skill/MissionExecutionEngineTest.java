@@ -105,6 +105,38 @@ class MissionExecutionEngineTest {
     }
 
     @Test
+    void prependsSkillPromptToSingleShotExecutionPrompt() {
+        PlanningService planningService = mock(PlanningService.class);
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    planningService,
+                    stateService,
+                    Duration.ofSeconds(5),
+                    missionExecutor);
+            BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-prompt", 2);
+            MissionChatClient chatClient = new MissionChatClient("mission complete");
+
+            String response = engine.executeMission(session, definitionWithPrompt(), "hello", null, chatClient, List.of(), false, null);
+
+            assertThat(response).isEqualTo("mission complete");
+            assertThat(chatClient.getSystemMessagesSeen()).hasSize(1);
+            assertThat(chatClient.getSystemMessagesSeen().getFirst())
+                    .startsWith("Act as a careful parser.")
+                    .contains("Execute the mission using only the visible YAML tools when needed.");
+
+            TraceRecord sentRecord = readRecords(session).stream()
+                    .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(sentRecord.data().get("skillPromptPresent").asBoolean()).isTrue();
+            assertThat(sentRecord.data().get("skillPrompt").asText()).isEqualTo("Act as a careful parser.");
+            assertThat(sentRecord.data().get("promptComposition").asText())
+                    .isEqualTo("skill_prompt_plus_default_execution_prompt");
+        }
+    }
+
+    @Test
     void recordsFullMissionRequestPayloadWhenRequestIsSent() {
         PlanningService planningService = mock(PlanningService.class);
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
@@ -398,6 +430,15 @@ class MissionExecutionEngineTest {
         manifest.setName("root.visible.skill");
         manifest.setDescription("root.visible.skill");
         manifest.setModel("gpt-5");
+        return new YamlSkillDefinition(new org.springframework.core.io.ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillDefinition definitionWithPrompt() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("root.visible.skill");
+        manifest.setModel("gpt-5");
+        manifest.setPrompt("Act as a careful parser.");
         return new YamlSkillDefinition(new org.springframework.core.io.ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
     }
 

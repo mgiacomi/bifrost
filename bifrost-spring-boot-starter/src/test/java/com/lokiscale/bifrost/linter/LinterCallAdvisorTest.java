@@ -70,6 +70,20 @@ class LinterCallAdvisorTest {
     }
 
     @Test
+    void retryPromptPreservesExistingSkillPrompt() {
+        LinterCallAdvisor advisor = advisor(1);
+        RecordingChain chain = new RecordingChain(List.of("invalid", "OK: corrected"));
+
+        advisor.adviseCall(request("Write YAML", "SKILL_PROMPT_SENTINEL\n\nBase instructions."), chain);
+
+        assertThat(chain.requests).hasSize(2);
+        assertThat(chain.requests.get(1).prompt().getSystemMessage().getText())
+                .startsWith("SKILL_PROMPT_SENTINEL")
+                .contains("Linter validation failed")
+                .contains("Return fenced YAML only.");
+    }
+
+    @Test
     void stopsRetryingWhenMaxRetriesAreExhausted() {
         LinterCallAdvisor advisor = advisor(2);
         RecordingChain chain = new RecordingChain(List.of("bad-1", "bad-2", "bad-3"));
@@ -186,6 +200,12 @@ class LinterCallAdvisorTest {
 
     private static ChatClientRequest request(String text) {
         return new ChatClientRequest(new Prompt(text), Map.of());
+    }
+
+    private static ChatClientRequest request(String userText, String systemText) {
+        return new ChatClientRequest(new Prompt(List.of(
+                new org.springframework.ai.chat.messages.SystemMessage(systemText),
+                new org.springframework.ai.chat.messages.UserMessage(userText))), Map.of());
     }
 
     private static String text(ChatClientResponse response) {

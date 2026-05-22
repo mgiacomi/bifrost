@@ -46,6 +46,11 @@ public record YamlSkillDefinition(
         return manifest.getOutputSchema();
     }
 
+    public String prompt()
+    {
+        return manifest.getPrompt();
+    }
+
     public YamlSkillManifest.InputSchemaManifest inputSchema()
     {
         return manifest.getInputSchema();

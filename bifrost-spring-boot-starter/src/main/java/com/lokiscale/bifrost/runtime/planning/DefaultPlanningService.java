@@ -24,6 +24,8 @@ import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceCoverageResult;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceCoverageValidator;
+import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposer;
+import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposition;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
@@ -302,7 +304,7 @@ public class DefaultPlanningService implements PlanningService
                     session,
                     objective,
                     missionInput,
-                    capabilityName,
+                    definition,
                     executionConfiguration,
                     chatClient,
                     visibleTools,
@@ -394,13 +396,14 @@ public class DefaultPlanningService implements PlanningService
     private PlanningAttemptResult requestPlanAttempt(BifrostSession session,
             String objective,
             @Nullable Map<String, Object> missionInput,
-            String capabilityName,
+            YamlSkillDefinition definition,
             EffectiveSkillExecutionConfiguration executionConfiguration,
             ChatClient chatClient,
             List<ToolCallback> visibleTools,
             @Nullable String retryFeedback,
             @Nullable EvidenceContract evidenceContract)
     {
+        String capabilityName = definition.manifest().getName();
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.MODEL_CALL,
@@ -412,7 +415,10 @@ public class DefaultPlanningService implements PlanningService
 
         String modelFrameStatus = "completed";
         Throwable modelFailure = null;
-        String planningPrompt = buildPlanningPrompt(capabilityName, visibleTools, retryFeedback, evidenceContract);
+        SkillPromptComposition promptComposition = SkillPromptComposer.composePlanningPrompt(
+                definition,
+                buildPlanningPrompt(capabilityName, visibleTools, retryFeedback, evidenceContract));
+        String planningPrompt = promptComposition.systemPrompt();
         String planningUserMessage = MissionInputMessageFormatter.buildUserMessage(objective, missionInput);
 
         try
@@ -427,14 +433,10 @@ public class DefaultPlanningService implements PlanningService
                     session,
                     modelFrame,
                     modelTraceContext,
-                    Map.of(
-                            "system", planningPrompt,
-                            "user", planningUserMessage),
+                    buildPlanningTracePayload(promptComposition, planningUserMessage),
                     markRequestSent ->
                     {
-                        Map<String, Object> sentPayload = Map.of(
-                                "system", planningPrompt,
-                                "user", planningUserMessage);
+                        Map<String, Object> sentPayload = buildPlanningTracePayload(promptComposition, planningUserMessage);
                         ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
                                 .system(planningPrompt)
                                 .user(planningUserMessage)
@@ -482,6 +484,15 @@ public class DefaultPlanningService implements PlanningService
         {
             executionStateService.closeFrame(session, modelFrame, closeMetadata(modelFrameStatus, modelFailure));
         }
+    }
+
+    private Map<String, Object> buildPlanningTracePayload(SkillPromptComposition composition, String userMessage)
+    {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("system", composition.systemPrompt());
+        payload.put("user", userMessage);
+        payload.putAll(composition.traceMetadata());
+        return Map.copyOf(payload);
     }
 
     private void recordPlanQualityEvent(BifrostSession session,

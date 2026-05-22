@@ -126,12 +126,13 @@ class StepLoopMissionExecutionEngineTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-retry", 3);
 
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
-            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor);
+            YamlSkillDefinition definition = definitionWithPrompt();
+            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor, definition);
 
             String response = executeMission(
                     engine,
                     session,
-                    definition(),
+                    definition,
                     chatClient,
                     List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
 
@@ -141,7 +142,55 @@ class StepLoopMissionExecutionEngineTest {
         List<TraceRecord> records = readRecords(session);
         assertThat(records).anyMatch(record -> record.recordType() == TraceRecordType.STEP_ACTION_REJECTED);
         assertThat(chatClient.systemMessagesSeen()).hasSize(3);
-        assertThat(chatClient.systemMessagesSeen().get(1)).contains("YOUR PREVIOUS ACTION WAS INVALID");
+        assertThat(chatClient.systemMessagesSeen().get(1))
+                .contains("YOUR PREVIOUS ACTION WAS INVALID")
+                .containsOnlyOnce("STEP_PROMPT_SENTINEL");
+    }
+
+    @Test
+    void stepLoopIncludesSkillPromptInStepAndFinalResponsePrompts() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        ExecutionPlan plan = singleTaskPlan();
+        PlanningService planningService = new InitializingPlanningService(stateService, plan);
+        SequenceChatClient chatClient = new SequenceChatClient(
+                """
+                {"stepAction":"CALL_TOOL","taskId":"t-1","toolName":"invoiceParser","toolArguments":{"rawText":"INV-1"}}
+                """,
+                """
+                {"stepAction":"FINAL_RESPONSE","finalResponse":"Finished"}
+                """);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("step-loop-prompt", 3);
+        YamlSkillDefinition definition = definitionWithPrompt();
+
+        try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            StepLoopMissionExecutionEngine engine = engine(stateService, planningService, missionExecutor, definition);
+
+            String response = executeMission(
+                    engine,
+                    session,
+                    definition,
+                    chatClient,
+                    List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
+
+            assertThat(response).isEqualTo("Finished");
+        }
+
+        assertThat(chatClient.systemMessagesSeen()).hasSize(2);
+        assertThat(chatClient.systemMessagesSeen()).allSatisfy(prompt -> assertThat(prompt)
+                .startsWith("STEP_PROMPT_SENTINEL")
+                .contains("You are executing a planned mission step by step."));
+
+        assertThat(readRecords(session).stream()
+                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED
+                        || record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
+                .toList())
+                .hasSize(4)
+                .allSatisfy(record -> {
+                    assertThat(record.data().get("skillPromptPresent").asBoolean()).isTrue();
+                    assertThat(record.data().get("skillPrompt").asText()).isEqualTo("STEP_PROMPT_SENTINEL");
+                    assertThat(record.data().get("promptComposition").asText())
+                            .isEqualTo("skill_prompt_plus_step_execution_prompt");
+                });
     }
 
     @Test
@@ -1009,6 +1058,16 @@ class StepLoopMissionExecutionEngineTest {
         manifest.setDescription(name);
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
+        return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillDefinition definitionWithPrompt() {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("root.visible.skill");
+        manifest.setModel("gpt-5");
+        manifest.setPlanningMode(true);
+        manifest.setPrompt("STEP_PROMPT_SENTINEL");
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
     }
 

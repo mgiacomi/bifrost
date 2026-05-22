@@ -44,6 +44,10 @@ public final class OutputSchemaPromptAugmentor
     private String describeType(YamlSkillManifest.OutputSchemaManifest schema)
     {
         StringBuilder builder = new StringBuilder(schema.getType());
+        if (Boolean.TRUE.equals(schema.getNullable()))
+        {
+            builder.append(" or null");
+        }
         if ("array".equals(schema.getType()) && schema.getItems() != null)
         {
             builder.append(" of ").append(describeType(schema.getItems()));

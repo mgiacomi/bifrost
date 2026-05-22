@@ -125,6 +125,27 @@ class OutputSchemaCallAdvisorTest {
     }
 
     @Test
+    void acceptsNullableSchemaFieldsAndMentionsNullabilityInPromptGuidance() {
+        OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
+                "output.schema.skill",
+                nullableSchema(),
+                new OutputSchemaValidator(),
+                new OutputSchemaPromptAugmentor(),
+                0,
+                outcome -> {
+                });
+        RecordingChain chain = new RecordingChain(List.of("{\"driverName\":null}"));
+
+        ChatClientResponse response = advisor.adviseCall(request("Extract ticket"), chain);
+
+        assertThat(text(response)).isEqualTo("{\"driverName\":null}");
+        assertThat(chain.requests).hasSize(1);
+        assertThat(chain.requests.getFirst().prompt().getSystemMessage().getText())
+                .contains("driverName")
+                .contains("string or null");
+    }
+
+    @Test
     void rejectsAmbiguousCaseInsensitiveKeys() {
         OutputSchemaCallAdvisor advisor = advisor(0);
         RecordingChain chain = new RecordingChain(List.of("{\"vendorName\":\"Acme\",\"VendorName\":\"Other\",\"totalAmount\":42.5}"));
@@ -316,6 +337,20 @@ class OutputSchemaCallAdvisorTest {
 
         root.setProperties(Map.of("invoiceDate", invoiceDate));
         root.setRequired(List.of("invoiceDate"));
+        root.setAdditionalProperties(false);
+        return root;
+    }
+
+    private static YamlSkillManifest.OutputSchemaManifest nullableSchema() {
+        YamlSkillManifest.OutputSchemaManifest root = new YamlSkillManifest.OutputSchemaManifest();
+        root.setType("object");
+
+        YamlSkillManifest.OutputSchemaManifest driverName = new YamlSkillManifest.OutputSchemaManifest();
+        driverName.setType("string");
+        driverName.setNullable(true);
+
+        root.setProperties(Map.of("driverName", driverName));
+        root.setRequired(List.of("driverName"));
         root.setAdditionalProperties(false);
         return root;
     }

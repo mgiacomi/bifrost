@@ -140,6 +140,7 @@ public class YamlSkillCatalog implements InitializingBean
         validateRequiredField(resource, "name", manifest.getName());
         validateRequiredField(resource, "description", manifest.getDescription());
         validateRequiredField(resource, "model", manifest.getModel());
+        validatePrompt(resource, manifest);
         validateInputSchema(resource, manifest);
         validateOutputSchema(resource, manifest);
         validateEvidenceContract(resource, manifest);
@@ -212,6 +213,17 @@ public class YamlSkillCatalog implements InitializingBean
         if (!StringUtils.hasText(value))
         {
             throw invalidSkill(resource, fieldName, "required field is missing or blank");
+        }
+    }
+
+    private void validatePrompt(Resource resource, YamlSkillManifest manifest)
+    {
+        if (StringUtils.hasText(manifest.getPrompt())
+                && manifest.getMapping() != null
+                && StringUtils.hasText(manifest.getMapping().getTargetId()))
+        {
+            throw invalidSkill(resource, "prompt",
+                    "cannot be declared when mapping.target_id is present because mapped YAML skills delegate execution");
         }
     }
 

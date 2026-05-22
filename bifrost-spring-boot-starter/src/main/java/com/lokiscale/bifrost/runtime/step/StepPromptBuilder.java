@@ -309,11 +309,22 @@ public final class StepPromptBuilder
                     .append(String.join(", ", outputSchema.getRequired()))
                     .append("\n");
         }
+        List<String> nullableFields = nullableFieldPaths(outputSchema);
+        if (!nullableFields.isEmpty())
+        {
+            sb.append("Nullable fields may be JSON null: ")
+                    .append(String.join(", ", nullableFields))
+                    .append("\n");
+        }
         sb.append("Do not add fields that are not in this schema.\n");
     }
 
     private static String renderSchemaExample(YamlSkillManifest.OutputSchemaManifest schema, int depth)
     {
+        if (Boolean.TRUE.equals(schema.getNullable()))
+        {
+            return "null";
+        }
         String indent = "  ".repeat(depth);
         if ("object".equals(schema.getType()))
         {
@@ -354,6 +365,34 @@ public final class StepPromptBuilder
             case "boolean" -> "<boolean>";
             default -> "\"<value>\"";
         };
+    }
+
+    private static List<String> nullableFieldPaths(YamlSkillManifest.OutputSchemaManifest schema)
+    {
+        return nullableFieldPaths(schema, "").stream().sorted().toList();
+    }
+
+    private static List<String> nullableFieldPaths(YamlSkillManifest.OutputSchemaManifest schema, String path)
+    {
+        if (schema == null)
+        {
+            return List.of();
+        }
+        java.util.ArrayList<String> paths = new java.util.ArrayList<>();
+        if (!path.isBlank() && Boolean.TRUE.equals(schema.getNullable()))
+        {
+            paths.add(path);
+        }
+        if ("object".equals(schema.getType()))
+        {
+            schema.getProperties().forEach((propertyName, child) ->
+                    paths.addAll(nullableFieldPaths(child, path.isBlank() ? propertyName : path + "." + propertyName)));
+        }
+        if ("array".equals(schema.getType()) && schema.getItems() != null)
+        {
+            paths.addAll(nullableFieldPaths(schema.getItems(), path.isBlank() ? "[]" : path + "[]"));
+        }
+        return paths;
     }
 
     @Nullable

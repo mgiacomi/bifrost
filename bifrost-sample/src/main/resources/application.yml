@@ -50,7 +50,7 @@ bifrost:
       provider-model: ibm/granite4:tiny-h
     openai-vision:
       provider: openai
-      provider-model: gpt-4.1-mini
+      provider-model: gpt-5-mini
 
 execution-trace:
   persistence: ALWAYS

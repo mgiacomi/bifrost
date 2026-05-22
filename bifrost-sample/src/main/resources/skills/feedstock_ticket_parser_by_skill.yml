@@ -1,10 +1,36 @@
 name: feedstockTicketParserBySkill
 description: >
   Parses a feedstock weighmaster certificate image directly through the skill's
-  configured vision-capable LLM. Return only schema-shaped JSON for the
-  extracted certificate fields.
+  configured vision-capable LLM. No Java parser backs this skill.
 model: openai-vision
 planning_mode: false
+prompt: |
+  Act as a high-precision document parser for logistics weighmaster certificates.
+
+  CRITICAL GUIDELINES:
+
+  Handwriting vs. Print: Fields in the Parties section are handwritten in ink.
+  Use document context to decode cursive.
+
+  EXTRACTION GOALS:
+  1. IDENTIFY THE TAG: Search the entire document for a white sticker containing
+     a ZHCBZ plus number. It should be 11 digits total. This is the primary
+     tracking ID.
+  2. RED TICKET ID: Extract the red printed number in the top right.
+  3. SCALE STAMPS: Extract Gross, Tare, and Net weights from the dot-matrix
+     scale stamps on the right.
+  4. HANDWRITTEN DATA: Transcribe the ink pen for parties and totals.
+
+  LOGIC AND VALIDATION:
+  - MATH CHECK: You MUST verify Gross - Tare = Net. If they do not match,
+    re-examine the scale stamps to find the most visually plausible digits that
+    satisfy the equation.
+  - DO NOT GUESS: If a field is missing, illegible, or you are not confident,
+    return null for that field. Never invent values to satisfy the schema.
+    Returning null is strongly preferred over a guess.
+  - DATE/TIME FORMAT: Return datetime_in and datetime_out as local datetimes in
+    ISO-8601 format: yyyy-MM-dd'T'HH:mm:ss. If the stamp has a two-digit year,
+    infer 20xx.
 input_schema:
   type: object
   required:
@@ -22,30 +48,56 @@ output_schema:
   properties:
     zhcbz_tag:
       type: string
+      nullable: true
+      description: The ZHCBZ number from the barcode sticker, for example ZHCBZ005552. Null if not legible or not present.
     ticket_no:
       type: string
+      nullable: true
+      description: The red printed number in the upper right. Null if not legible or not present.
     datetime_in:
       type: string
+      nullable: true
+      description: Date and time from the INBOUND scale stamp as yyyy-MM-dd'T'HH:mm:ss. Infer 20xx for two-digit years. Null if not legible or not present.
     datetime_out:
       type: string
+      nullable: true
+      description: Date and time from the OUTBOUND scale stamp as yyyy-MM-dd'T'HH:mm:ss. Infer 20xx for two-digit years. Null if not legible or not present.
     gross_weight:
       type: number
+      nullable: true
+      description: Gross weight from the printed scale stamp. Null if not legible or not present.
     tare_weight:
       type: number
+      nullable: true
+      description: Tare weight from the printed scale stamp. Null if not legible or not present.
     net_weight:
       type: number
+      nullable: true
+      description: Net weight from the scale stamp. Verify Gross - Tare = Net. Null if not legible or not present.
     driver_name:
       type: string
+      nullable: true
+      description: Handwritten driver name in ink. Null if not legible or not present.
     truck_no:
       type: string
+      nullable: true
+      description: Handwritten truck identifier. Null if not legible or not present.
     carrier_name:
       type: string
+      nullable: true
+      description: Handwritten company or carrier name. Null if not legible or not present.
     notes:
       type: string
+      nullable: true
+      description: Any additional handwritten notes or codes like Chips 6997. Null if none.
     cumulative_total:
       type: number
+      nullable: true
+      description: Handwritten cumulative value. Null if blank or not legible.
     total_tons:
       type: number
+      nullable: true
+      description: Handwritten total tons value. Null if blank or not legible.
   required:
     - zhcbz_tag
     - ticket_no
@@ -62,3 +114,9 @@ output_schema:
     - total_tons
   additionalProperties: false
 output_schema_max_retries: 2
+linter:
+  type: regex
+  max_retries: 1
+  regex:
+    pattern: '^\{[\s\S]*\}$'
+    message: Return raw JSON only.

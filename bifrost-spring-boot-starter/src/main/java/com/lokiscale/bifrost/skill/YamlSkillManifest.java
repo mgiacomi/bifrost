@@ -16,6 +16,7 @@ public class YamlSkillManifest
     private String name;
     private String description;
     private String model;
+    private String prompt;
 
     @JsonProperty("thinking_level")
     private String thinkingLevel;
@@ -76,6 +77,16 @@ public class YamlSkillManifest
     public void setModel(String model)
     {
         this.model = model;
+    }
+
+    public String getPrompt()
+    {
+        return prompt;
+    }
+
+    public void setPrompt(String prompt)
+    {
+        this.prompt = StringUtils.hasText(prompt) ? prompt.strip() : null;
     }
 
     public String getThinkingLevel()
@@ -444,6 +455,7 @@ public class YamlSkillManifest
 
         private String description;
         private String format;
+        private Boolean nullable;
 
         public String getType()
         {
@@ -528,6 +540,16 @@ public class YamlSkillManifest
         public void setFormat(String format)
         {
             this.format = StringUtils.hasText(format) ? format.trim() : null;
+        }
+
+        public Boolean getNullable()
+        {
+            return nullable;
+        }
+
+        public void setNullable(Boolean nullable)
+        {
+            this.nullable = nullable;
         }
     }
 

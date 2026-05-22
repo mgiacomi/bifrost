@@ -455,6 +455,24 @@ class StepPromptBuilderTest {
         assertThat(prompt).contains("Do not add fields that are not in this schema.");
     }
 
+    @Test
+    void buildStepPromptListsNullableOutputFields() {
+        ExecutionPlan plan = createTwoTaskPlan()
+                .updateTask("t-1", task -> task.complete("parsed"))
+                .updateTask("t-2", task -> task.complete("matched"));
+        YamlSkillManifest.OutputSchemaManifest schema = duplicateInvoiceOutputSchema();
+        schema.getProperties().get("invoiceDate").setNullable(true);
+        schema.getProperties().get("reasoning").setNullable(true);
+
+        String prompt = StepPromptBuilder.buildStepPrompt(
+                plan, "objective", 3, null, "Step 2 complete", List.of(mockTool("invoiceParser")), true, schema);
+
+        assertThat(prompt).contains("\"invoiceDate\": null");
+        assertThat(prompt).contains("\"reasoning\": null");
+        assertThat(prompt).contains("Nullable fields may be JSON null: invoiceDate, reasoning");
+        assertThat(prompt).doesNotContain("Nullable fields may be JSON null: isDuplicate");
+    }
+
     private YamlSkillManifest.OutputSchemaManifest duplicateInvoiceOutputSchema() {
         YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
         schema.setType("object");

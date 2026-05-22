@@ -15,6 +15,8 @@ import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposer;
+import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposition;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService;
@@ -35,7 +37,6 @@ import org.springframework.security.core.Authentication;
 
 import java.time.Duration;
 import java.nio.file.Paths;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,9 +140,10 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                     planningService.initializePlan(session, objective, planningInput(missionInput, renderedInput), definition, chatClient, visibleTools);
                 }
 
-                String executionPrompt = executionStateService.currentPlan(session)
-                        .map(this::buildExecutionPrompt)
-                        .orElse("Execute the mission using only the visible YAML tools when needed.");
+                SkillPromptComposition promptComposition = executionStateService.currentPlan(session)
+                        .map(plan -> SkillPromptComposer.composePlannedExecutionPrompt(definition, buildPlannedExecutionPrompt(plan)))
+                        .orElseGet(() -> SkillPromptComposer.composeDefaultExecutionPrompt(definition));
+                String executionPrompt = promptComposition.systemPrompt();
 
                 ExecutionFrame modelFrame = executionStateService.openFrame(
                         session,
@@ -166,14 +168,10 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                             session,
                             modelFrame,
                             modelTraceContext,
-                            Map.of(
-                                    "system", executionPrompt,
-                                    "user", userMessage,
-                                    "attachments", attachmentDescriptors(renderedInput),
-                                    "attachmentCount", renderedInput.attachments().size()),
+                            buildMissionPreparedPayload(promptComposition, renderedInput),
                             markRequestSent ->
                             {
-                                Map<String, Object> sentPayload = buildMissionSentPayload(executionPrompt, renderedInput, visibleTools);
+                                Map<String, Object> sentPayload = buildMissionSentPayload(promptComposition, renderedInput, visibleTools);
                                 ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
                                         chatClient,
                                         executionPrompt,
@@ -358,16 +356,29 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
         return metadata;
     }
 
-    private Map<String, Object> buildMissionSentPayload(String executionPrompt,
+    private Map<String, Object> buildMissionPreparedPayload(SkillPromptComposition composition,
+            RenderedMissionInput renderedInput)
+    {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("system", composition.systemPrompt());
+        payload.put("user", renderedInput.userText());
+        payload.put("attachments", attachmentDescriptors(renderedInput));
+        payload.put("attachmentCount", renderedInput.attachments().size());
+        payload.putAll(composition.traceMetadata());
+        return Map.copyOf(payload);
+    }
+
+    private Map<String, Object> buildMissionSentPayload(SkillPromptComposition composition,
             RenderedMissionInput renderedInput,
             List<ToolCallback> visibleTools)
     {
         LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-        payload.put("system", executionPrompt);
+        payload.put("system", composition.systemPrompt());
         payload.put("user", renderedInput.userText());
         payload.put("attachments", attachmentDescriptors(renderedInput));
         payload.put("attachmentCount", renderedInput.attachments().size());
         payload.put("toolCallbackCount", visibleTools.size());
+        payload.putAll(composition.traceMetadata());
 
         payload.put("toolNames", visibleTools.stream()
                 .map(callback ->
@@ -411,10 +422,9 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                 .orElse(null);
     }
 
-    private String buildExecutionPrompt(ExecutionPlan plan)
+    private String buildPlannedExecutionPrompt(ExecutionPlan plan)
     {
         String readyTaskLines = plan.readyTasks().stream()
-                .sorted(Comparator.comparingInt(plan.tasks()::indexOf))
                 .map(task -> "- [" + task.status() + "] " + task.taskId() + ": " + task.title()
                         + (task.note() == null ? "" : " (" + task.note() + ")"))
                 .reduce((left, right) -> left + "\n" + right)

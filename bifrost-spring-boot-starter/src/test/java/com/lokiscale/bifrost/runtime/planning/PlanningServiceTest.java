@@ -386,6 +386,43 @@ class PlanningServiceTest {
     }
 
     @Test
+    void planningPromptIncludesSkillPromptBeforePlanningContract() {
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+        BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-planning-prompt", 3);
+        SequencePlanningChatClient chatClient = new SequencePlanningChatClient(planJson("plan-prompt", PlanTaskStatus.PENDING));
+
+        ToolCallback tool = toolCallback("invoiceParser", "Short child tool description");
+        planningService.initializePlan(
+                session,
+                "check invoice",
+                null,
+                rootDefinitionWithPrompt("PARENT_PROMPT_SENTINEL\nAlways verify totals before final response."),
+                chatClient,
+                List.of(tool));
+
+        String systemPrompt = chatClient.systemMessagesSeen().getFirst();
+        assertThat(systemPrompt).startsWith("PARENT_PROMPT_SENTINEL");
+        assertThat(systemPrompt.indexOf("PARENT_PROMPT_SENTINEL"))
+                .isLessThan(systemPrompt.indexOf("Create an ordered flight plan"));
+        assertThat(systemPrompt).contains("invoiceParser: Short child tool description");
+        assertThat(systemPrompt).doesNotContain("invoiceParser: PARENT_PROMPT_SENTINEL");
+
+        assertThat(readRecords(session).stream()
+                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED
+                        || record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
+                .toList())
+                .hasSize(2)
+                .allSatisfy(record -> {
+                    assertThat(record.data().get("skillPromptPresent").asBoolean()).isTrue();
+                    assertThat(record.data().get("skillPrompt").asText())
+                            .isEqualTo("PARENT_PROMPT_SENTINEL\nAlways verify totals before final response.");
+                    assertThat(record.data().get("promptComposition").asText())
+                            .isEqualTo("skill_prompt_plus_planning_prompt");
+                });
+    }
+
+    @Test
     void planningPromptIncludesEvidenceConstraints() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
@@ -862,6 +899,18 @@ class PlanningServiceTest {
         manifest.setName(name);
         manifest.setDescription(name);
         manifest.setModel("gpt-5");
+        return new YamlSkillDefinition(
+                new org.springframework.core.io.ByteArrayResource(new byte[0]),
+                manifest,
+                EXECUTION_CONFIGURATION);
+    }
+
+    private static YamlSkillDefinition rootDefinitionWithPrompt(String prompt) {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName("root.visible.skill");
+        manifest.setDescription("Short planner-facing summary");
+        manifest.setModel("gpt-5");
+        manifest.setPrompt(prompt);
         return new YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),
                 manifest,

@@ -33,6 +33,8 @@ import com.lokiscale.bifrost.runtime.attachment.SpringAiMissionUserMessageSender
 import com.lokiscale.bifrost.runtime.evidence.EvidenceBackedOutputValidator;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceCoverageResult;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposer;
+import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposition;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
 import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
@@ -438,16 +440,20 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                         finalResponseOnly,
                         forceVerboseToolArgumentGuidance,
                         skillDefinition == null ? null : skillDefinition.outputSchema());
+                SkillPromptComposition promptComposition = skillDefinition == null
+                        ? new SkillPromptComposition(stepPrompt, false, null, "step_execution_prompt")
+                        : SkillPromptComposer.composeStepExecutionPrompt(skillDefinition, stepPrompt);
                 String stepUserMessage = StepPromptBuilder.buildStepUserMessage(plan, objective, renderedInput.traceSafeInput());
                 String effectivePrompt = invalidActionFeedback == null || invalidActionFeedback.isBlank()
-                        ? stepPrompt
-                        : stepPrompt + "\n\nYOUR PREVIOUS ACTION WAS INVALID: "
+                        ? promptComposition.systemPrompt()
+                        : promptComposition.systemPrompt() + "\n\nYOUR PREVIOUS ACTION WAS INVALID: "
                                 + invalidActionFeedback + "\nPlease correct and try again.";
 
                 String modelResponse = callModelForStep(
                         session, skillName, executionConfiguration, chatClient, effectivePrompt,
                         new RenderedMissionInput(stepUserMessage, renderedInput.attachments(), renderedInput.traceSafeInput()),
-                        stepNumber);
+                        stepNumber,
+                        promptComposition.traceMetadata());
 
                 StepAction action = parseStepAction(modelResponse, finalResponseOnly);
                 if (action == null)
@@ -552,7 +558,8 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             ChatClient chatClient,
             String stepPrompt,
             RenderedMissionInput renderedInput,
-            int stepNumber)
+            int stepNumber,
+            Map<String, Object> promptTraceMetadata)
     {
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
@@ -577,17 +584,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                     session,
                     modelFrame,
                     modelTraceContext,
-                    Map.of("system", stepPrompt,
-                            "user", renderedInput.userText(),
-                            "attachments", attachmentDescriptors(renderedInput),
-                            "attachmentCount", renderedInput.attachments().size()),
+                    buildStepTracePayload(stepPrompt, renderedInput, promptTraceMetadata),
                     markRequestSent ->
                     {
-                        Map<String, Object> sentPayload = Map.of(
-                                "system", stepPrompt,
-                                "user", renderedInput.userText(),
-                                "attachments", attachmentDescriptors(renderedInput),
-                                "attachmentCount", renderedInput.attachments().size());
+                        Map<String, Object> sentPayload = buildStepTracePayload(stepPrompt, renderedInput, promptTraceMetadata);
                         ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
                                 chatClient,
                                 stepPrompt,
@@ -632,6 +632,19 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
         {
             executionStateService.closeFrame(session, modelFrame, closeMetadata(modelFrameStatus, modelFailure));
         }
+    }
+
+    private Map<String, Object> buildStepTracePayload(String stepPrompt,
+            RenderedMissionInput renderedInput,
+            Map<String, Object> promptTraceMetadata)
+    {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("system", stepPrompt);
+        payload.put("user", renderedInput.userText());
+        payload.put("attachments", attachmentDescriptors(renderedInput));
+        payload.put("attachmentCount", renderedInput.attachments().size());
+        payload.putAll(promptTraceMetadata);
+        return Map.copyOf(payload);
     }
 
     private StepResult executeToolAction(BifrostSession session,

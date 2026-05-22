@@ -159,6 +159,43 @@ class YamlSkillCatalogTests {
     }
 
     @Test
+    void loadsYamlSkillPromptAndNormalizesBlankPrompt() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/prompt-skill.yaml,classpath:/skills/valid/blank-prompt-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("prompt.skill").prompt())
+                            .contains("LONG_PROMPT_SENTINEL")
+                            .contains("Follow the private skill instructions.");
+                    assertThat(catalog.getSkill("blank.prompt.skill").prompt()).isNull();
+                });
+    }
+
+    @Test
+    void rejectsUnknownPromptLikeFields() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-prompt-like-field-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("unknown-prompt-like-field-skill.yaml")
+                        .hasMessageContaining("field 'system_prompt'")
+                        .hasMessageContaining("unknown field"));
+    }
+
+    @Test
+    void rejectsPromptOnMappedYamlSkill() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/mapped-skill-with-prompt.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("mapped-skill-with-prompt.yaml")
+                        .hasMessageContaining("field 'prompt'")
+                        .hasMessageContaining("mapping.target_id"));
+    }
+
+    @Test
     void defaultsTypedManifestFieldsWhenMissing() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")

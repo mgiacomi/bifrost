@@ -979,6 +979,8 @@ class ExecutionCoordinatorTest {
                 "medium");
         YamlSkillManifest rootManifest = plannedManifest("root.visible.skill", List.of("child.llm.skill"));
         YamlSkillManifest childManifest = plannedManifest("child.llm.skill", List.of("mars.analyzer"));
+        rootManifest.setPrompt("PARENT_PROMPT_SENTINEL");
+        childManifest.setPrompt("CHILD_PROMPT_SENTINEL");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(
                 new YamlSkillDefinition(new ByteArrayResource(new byte[0]), rootManifest,
                         rootExecutionConfiguration),
@@ -1095,6 +1097,14 @@ class ExecutionCoordinatorTest {
         assertThat(childChatClient.userMessagesSeen.get(1))
                 .contains("ref://")
                 .doesNotContain("resolved-content");
+        assertThat(rootChatClient.systemMessagesSeen).isNotEmpty();
+        assertThat(rootChatClient.systemMessagesSeen).allSatisfy(systemPrompt -> assertThat(systemPrompt)
+                .contains("PARENT_PROMPT_SENTINEL")
+                .doesNotContain("CHILD_PROMPT_SENTINEL"));
+        assertThat(childChatClient.systemMessagesSeen).isNotEmpty();
+        assertThat(childChatClient.systemMessagesSeen).allSatisfy(systemPrompt -> assertThat(systemPrompt)
+                .contains("CHILD_PROMPT_SENTINEL")
+                .doesNotContain("PARENT_PROMPT_SENTINEL"));
         assertThat(session.getFramesSnapshot()).isEmpty();
     }
 
