@@ -83,7 +83,25 @@ class SpringAiSkillChatClientFactoryTests {
         assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
         OpenAiChatOptions options = (OpenAiChatOptions) result.options();
         assertThat(options.getModel()).isEqualTo("openai/gpt-5");
+        assertThat(options.getTemperature()).isEqualTo(1.0);
         assertThat(options.getReasoningEffort()).isEqualTo("medium");
+    }
+
+    @Test
+    void usesDefaultTemperatureForGpt5MiniToOverrideInheritedSpringAiSamplingOptions() {
+        CapturedFactoryResult result = captureFactoryInvocation(
+                definition(new EffectiveSkillExecutionConfiguration(
+                        "openai-gpt-5-mini",
+                        AiProvider.OPENAI,
+                        "gpt-5-mini",
+                        null)),
+                new NoOpSkillAdvisorResolver(),
+                resolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))));
+
+        assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
+        OpenAiChatOptions options = (OpenAiChatOptions) result.options();
+        assertThat(options.getModel()).isEqualTo("gpt-5-mini");
+        assertThat(options.getTemperature()).isEqualTo(1.0);
     }
 
     @Test

@@ -11,7 +11,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(classes = SampleApplication.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(
+        classes = SampleApplication.class,
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = "spring.ai.openai.api-key=test-openai-api-key")
 class SampleApplicationTests {
 
     @Autowired
@@ -56,6 +59,6 @@ class SampleApplicationTests {
         assertThat(definition.outputSchema().getProperties().values())
                 .allSatisfy(field -> assertThat(field.getNullable()).isTrue());
         assertThat(definition.linter()).isNotNull();
-        assertThat(modelsProperties.getModels().get("openai-vision").getProviderModel()).isEqualTo("gpt-5-mini");
+        assertThat(modelsProperties.getModels().get("openai-gpt-5-mini").getProviderModel()).isEqualTo("gpt-5-mini");
     }
 }

@@ -12,6 +12,8 @@ spring:
           #model: gemma4:26b
           #model: gemma4:e4b
           temperature: 0.7
+    openai:
+      api-key: ${OPENAI_API_KEY}
 
 server:
   port: 8081
@@ -48,7 +50,7 @@ bifrost:
     default-model:
       provider: ollama
       provider-model: ibm/granite4:tiny-h
-    openai-vision:
+    openai-gpt-5-mini:
       provider: openai
       provider-model: gpt-5-mini
 

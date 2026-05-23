@@ -1,8 +1,8 @@
 name: feedstockTicketParserBySkill
 description: >
   Parses a feedstock weighmaster certificate image directly through the skill's
-  configured vision-capable LLM. No Java parser backs this skill.
-model: openai-vision
+  configured OpenAI GPT-5 mini model. No Java parser backs this skill.
+model: openai-gpt-5-mini
 planning_mode: false
 prompt: |
   Act as a high-precision document parser for logistics weighmaster certificates.

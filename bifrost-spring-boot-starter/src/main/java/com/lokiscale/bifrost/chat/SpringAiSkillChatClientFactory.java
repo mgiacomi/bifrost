@@ -154,11 +154,26 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
         {
             OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder()
                     .model(executionConfiguration.providerModel());
+            if (usesGpt5DefaultsOnlySampling(executionConfiguration.providerModel()))
+            {
+                builder.temperature(1.0);
+            }
             if (executionConfiguration.thinkingLevel() != null)
             {
                 builder.reasoningEffort(executionConfiguration.thinkingLevel());
             }
             return builder.build();
+        }
+
+        private static boolean usesGpt5DefaultsOnlySampling(String providerModel)
+        {
+            String modelName = providerModel;
+            int namespaceSeparator = modelName.lastIndexOf('/');
+            if (namespaceSeparator >= 0)
+            {
+                modelName = modelName.substring(namespaceSeparator + 1);
+            }
+            return modelName.startsWith("gpt-5");
         }
     }
 

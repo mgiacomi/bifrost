@@ -156,6 +156,20 @@ public class ExpenseService {
 
 ## Running The Sample
 
+The OpenAI-backed feedstock examples read the API key from `OPENAI_API_KEY`; keep the value in your environment rather than committing it to configuration.
+
+On Windows PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+To persist it for your Windows user account:
+
+```powershell
+setx OPENAI_API_KEY "sk-..."
+```
+
 From the repository root:
 
 ```bash
