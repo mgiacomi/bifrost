@@ -319,6 +319,11 @@ After structure approval:
    - The implementation plan must be complete and actionable
    - Every decision must be made before finalizing the plan
 
+7. **Stop After Plan Creation (Do Not Implement)**:
+   - This command's scope is strictly limited to research and creating the implementation plan document.
+   - Once the implementation plan is created/written and approved (even if automatically approved by IDE policies), you must STOP and end your turn.
+   - Do NOT write source code changes or begin any execution tasks until the user issues a separate prompt explicitly directing you to begin implementation.
+
 ## Success Criteria Guidelines
 
 **Always separate success criteria into two categories:**
