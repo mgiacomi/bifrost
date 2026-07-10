@@ -4,7 +4,7 @@ A Java Spring Boot–based, agentic AI framework that uses LLM‑driven skills w
 
 Bifrost while still an HTN is fundamentally different from traditional HTNs. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows. 
 
-At its core, Bifrost treats skills as the fundamental building blocks of capability. Each skill is defined in natural language and executed by an LLM, which can decide—based on context, data, and the mission—whether to call other skills, chain them, or complete the task directly. This creates a flexible, adaptive planning system that feels closer to human reasoning than traditional symbolic planners.
+At its core, Bifrost treats skills as the fundamental building blocks of capability. YAML skills are model-driven and can call other visible capabilities; Java `@SkillMethod`s provide deterministic application logic. This creates a flexible planning system that combines LLM reasoning with explicit contracts and ordinary Spring services.
 
 
 ## Why Bifrost?
@@ -20,13 +20,19 @@ Easy integration, dependency injection, configuration, and deployment.
 The result is a hybrid system that combines the structure of HTNs with the adaptability of modern LLMs.
 
 
+## Requirements
+
+- Java 21 or newer
+- Maven 3.9 or newer (the included Maven wrapper is recommended)
+- A configured Spring AI chat-model provider, such as Ollama, OpenAI, Anthropic, or Google GenAI
+
 ## Project Structure
 
-Bifrost currently contains three modules:
+Bifrost currently contains three projects:
 
 - `bifrost-spring-boot-starter`: the core starter.
 - `bifrost-sample`: a sample Spring Boot application.
-- `bifrost-cli`: a command line tool to debug and test Bifrost.
+- `bifrost-cli`: a separate Go command-line project for inspecting and testing Bifrost traces.
 
 ## Getting Started
 
@@ -40,7 +46,7 @@ Add the starter to your application:
 </dependency>
 ```
 
-Configure skill locations and at least one model in `application.yml`:
+Configure a Spring AI provider, skill locations, and one or more named Bifrost models in `application.yml`:
 
 ```yaml
 spring:
@@ -81,11 +87,39 @@ execution-trace:
   persistence: ALWAYS
 ```
 
+Every YAML skill must name one of the entries under `bifrost.models`. `default-model` is an ordinary model key; it is not selected automatically.
+
+By default, Bifrost discovers `classpath:/skills/**/*.yaml`. Add the `.yml` pattern, as above, when your application uses that extension.
+
+### Invoking a skill
+
+Inject `SkillTemplate` and invoke a YAML skill with a map (or an object that can be converted to a map). The result is returned as text; use an `output_schema` when the caller needs a predictable JSON shape.
+
+```java
+import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import org.springframework.stereotype.Service;
+
+import java.util.Map;
+
+@Service
+public class InvoiceWorkflow {
+    private final SkillTemplate skills;
+
+    public InvoiceWorkflow(SkillTemplate skills) {
+        this.skills = skills;
+    }
+
+    public String checkInvoice(String invoiceText) {
+        return skills.invoke("duplicateInvoiceChecker", Map.of("payload", invoiceText));
+    }
+}
+```
+
 ## Defining Skills
 
 ### YAML skills
 
-YAML skills define a skill name, description, and execution settings.
+YAML skills define a name, description, named model, and execution settings. `model` is required. A skill without `mapping.target_id` is LLM-backed; `prompt` supplies private instructions in addition to the public `description`.
 
 ```yaml
 name: duplicateInvoiceChecker
@@ -131,9 +165,36 @@ output_schema:
 output_schema_max_retries: 2
 ```
 
+Important execution settings:
+
+- `planning_mode`: enables the step-based HTN executor only when set to `true`. It is disabled by default.
+- `allowed_skills`: limits the tools visible to a planning skill. Use the registered YAML skill or Java capability name.
+- `max_steps`: bounds planning-loop steps.
+- `prompt`: optional private instructions for an LLM-backed skill.
+- `thinking_level`: selects a configured thinking level for models that support it.
+- `input_schema`: validates and describes the expected input. Supported types are `object`, `array`, `string`, `number`, `integer`, `boolean`, and `attachment`.
+- `output_schema`: validates the model response. When present, `output_schema_max_retries` defaults to `2` and accepts values from `0` through `3`.
+- `linter`: currently supports a `regex` linter with `max_retries` from `0` through `3`.
+- `evidence_contract`: declares evidence required to support output claims in a planning skill.
+- `rbac_roles`: requires the current Spring Security authentication to have one of the listed roles before the skill is visible or executable.
+
+For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf`, `audio`, `video`, or `file`), and permitted `allowed_content_types`. Pass a Spring `Resource` or a `ref://...` virtual-file reference as the input value.
+
+### Mapping a YAML skill to Java
+
+Use `mapping.target_id` to give a Java capability a YAML skill name, input contract, and access controls. A mapped skill delegates to Java rather than an LLM, so it cannot also define `prompt`.
+
+```yaml
+name: expenseLookup
+description: Retrieves the most recent expenses.
+model: granite4-tiny
+mapping:
+  target_id: expenseService#getLatestExpenses
+```
+
 ### Java `@SkillMethod` skills
 
-Use `@SkillMethod` when the implementation should run deterministic Java logic.
+Use `@SkillMethod` when the implementation should run deterministic Java logic. It registers a capability for other skills; `SkillTemplate` invokes YAML skills, so add a mapped YAML manifest when this Java method must be exposed as a top-level Bifrost skill.
 
 ```java
 import com.lokiscale.bifrost.annotation.SkillMethod;
@@ -153,6 +214,30 @@ public class ExpenseService {
     }
 }
 ```
+
+## Operations and limits
+
+`bifrost.session` provides execution safeguards. Defaults are a 60-second mission timeout, maximum depth 32, 64 skill invocations, 128 tool invocations, 32 linter retries, 64 model calls, and 200,000 usage units. Attachments default to a 20 MB maximum size.
+
+```yaml
+bifrost:
+  session:
+    mission-timeout: 60s
+    max-depth: 32
+    attachments:
+      max-size: 20MB
+    quotas:
+      max-skill-invocations: 64
+      max-tool-invocations: 128
+      max-linter-retries: 32
+      max-model-calls: 64
+      max-usage-units: 200000
+
+execution-trace:
+  persistence: ONERROR # NEVER, ONERROR, or ALWAYS
+```
+
+When Micrometer is on the application classpath, Bifrost records usage metrics automatically. Execution traces and the `SkillTemplate` observer callback can be used to inspect a completed skill execution.
 
 ## Running The Sample
 
@@ -182,4 +267,4 @@ On Windows PowerShell:
 .\mvnw.cmd -pl bifrost-sample spring-boot:run
 ```
 
-The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures an Ollama-backed default model in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).
+The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures named Ollama and OpenAI models in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).
