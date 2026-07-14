@@ -1,0 +1,5 @@
+name: mapped.with.steps.text
+description: Invalid mapped max steps declaration with an unbindable value.
+max_steps: nope
+mapping:
+  target_id: missingBean#missingTarget

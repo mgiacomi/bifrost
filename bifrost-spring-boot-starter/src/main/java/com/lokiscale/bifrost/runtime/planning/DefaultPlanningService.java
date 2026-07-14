@@ -127,7 +127,7 @@ public class DefaultPlanningService implements PlanningService
         Objects.requireNonNull(definition, "definition must not be null");
         Objects.requireNonNull(chatClient, "chatClient must not be null");
         String capabilityName = definition.manifest().getName();
-        var executionConfiguration = definition.executionConfiguration();
+        var executionConfiguration = definition.requireExecutionConfiguration();
 
         log.debug(
                 "Initializing plan for capability='{}' chatClientType={} visibleTools={}",
@@ -293,7 +293,7 @@ public class DefaultPlanningService implements PlanningService
             ExecutionFrame planningFrame)
     {
         String capabilityName = definition.manifest().getName();
-        var executionConfiguration = definition.executionConfiguration();
+        var executionConfiguration = definition.requireExecutionConfiguration();
         EvidenceContract evidenceContract = definition.evidenceContract();
         String retryFeedback = null;
         int retryCount = 0;

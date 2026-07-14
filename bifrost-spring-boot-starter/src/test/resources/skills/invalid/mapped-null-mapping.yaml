@@ -1,0 +1,3 @@
+name: mapped.null.mapping
+description: Invalid null mapping.
+mapping: null

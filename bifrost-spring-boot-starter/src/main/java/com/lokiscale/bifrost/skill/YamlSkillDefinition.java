@@ -1,9 +1,10 @@
 package com.lokiscale.bifrost.skill;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.core.io.Resource;
-import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.core.PublicSkillImplementationType;
+import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
+import org.springframework.core.io.Resource;
+import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
@@ -14,7 +15,7 @@ import java.util.List;
 public record YamlSkillDefinition(
         Resource resource,
         YamlSkillManifest manifest,
-        EffectiveSkillExecutionConfiguration executionConfiguration,
+        @Nullable EffectiveSkillExecutionConfiguration executionConfiguration,
         EvidenceContract evidenceContract)
 {
     private static final ObjectMapper COPY_MAPPER = new ObjectMapper();
@@ -23,6 +24,35 @@ public record YamlSkillDefinition(
     {
         manifest = copyManifest(manifest);
         evidenceContract = evidenceContract == null ? EvidenceContract.empty() : evidenceContract;
+        PublicSkillImplementationType implementationType = implementationType(manifest);
+        if (implementationType == PublicSkillImplementationType.MAPPED_JAVA
+                && !StringUtils.hasText(manifest.getMapping().getTargetId()))
+        {
+            throw new IllegalArgumentException("Mapped YAML skill definitions require a non-blank mapping target");
+        }
+        if (implementationType == PublicSkillImplementationType.MAPPED_JAVA)
+        {
+            for (YamlSkillManifest.Field field : YamlSkillManifest.mappedInapplicableFields())
+            {
+                if (manifest.isDeclared(field))
+                {
+                    throw new IllegalArgumentException(
+                            "Mapped YAML skill definitions must not declare field '" + field.yamlName() + "'");
+                }
+            }
+            if (!evidenceContract.isEmpty())
+            {
+                throw new IllegalArgumentException("Mapped YAML skill definitions must not have an evidence contract");
+            }
+        }
+        if (implementationType == PublicSkillImplementationType.MAPPED_JAVA && executionConfiguration != null)
+        {
+            throw new IllegalArgumentException("Mapped YAML skill definitions must not have an execution configuration");
+        }
+        if (implementationType == PublicSkillImplementationType.LLM_BACKED && executionConfiguration == null)
+        {
+            throw new IllegalArgumentException("LLM-backed YAML skill definitions require an execution configuration");
+        }
     }
 
     public YamlSkillDefinition(Resource resource,
@@ -96,9 +126,16 @@ public record YamlSkillDefinition(
 
     public PublicSkillImplementationType implementationType()
     {
-        return mappingTargetId() == null || mappingTargetId().isBlank()
-                ? PublicSkillImplementationType.LLM_BACKED
-                : PublicSkillImplementationType.MAPPED_JAVA;
+        return implementationType(manifest);
+    }
+
+    public EffectiveSkillExecutionConfiguration requireExecutionConfiguration()
+    {
+        if (executionConfiguration == null)
+        {
+            throw new IllegalStateException("LLM-backed execution requires an execution configuration");
+        }
+        return executionConfiguration;
     }
 
     public boolean planningModeEnabled(boolean defaultValue)
@@ -122,7 +159,16 @@ public record YamlSkillDefinition(
         {
             throw new NullPointerException("manifest must not be null");
         }
-        return COPY_MAPPER.convertValue(source, YamlSkillManifest.class);
+        YamlSkillManifest copy = COPY_MAPPER.convertValue(source, YamlSkillManifest.class);
+        copy.restoreDeclaredFields(source.declaredFields());
+        return copy;
+    }
+
+    private static PublicSkillImplementationType implementationType(YamlSkillManifest manifest)
+    {
+        return manifest.isDeclared(YamlSkillManifest.Field.MAPPING)
+                ? PublicSkillImplementationType.MAPPED_JAVA
+                : PublicSkillImplementationType.LLM_BACKED;
     }
 
     private static <T> T copyValue(T source, Class<T> type)

@@ -1,0 +1,4 @@
+name: mapped.blank.target
+description: Invalid blank mapping target.
+mapping:
+  target_id: " "

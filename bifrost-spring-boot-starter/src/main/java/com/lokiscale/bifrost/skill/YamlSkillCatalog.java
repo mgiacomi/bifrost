@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.skill;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
@@ -44,12 +45,12 @@ public class YamlSkillCatalog implements InitializingBean
     private static final int OUTPUT_SCHEMA_WARNING_DEPTH = 4;
     private static final int OUTPUT_SCHEMA_WARNING_PROPERTIES = 12;
     private static final int OUTPUT_SCHEMA_WARNING_REQUIRED = 8;
-
     private final BifrostModelsProperties modelsProperties;
     private final BifrostSkillProperties skillProperties;
     private final ResourcePatternResolver resourcePatternResolver;
     private final ObjectMapper yamlObjectMapper;
     private final Map<String, YamlSkillDefinition> skillsByName = new LinkedHashMap<>();
+    private final Map<Resource, String> diagnosticSkillNames = new LinkedHashMap<>();
 
     public YamlSkillCatalog(BifrostModelsProperties modelsProperties, BifrostSkillProperties skillProperties)
     {
@@ -71,11 +72,7 @@ public class YamlSkillCatalog implements InitializingBean
     public void afterPropertiesSet()
     {
         skillsByName.clear();
-        if (modelsProperties.getModels().isEmpty())
-        {
-            return;
-        }
-
+        diagnosticSkillNames.clear();
         for (Resource resource : discoverResources())
         {
             YamlSkillDefinition definition = loadDefinition(resource);
@@ -139,8 +136,17 @@ public class YamlSkillCatalog implements InitializingBean
         YamlSkillManifest manifest = readManifest(resource);
         validateRequiredField(resource, "name", manifest.getName());
         validateRequiredField(resource, "description", manifest.getDescription());
-        validateRequiredField(resource, "model", manifest.getModel());
-        validatePrompt(resource, manifest);
+
+        if (manifest.isDeclared(YamlSkillManifest.Field.MAPPING))
+        {
+            validateMappedManifest(resource, manifest);
+            return new YamlSkillDefinition(resource, manifest, null, EvidenceContract.empty());
+        }
+
+        if (!StringUtils.hasText(manifest.getModel()))
+        {
+            throw invalidNamedSkill(resource, manifest, "model", "required field is missing or blank; declare a configured model");
+        }
         validateInputSchema(resource, manifest);
         validateOutputSchema(resource, manifest);
         validateEvidenceContract(resource, manifest);
@@ -168,12 +174,50 @@ public class YamlSkillCatalog implements InitializingBean
                 EvidenceContract.fromManifest(manifest.getEvidenceContract(), manifest.getOutputSchema()));
     }
 
+    private void validateMappedManifest(Resource resource, YamlSkillManifest manifest)
+    {
+        if (!StringUtils.hasText(manifest.getMapping().getTargetId()))
+        {
+            throw invalidMappedSkill(resource, manifest, "mapping.target_id",
+                    "mapping was declared, so target_id must be non-blank; declare a valid Java target or remove mapping for an LLM-backed skill");
+        }
+
+        for (YamlSkillManifest.Field field : YamlSkillManifest.mappedInapplicableFields())
+        {
+            if (manifest.isDeclared(field))
+            {
+                throw invalidMappedSkill(resource, manifest, field.yamlName(), mappedFieldExplanation(field));
+            }
+        }
+    }
+
+    private String mappedFieldExplanation(YamlSkillManifest.Field field)
+    {
+        return switch (field)
+        {
+            case MODEL, THINKING_LEVEL, PROMPT, PLANNING_MODE, MAX_STEPS ->
+                    "cannot be declared because no model executes at the mapped boundary; remove the field";
+            case INPUT_SCHEMA ->
+                    "cannot be declared because mapped skills inherit the Java target's reflected input contract; remove the field or create a Java adapter target";
+            case OUTPUT_SCHEMA ->
+                    "cannot be declared because the deterministic Java target owns the returned value; remove the field or create a Java adapter target";
+            case ALLOWED_SKILLS ->
+                    "cannot be declared because a mapped wrapper does not perform nested model tool selection; declare the mapped child on its LLM parent instead";
+            case LINTER, OUTPUT_SCHEMA_MAX_RETRIES ->
+                    "cannot be declared because model-output validation and retry do not run on direct Java routing; remove the field";
+            case EVIDENCE_CONTRACT ->
+                    "cannot be declared because the mapped child's model evidence contract is not evaluated; declare tool evidence on an invoking LLM parent instead";
+            default -> throw new IllegalArgumentException("No mapped-field explanation for " + field);
+        };
+    }
+
     private BifrostModelsProperties.ModelCatalogEntry resolveModelCatalogEntry(Resource resource, YamlSkillManifest manifest)
     {
         BifrostModelsProperties.ModelCatalogEntry catalogEntry = modelsProperties.getModels().get(manifest.getModel());
         if (catalogEntry == null)
         {
-            throw invalidSkill(resource, "model", "unknown model '" + manifest.getModel() + "'");
+            throw invalidNamedSkill(resource, manifest, "model",
+                    "unknown model '" + manifest.getModel() + "'; declare a model from bifrost.models");
         }
         return catalogEntry;
     }
@@ -192,11 +236,49 @@ public class YamlSkillCatalog implements InitializingBean
     {
         try (InputStream inputStream = resource.getInputStream())
         {
-            return yamlObjectMapper.readValue(inputStream, YamlSkillManifest.class);
-        }
-        catch (UnrecognizedPropertyException ex)
-        {
-            throw invalidSkill(resource, toFieldPath(ex), "unknown field");
+            JsonNode root = yamlObjectMapper.readTree(inputStream);
+            if (root == null || !root.isObject())
+            {
+                throw invalidSkill(resource, "manifest", "root document must be an object");
+            }
+
+            String skillName = root.path("name").asText(null);
+            String description = root.path("description").asText(null);
+            if (StringUtils.hasText(skillName))
+            {
+                diagnosticSkillNames.put(resource, skillName);
+            }
+            validateRequiredField(resource, "name", skillName);
+            validateRequiredField(resource, "description", description);
+
+            boolean mappingDeclared = root.has("mapping");
+            if (mappingDeclared)
+            {
+                validateRawMappedManifest(resource, root, skillName);
+            }
+
+            try
+            {
+                return yamlObjectMapper.treeToValue(root, YamlSkillManifest.class);
+            }
+            catch (UnrecognizedPropertyException ex)
+            {
+                if (mappingDeclared)
+                {
+                    throw invalidNamedSkill(resource, skillName, toFieldPath(ex),
+                            "unknown field; remove it because mapped wrappers allow only name, description, rbac_roles, and mapping.target_id");
+                }
+                throw invalidSkill(resource, toFieldPath(ex), "unknown field");
+            }
+            catch (JsonMappingException ex)
+            {
+                if (mappingDeclared)
+                {
+                    throw invalidNamedSkill(resource, skillName, toFieldPath(ex),
+                            describeMappingFailure(ex) + "; correct the field value for the mapped wrapper");
+                }
+                throw invalidSkill(resource, toFieldPath(ex), describeMappingFailure(ex));
+            }
         }
         catch (JsonMappingException ex)
         {
@@ -208,22 +290,49 @@ public class YamlSkillCatalog implements InitializingBean
         }
     }
 
+    private void validateRawMappedManifest(Resource resource, JsonNode root, String skillName)
+    {
+        JsonNode mapping = root.get("mapping");
+        JsonNode targetIdNode = mapping != null && mapping.isObject()
+                ? mapping.path("target_id")
+                : null;
+        String targetId = targetIdNode != null && targetIdNode.isTextual()
+                ? targetIdNode.textValue()
+                : null;
+        if (!StringUtils.hasText(targetId))
+        {
+            throw invalidNamedSkill(resource, skillName, "mapping.target_id",
+                    "mapping was declared, so target_id must be non-blank; declare a valid Java target or remove mapping for an LLM-backed skill");
+        }
+
+        for (YamlSkillManifest.Field field : YamlSkillManifest.mappedInapplicableFields())
+        {
+            if (root.has(field.yamlName()))
+            {
+                throw invalidNamedSkill(resource, skillName, field.yamlName(), mappedFieldExplanation(field));
+            }
+        }
+
+        mapping.fieldNames().forEachRemaining(fieldName ->
+        {
+            if (!"target_id".equals(fieldName))
+            {
+                throw invalidNamedSkill(resource, skillName, "mapping." + fieldName,
+                        "unknown field; remove it because mapping allows only target_id");
+            }
+        });
+    }
+
+    static List<YamlSkillManifest.Field> mappedInapplicableFields()
+    {
+        return YamlSkillManifest.mappedInapplicableFields();
+    }
+
     private void validateRequiredField(Resource resource, String fieldName, String value)
     {
         if (!StringUtils.hasText(value))
         {
             throw invalidSkill(resource, fieldName, "required field is missing or blank");
-        }
-    }
-
-    private void validatePrompt(Resource resource, YamlSkillManifest manifest)
-    {
-        if (StringUtils.hasText(manifest.getPrompt())
-                && manifest.getMapping() != null
-                && StringUtils.hasText(manifest.getMapping().getTargetId()))
-        {
-            throw invalidSkill(resource, "prompt",
-                    "cannot be declared when mapping.target_id is present because mapped YAML skills delegate execution");
         }
     }
 
@@ -744,7 +853,37 @@ public class YamlSkillCatalog implements InitializingBean
 
     private IllegalStateException invalidSkill(Resource resource, String fieldName, String detail)
     {
+        String skillName = diagnosticSkillNames.get(resource);
+        if (StringUtils.hasText(skillName))
+        {
+            return invalidNamedSkill(resource, skillName, fieldName, detail);
+        }
         return new IllegalStateException("Invalid YAML skill '" + describe(resource) + "' for field '" + fieldName + "': " + detail);
+    }
+
+    private IllegalStateException invalidMappedSkill(Resource resource,
+            YamlSkillManifest manifest,
+            String fieldName,
+            String detail)
+    {
+        return invalidNamedSkill(resource, manifest, fieldName, detail);
+    }
+
+    private IllegalStateException invalidNamedSkill(Resource resource,
+            YamlSkillManifest manifest,
+            String fieldName,
+            String detail)
+    {
+        return invalidNamedSkill(resource, manifest.getName(), fieldName, detail);
+    }
+
+    private IllegalStateException invalidNamedSkill(Resource resource,
+            String skillName,
+            String fieldName,
+            String detail)
+    {
+        return new IllegalStateException("Invalid YAML skill '" + skillName + "' in '" + describe(resource)
+                + "' for field '" + fieldName + "': " + detail);
     }
 
     private String toFieldPath(UnrecognizedPropertyException ex)

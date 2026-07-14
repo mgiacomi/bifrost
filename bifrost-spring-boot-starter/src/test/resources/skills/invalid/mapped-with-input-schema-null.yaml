@@ -1,0 +1,5 @@
+name: mapped.with.input.null
+description: Invalid mapped input schema declaration.
+input_schema: null
+mapping:
+  target_id: targetBean#deterministicTarget

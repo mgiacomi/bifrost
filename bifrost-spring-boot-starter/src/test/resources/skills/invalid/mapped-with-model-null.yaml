@@ -1,0 +1,5 @@
+name: mapped.with.model.null
+description: Invalid mapped model declaration.
+model: null
+mapping:
+  target_id: targetBean#deterministicTarget

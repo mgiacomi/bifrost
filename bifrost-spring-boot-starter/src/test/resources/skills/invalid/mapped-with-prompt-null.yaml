@@ -1,0 +1,5 @@
+name: mapped.with.prompt.null
+description: Invalid mapped prompt declaration.
+prompt: null
+mapping:
+  target_id: targetBean#deterministicTarget

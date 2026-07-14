@@ -5,7 +5,6 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
@@ -69,7 +68,6 @@ class DefaultAccessGuardTest {
                 "yaml:" + name,
                 name,
                 name,
-                ModelPreference.LIGHT,
                 new SkillExecutionDescriptor("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"),
                 roles,
                 arguments -> "ok",

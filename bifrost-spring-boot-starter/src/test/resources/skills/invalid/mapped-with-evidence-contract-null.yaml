@@ -1,0 +1,5 @@
+name: mapped.with.evidence.null
+description: Invalid mapped evidence declaration.
+evidence_contract: null
+mapping:
+  target_id: targetBean#deterministicTarget

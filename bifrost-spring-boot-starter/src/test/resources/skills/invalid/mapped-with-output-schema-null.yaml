@@ -1,0 +1,5 @@
+name: mapped.with.output.null
+description: Invalid mapped output schema declaration.
+output_schema: null
+mapping:
+  target_id: targetBean#deterministicTarget

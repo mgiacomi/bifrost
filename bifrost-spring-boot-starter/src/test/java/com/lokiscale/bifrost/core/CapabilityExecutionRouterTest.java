@@ -41,7 +41,6 @@ class CapabilityExecutionRouterTest {
                 "yaml:child",
                 "child.llm.skill",
                 "child",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
                         com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
@@ -81,7 +80,6 @@ class CapabilityExecutionRouterTest {
                 "yaml:child",
                 "child.llm.skill",
                 "child",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
                         com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
@@ -125,7 +123,6 @@ class CapabilityExecutionRouterTest {
                 "yaml:child",
                 "child.llm.skill",
                 "child",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
                         com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
@@ -161,7 +158,6 @@ class CapabilityExecutionRouterTest {
                 "yaml:child",
                 "child.llm.skill",
                 "child",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
                         com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
@@ -242,7 +238,6 @@ class CapabilityExecutionRouterTest {
                 "yaml:child",
                 "child.llm.skill",
                 "child",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
                         com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
@@ -293,7 +288,6 @@ class CapabilityExecutionRouterTest {
                 "yaml:binaryTool",
                 "binaryTool",
                 "binary tool",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 arguments -> arguments.get("payload"),

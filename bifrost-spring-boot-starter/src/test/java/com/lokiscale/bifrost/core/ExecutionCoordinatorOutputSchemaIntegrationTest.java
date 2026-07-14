@@ -136,7 +136,6 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
                 "yaml:output-schema",
                 definition.manifest().getName(),
                 definition.manifest().getDescription(),
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "unused",

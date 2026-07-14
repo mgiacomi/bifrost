@@ -1,6 +1,5 @@
 name: shared.target.two
 description: Second public wrapper for a shared implementation target.
-model: gpt-5
 rbac_roles:
   - ROLE_TWO
 mapping:

@@ -45,7 +45,7 @@ The application developer SHOULD be able to determine how to invoke an entry ski
 
 ### LLM-backed YAML skill
 
-A YAML skill without `mapping.target_id` is model-driven.
+A YAML skill that omits the `mapping` block is model-driven.
 
 It may:
 
@@ -62,7 +62,7 @@ An LLM-backed skill does not automatically see every registered capability. Its 
 
 A mapped YAML skill declares `mapping.target_id` and delegates execution to a registered Java `@SkillMethod` target.
 
-The YAML capability supplies the tree-facing name, description, contract, and access policy. Java supplies deterministic implementation behavior.
+The YAML capability supplies the tree-facing name, description, and access policy. Java supplies the input/output contract and deterministic implementation behavior.
 
 A mapped YAML skill:
 
@@ -70,9 +70,9 @@ A mapped YAML skill:
 - can be invoked by `SkillTemplate` using its YAML name;
 - can appear in another YAML skill's `allowed_skills`;
 - invokes its Java target instead of an LLM;
-- MUST NOT declare a private `prompt`, because there is no model execution at that capability boundary;
-- inherits the Java input contract when it does not declare `input_schema`;
-- in the current checkout, may declare `input_schema` only when it is structurally compatible with the Java target.
+- MAY declare only `name`, `description`, optional `rbac_roles`, and a nonblank `mapping.target_id`;
+- MUST omit model/runtime fields, including `model`, `thinking_level`, `prompt`, schemas, planning, nested-tool selection, linting, retries, and evidence contracts;
+- inherits its input and returned-value behavior from the Java target.
 
 Use a mapped YAML skill when deterministic Java behavior must participate in the YAML skill tree or be exposed as an entry skill.
 
@@ -82,15 +82,13 @@ Omitting `input_schema` from a mapped YAML skill is an explicit authoring choice
 
 The Java method signature and parameter metadata therefore MUST describe the input that callers and parent planners are allowed to supply. Verify requiredness, field names, types, descriptions, nested shapes, and runtime markers at the Java boundary rather than assuming reflection will express the intended public contract.
 
-A mapped skill SHOULD omit `input_schema`. Do not copy a schema into every mapped wrapper merely to repeat the reflected fields. Repetition creates a second contract that must remain compatible and can drift without adding meaning.
-
-The current compatibility validator requires an explicitly declared mapped schema to preserve the Java contract's structure, including its properties, required fields, types, enums, formats, collection shapes, and additional-property behavior. It does not provide a general input-narrowing or adaptation mechanism. The proposed pre-release correction will reject `input_schema` on mapped skills and make reflected Java input the only mapped contract source.
+A mapped skill MUST omit `input_schema` and `output_schema`. Do not copy a schema into a mapped wrapper merely to repeat reflected fields. Bifrost rejects those declarations so Java remains the single authoritative contract source.
 
 If two public mapped capabilities need genuinely different input shapes, use separate deterministic Java adapter targets so transformation and validation remain explicit and testable.
 
 This inheritance applies only across an explicit YAML-to-Java mapping. It does not imply automatic inheritance of business inputs between parent and child YAML missions.
 
-**Current-checkout limitations:** `YamlSkillCatalog` still requires a valid `model` on every YAML manifest, including a mapped skill whose Java execution never uses that model, and it still accepts a structurally compatible duplicate mapped `input_schema`. Treat these as temporary catalog behaviors. The proposed correction is tracked in [`eng-simplify-mapped-yaml-skill-manifests.md`](../thoughts/tickets/eng-simplify-mapped-yaml-skill-manifests.md). Until that change is implemented, manifests must continue to satisfy current executable validation, although authors SHOULD already omit mapped `input_schema` because inheritance is supported today.
+Mapping classification is syntactic. Omitting `mapping` selects LLM-backed validation; declaring it requires a nonblank `mapping.target_id`, even when the block or target was explicitly null or blank. Likewise, false, zero, empty, blank, and null model/runtime declarations are still forbidden declarations on a mapped wrapper.
 
 ### Java `@SkillMethod`
 

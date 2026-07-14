@@ -1,0 +1,5 @@
+name: mapped.with.planning.object
+description: Invalid mapped planning declaration with an unbindable value.
+planning_mode: {}
+mapping:
+  target_id: missingBean#missingTarget

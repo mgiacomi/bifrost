@@ -11,7 +11,6 @@ import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.core.SkillImplementationTarget;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.runtime.input.SkillInputContract;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.security.DefaultAccessGuard;
@@ -114,7 +113,6 @@ class SkillVisibilityResolverTest {
         registry.register(new SkillImplementationTarget(
                 "targetBean#deterministicTarget",
                 "desc",
-                ModelPreference.LIGHT,
                 arguments -> "ok",
                 "{\"type\":\"object\"}",
                 SkillInputContract.genericObject()));

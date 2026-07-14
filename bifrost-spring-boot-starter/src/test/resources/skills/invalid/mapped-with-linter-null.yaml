@@ -1,0 +1,5 @@
+name: mapped.with.linter.null
+description: Invalid mapped linter declaration.
+linter: null
+mapping:
+  target_id: targetBean#deterministicTarget

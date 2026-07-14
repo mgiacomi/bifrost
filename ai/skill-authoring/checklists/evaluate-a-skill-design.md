@@ -47,6 +47,8 @@ Reject an entry design that requires callers to understand internal child propag
 - Are those values explicit in the relevant skill and tool contracts?
 - For a mapped YAML skill, does the Java target's reflected input contract already express the intended public contract?
 - Has `input_schema` been omitted from mapped skills so the Java target remains the single contract source?
+- Does every mapped wrapper contain only `name`, `description`, optional `rbac_roles`, and a nonblank `mapping.target_id`?
+- Are model, planning, schema, linting, retry, tool-selection, and evidence declarations kept on LLM-backed parents rather than mapped children?
 - If a different public input shape is required, is there a separate deterministic Java adapter target rather than a duplicate or purportedly narrowing YAML schema?
 - Is any trusted identity, tenant, correlation, deadline, or provenance value being delegated to the model without a framework reason?
 - Is mutable global, thread-local, or session-bag behavior being introduced?

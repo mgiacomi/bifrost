@@ -8,10 +8,10 @@ import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
+import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
@@ -19,6 +19,7 @@ import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import com.lokiscale.bifrost.vfs.RefResolver;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -57,13 +58,16 @@ class ToolCallbackFactoryTest {
     }
 
     @Test
-    void routesUnplannedAndLinkedExecutionsThroughServices() {
+    void routesMappedExecutionsThroughPublicTraceIdentity() {
         CapabilityExecutionRouter router = mock(CapabilityExecutionRouter.class);
         PlanningService planningService = mock(PlanningService.class);
         ExecutionStateService stateService = mock(ExecutionStateService.class);
         DefaultToolCallbackFactory factory = new DefaultToolCallbackFactory(router, planningService, stateService);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         CapabilityMetadata capability = capability();
+        assertThat(capability.skillExecution().configured()).isFalse();
+        assertThat(capability.name()).isEqualTo("allowed.visible.skill");
+        assertThat(capability.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
         ExecutionFrame toolFrame = new ExecutionFrame(
                 "tool-frame-1",
                 null,
@@ -106,6 +110,23 @@ class ToolCallbackFactoryTest {
         verify(stateService).logUnplannedToolCall(eq(session), any());
         verify(stateService).recordProducedEvidence(eq(session), eq(capability.name()), eq(null), eq(true), eq(java.util.Set.of("parsed_invoice")));
         verify(stateService, times(2)).closeFrame(eq(session), eq(toolFrame), any());
+
+        ArgumentCaptor<TaskExecutionEvent> linkedCall = ArgumentCaptor.forClass(TaskExecutionEvent.class);
+        ArgumentCaptor<TaskExecutionEvent> unplannedCall = ArgumentCaptor.forClass(TaskExecutionEvent.class);
+        ArgumentCaptor<TaskExecutionEvent> results = ArgumentCaptor.forClass(TaskExecutionEvent.class);
+        verify(stateService).logToolCall(eq(session), linkedCall.capture());
+        verify(stateService).logUnplannedToolCall(eq(session), unplannedCall.capture());
+        verify(stateService, times(2)).logToolResult(eq(session), results.capture());
+
+        List<TaskExecutionEvent> traceEvents = new java.util.ArrayList<>();
+        traceEvents.add(linkedCall.getValue());
+        traceEvents.add(unplannedCall.getValue());
+        traceEvents.addAll(results.getAllValues());
+        assertThat(traceEvents).allSatisfy(event ->
+        {
+            assertThat(event.capabilityName()).isEqualTo(capability.name());
+            assertThat(event.toString()).doesNotContain(capability.mappedTargetId());
+        });
     }
 
     @Test
@@ -165,12 +186,7 @@ class ToolCallbackFactoryTest {
                 "yaml:child",
                 "allowed.visible.skill",
                 "child",
-                ModelPreference.LIGHT,
-                SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
-                        "gpt-5",
-                        AiProvider.OPENAI,
-                        "openai/gpt-5",
-                        "medium")),
+                SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,

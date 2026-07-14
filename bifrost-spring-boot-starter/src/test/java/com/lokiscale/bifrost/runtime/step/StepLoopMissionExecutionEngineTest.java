@@ -8,7 +8,6 @@ import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.ExecutionPlan;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
@@ -1249,7 +1248,6 @@ class StepLoopMissionExecutionEngineTest {
                 "yaml:invoiceParser",
                 "invoiceParser",
                 "invoiceParser",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(EXECUTION_CONFIGURATION),
                 java.util.Set.of(),
                 arguments -> "unused",

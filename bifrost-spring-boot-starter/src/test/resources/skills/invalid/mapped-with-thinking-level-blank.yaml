@@ -1,0 +1,5 @@
+name: mapped.with.thinking.blank
+description: Invalid mapped thinking declaration.
+thinking_level: " "
+mapping:
+  target_id: targetBean#deterministicTarget

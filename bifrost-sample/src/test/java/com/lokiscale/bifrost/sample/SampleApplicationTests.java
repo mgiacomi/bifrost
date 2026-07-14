@@ -46,7 +46,10 @@ class SampleApplicationTests {
     @Test
     void publishesYamlSkillsAndKeepsExpenseTargetInternal() {
         assertThat(capabilityRegistry.getCapability("expenseLookup")).isNotNull();
+        assertThat(capabilityRegistry.getCapability("expenseLookup").skillExecution().configured()).isFalse();
         assertThat(capabilityRegistry.getCapability("invoiceParser")).isNotNull();
+        assertThat(capabilityRegistry.getCapability("feedstockTicketParser")).isNotNull();
+        assertThat(capabilityRegistry.getCapability("feedstockTicketParser").skillExecution().configured()).isFalse();
         assertThat(capabilityRegistry.getCapability("getLatestExpenses")).isNull();
         assertThat(capabilityRegistry.getCapability("expenseService#getLatestExpenses")).isNull();
         assertThat(targetRegistry.getTarget("expenseService#getLatestExpenses")).isNotNull();

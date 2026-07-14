@@ -15,12 +15,11 @@ class SkillImplementationTargetTest
         CapabilityInvoker invoker = arguments -> "ok";
         SkillInputContract contract = SkillInputContract.genericObject();
         SkillImplementationTarget target = new SkillImplementationTarget(
-                "bean#method", "description", ModelPreference.HEAVY, invoker,
+                "bean#method", "description", invoker,
                 "{\"type\":\"object\"}", contract);
 
         assertThat(target.id()).isEqualTo("bean#method");
         assertThat(target.description()).isEqualTo("description");
-        assertThat(target.modelPreference()).isEqualTo(ModelPreference.HEAVY);
         assertThat(target.invoker()).isSameAs(invoker);
         assertThat(target.inputSchema()).isEqualTo("{\"type\":\"object\"}");
         assertThat(target.inputContract()).isSameAs(contract);
@@ -30,7 +29,10 @@ class SkillImplementationTargetTest
     void doesNotExposeProviderFacingToolDescriptor()
     {
         assertThat(Arrays.stream(SkillImplementationTarget.class.getRecordComponents())
-                .map(java.lang.reflect.RecordComponent::getType))
-                .doesNotContain(CapabilityToolDescriptor.class, org.springframework.ai.tool.definition.ToolDefinition.class);
+                .map(java.lang.reflect.RecordComponent::getType)
+                .map(Class::getName))
+                .doesNotContain(
+                        CapabilityToolDescriptor.class.getName(),
+                        org.springframework.ai.tool.definition.ToolDefinition.class.getName());
     }
 }

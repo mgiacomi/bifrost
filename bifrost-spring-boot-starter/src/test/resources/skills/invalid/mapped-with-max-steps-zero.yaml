@@ -1,0 +1,5 @@
+name: mapped.with.steps.zero
+description: Invalid mapped max steps declaration.
+max_steps: 0
+mapping:
+  target_id: targetBean#deterministicTarget

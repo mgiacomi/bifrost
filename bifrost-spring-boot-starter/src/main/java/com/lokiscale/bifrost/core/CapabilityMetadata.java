@@ -10,7 +10,6 @@ public record CapabilityMetadata(
         String id,
         String name,
         String description,
-        ModelPreference modelPreference,
         SkillExecutionDescriptor skillExecution,
         Set<String> rbacRoles,
         CapabilityInvoker invoker,
@@ -24,7 +23,6 @@ public record CapabilityMetadata(
         id = requireNonBlank(id, "id");
         name = requireNonBlank(name, "name");
         description = requireNonBlank(description, "description");
-        modelPreference = modelPreference == null ? ModelPreference.LIGHT : modelPreference;
         skillExecution = skillExecution == null ? SkillExecutionDescriptor.none() : skillExecution;
         rbacRoles = rbacRoles == null ? Set.of() : Set.copyOf(rbacRoles);
         invoker = Objects.requireNonNull(invoker, "invoker must not be null");
@@ -41,7 +39,6 @@ public record CapabilityMetadata(
     public CapabilityMetadata(String id,
             String name,
             String description,
-            ModelPreference modelPreference,
             SkillExecutionDescriptor skillExecution,
             Set<String> rbacRoles,
             CapabilityInvoker invoker,
@@ -49,7 +46,7 @@ public record CapabilityMetadata(
             CapabilityToolDescriptor tool,
             @Nullable String mappedTargetId)
     {
-        this(id, name, description, modelPreference, skillExecution, rbacRoles, invoker, kind, tool, null, mappedTargetId);
+        this(id, name, description, skillExecution, rbacRoles, invoker, kind, tool, null, mappedTargetId);
     }
 
     public PublicSkillImplementationType implementationType()

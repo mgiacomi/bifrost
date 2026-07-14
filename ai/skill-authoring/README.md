@@ -49,7 +49,7 @@ Do not load every document by default. Start with the routing entry most relevan
 | Source verification | Initial | How an LLM should use guide, tests, fixtures, samples, and production code together |
 | Skill-design review | Initial | Cross-cutting questions; not a manifest validator |
 | YAML manifest reference | Not yet documented | Inspect current manifest, catalog validation, tests, and samples when required |
-| Input contracts | Foundational | The mental model covers mapped Java contract inheritance; complete schema syntax and pure-YAML input behavior are not yet documented |
+| Input contracts | Foundational | The mental model covers strict mapped Java contract ownership; complete schema syntax and pure-YAML input behavior are not yet documented |
 | Output contracts | Not yet documented | Evidence documentation covers only its interaction with claims |
 | Prompts | Not yet documented | Private prompt composition needs a dedicated topic |
 | Planning and nested planning | Foundational | The mental model covers choosing direct versus step-based execution; complete planning, retry, and cost semantics are not yet documented |

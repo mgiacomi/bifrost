@@ -83,7 +83,6 @@ class ExecutionCoordinatorLinterIntegrationTest {
                 "yaml:linted",
                 "linted.skill",
                 "linted.skill",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "unused",

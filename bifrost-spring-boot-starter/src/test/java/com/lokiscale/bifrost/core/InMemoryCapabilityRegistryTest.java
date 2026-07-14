@@ -39,7 +39,6 @@ class InMemoryCapabilityRegistryTest {
         assertThat(stored).isNotNull();
         assertThat(stored.id()).isEqualTo("calculatorBean#add");
         assertThat(stored.description()).isEqualTo("Adds two integers.");
-        assertThat(stored.modelPreference()).isEqualTo(ModelPreference.LIGHT);
         assertThat(stored.rbacRoles()).containsExactly("math-user");
         assertThat(stored.invoker().invoke(Map.of("left", 2, "right", 3))).isEqualTo(5);
         assertThat(registry.getAllCapabilities()).containsExactly(metadata);
@@ -53,7 +52,6 @@ class InMemoryCapabilityRegistryTest {
                 "calculatorBean#sum",
                 "calculator.add",
                 "Duplicate add operation.",
-                ModelPreference.HEAVY,
                 SkillExecutionDescriptor.none(),
                 Set.of("math-admin"),
                 args -> 2,
@@ -96,7 +94,6 @@ class InMemoryCapabilityRegistryTest {
                         "bean" + index + "#method" + index,
                         "capability." + index,
                         "Capability number " + index,
-                        ModelPreference.LIGHT,
                         SkillExecutionDescriptor.none(),
                         Set.of("role-" + index),
                         args -> index,
@@ -138,7 +135,6 @@ class InMemoryCapabilityRegistryTest {
                 "calculatorBean#add",
                 name,
                 "Adds two integers.",
-                null,
                 null,
                 Set.of("math-user"),
                 invoker,

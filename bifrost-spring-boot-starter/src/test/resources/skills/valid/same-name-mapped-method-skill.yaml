@@ -1,5 +1,4 @@
 name: deterministicTarget
 description: Public YAML skill sharing its name with the mapped Java method.
-model: gpt-5
 mapping:
   target_id: targetBean#deterministicTarget

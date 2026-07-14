@@ -19,7 +19,8 @@ class BifrostSessionPropertiesTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
                     ConfigurationPropertiesAutoConfiguration.class,
-                    BifrostAutoConfiguration.class));
+                    BifrostAutoConfiguration.class))
+            .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml");
 
     @Test
     void bindsDefaultAndOverriddenSessionProperties() {

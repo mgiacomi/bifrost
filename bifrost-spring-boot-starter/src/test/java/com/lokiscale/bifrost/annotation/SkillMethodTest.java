@@ -1,6 +1,5 @@
 package com.lokiscale.bifrost.annotation;
 
-import com.lokiscale.bifrost.core.ModelPreference;
 import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.ElementType;
@@ -24,34 +23,22 @@ class SkillMethodTest {
     }
 
     @Test
-    void exposesDescriptionAndModelPreferenceWithoutPublicName() throws NoSuchMethodException {
-        SkillMethod defaultAnnotation = SampleSkills.class
+    void exposesDescriptionWithoutPublicName() throws NoSuchMethodException {
+        SkillMethod annotation = SampleSkills.class
                 .getDeclaredMethod("defaultSkill")
                 .getAnnotation(SkillMethod.class);
-        SkillMethod configuredAnnotation = SampleSkills.class
-                .getDeclaredMethod("heavySkill")
-                .getAnnotation(SkillMethod.class);
 
-        assertThat(defaultAnnotation).isNotNull();
-        assertThat(defaultAnnotation.description()).isEqualTo("Default route");
-        assertThat(defaultAnnotation.modelPreference()).isEqualTo(ModelPreference.LIGHT);
-
-        assertThat(configuredAnnotation).isNotNull();
-        assertThat(configuredAnnotation.description()).isEqualTo("Heavy route");
-        assertThat(configuredAnnotation.modelPreference()).isEqualTo(ModelPreference.HEAVY);
+        assertThat(annotation).isNotNull();
+        assertThat(annotation.description()).isEqualTo("Default route");
         assertThat(SkillMethod.class.getDeclaredMethods())
                 .extracting(java.lang.reflect.Method::getName)
-                .doesNotContain("name");
+                .containsExactly("description");
     }
 
     static class SampleSkills {
 
         @SkillMethod(description = "Default route")
         void defaultSkill() {
-        }
-
-        @SkillMethod(description = "Heavy route", modelPreference = ModelPreference.HEAVY)
-        void heavySkill() {
         }
     }
 }

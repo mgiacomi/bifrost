@@ -1,6 +1,5 @@
 name: allowed.visible.skill
 description: Allowed child YAML skill.
-model: gpt-5
 rbac_roles:
   - ROLE_ALLOWED
 mapping:

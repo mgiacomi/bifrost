@@ -87,7 +87,7 @@ execution-trace:
   persistence: ALWAYS
 ```
 
-Every YAML skill must name one of the entries under `bifrost.models`. `default-model` is an ordinary model key; it is not selected automatically.
+Every LLM-backed YAML skill must name one of the entries under `bifrost.models`. Mapped Java skills do not declare a model. `default-model` is an ordinary model key; it is not selected automatically.
 
 By default, Bifrost discovers `classpath:/skills/**/*.yaml`. Add the `.yml` pattern, as above, when your application uses that extension.
 
@@ -119,7 +119,7 @@ public class InvoiceWorkflow {
 
 ### YAML skills
 
-YAML skills define a name, description, named model, and execution settings. `model` is required. A skill without `mapping.target_id` is LLM-backed; `prompt` supplies private instructions in addition to the public `description`.
+An LLM-backed YAML skill omits `mapping`, declares a configured `model`, and may use model execution settings. `prompt` supplies private instructions in addition to the public `description`.
 
 ```yaml
 name: duplicateInvoiceChecker
@@ -182,12 +182,13 @@ For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf
 
 ### Mapping a YAML skill to Java
 
-YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped skill delegates to Java rather than an LLM, so it cannot also define `prompt`.
+YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped wrapper may contain only `name`, `description`, optional `rbac_roles`, and a nonblank `mapping.target_id`.
+
+Declaring `mapping`, even as `null` or an empty block, selects mapped validation and requires a nonblank target. Mapped input and output behavior is owned by the Java target: Bifrost publishes its reflected input contract, and a different public shape requires a separate Java adapter target. Model/runtime fields such as `model`, `prompt`, schemas, planning, tool allowlists, linting, retries, and evidence contracts are rejected on the mapped child. An LLM parent may still list the child in its own `allowed_skills` and `evidence_contract.tool_evidence`.
 
 ```yaml
 name: expenseLookup
 description: Retrieves the most recent expenses.
-model: granite4-tiny
 mapping:
   target_id: expenseService#getLatestExpenses
 ```

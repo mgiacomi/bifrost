@@ -1,0 +1,4 @@
+name: mapped.null.target
+description: Invalid null mapping target.
+mapping:
+  target_id: null

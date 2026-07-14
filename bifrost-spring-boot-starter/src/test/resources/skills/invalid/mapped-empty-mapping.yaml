@@ -1,0 +1,3 @@
+name: mapped.empty.mapping
+description: Invalid empty mapping.
+mapping: {}

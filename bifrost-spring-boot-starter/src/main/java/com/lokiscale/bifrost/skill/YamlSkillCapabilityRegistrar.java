@@ -5,7 +5,7 @@ import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
-import com.lokiscale.bifrost.core.ModelPreference;
+import com.lokiscale.bifrost.core.PublicSkillImplementationType;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
 import com.lokiscale.bifrost.core.SkillImplementationTarget;
 import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
@@ -18,6 +18,7 @@ import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.core.io.Resource;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.util.Objects;
 import java.util.Set;
 
@@ -58,8 +59,9 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton,
                     capabilityId(definition.resource(), definition.manifest().getName()),
                     definition.manifest().getName(),
                     definition.manifest().getDescription(),
-                    ModelPreference.LIGHT,
-                    SkillExecutionDescriptor.from(definition.executionConfiguration()),
+                    definition.implementationType() == PublicSkillImplementationType.MAPPED_JAVA
+                            ? SkillExecutionDescriptor.none()
+                            : SkillExecutionDescriptor.from(definition.requireExecutionConfiguration()),
                     Set.copyOf(definition.rbacRoles()),
                     resolveInvoker(definition, target),
                     CapabilityKind.YAML_SKILL,
@@ -115,22 +117,6 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton,
 
     private SkillInputContract resolveInputContract(YamlSkillDefinition definition, SkillImplementationTarget target)
     {
-        if (definition.hasDeclaredInputSchema() && target != null)
-        {
-            try
-            {
-                inputContractResolver.validateStructuralCompatibility(
-                        inputContractResolver.resolveJavaCapability(target.inputSchema()).schema(),
-                        inputContractResolver.fromManifest(definition.inputSchema()),
-                        "input_schema");
-            }
-            catch (IllegalStateException ex)
-            {
-                throw new IllegalStateException("Invalid YAML skill '" + definition.resource().getDescription()
-                        + "' for field 'input_schema': " + ex.getMessage(), ex);
-            }
-        }
-
         return inputContractResolver.resolveYamlCapability(definition, target);
     }
 
@@ -152,13 +138,17 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton,
         if (target == null)
         {
             throw new IllegalStateException("Invalid YAML skill '" + definition.manifest().getName()
-                    + "' for field 'mapping.target_id': unknown implementation target '" + targetId + "'.");
+                    + "' in '" + describe(definition.resource())
+                    + "' for field 'mapping.target_id': unknown implementation target '" + targetId
+                    + "'; correct mapping.target_id to reference a registered bean#method target.");
         }
         if (!targetId.equals(target.id()))
         {
             throw new IllegalStateException("Invalid YAML skill '" + definition.manifest().getName()
+                    + "' in '" + describe(definition.resource())
                     + "' for field 'mapping.target_id': registry returned implementation target '"
-                    + target.id() + "' for requested ID '" + targetId + "'.");
+                    + target.id() + "' for requested ID '" + targetId
+                    + "'; correct the target registry entry for mapping.target_id.");
         }
         return target;
     }
@@ -182,5 +172,17 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton,
     {
         String description = resource.getDescription().replace('\\', '/');
         return "yaml:" + skillName + ":" + description;
+    }
+
+    private String describe(Resource resource)
+    {
+        try
+        {
+            return resource.getURI().toString();
+        }
+        catch (IOException ex)
+        {
+            return resource.getDescription();
+        }
     }
 }

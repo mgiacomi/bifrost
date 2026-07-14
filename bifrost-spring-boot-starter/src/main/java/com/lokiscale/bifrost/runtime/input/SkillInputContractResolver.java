@@ -14,7 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TreeSet;
 import java.util.stream.StreamSupport;
 
 public class SkillInputContractResolver
@@ -43,14 +42,9 @@ public class SkillInputContractResolver
         Objects.requireNonNull(definition, "definition must not be null");
         if (definition.hasDeclaredInputSchema())
         {
-            SkillInputSchemaNode explicitSchema = fromManifest(definition.inputSchema());
-            if (mappedTarget != null)
-            {
-                explicitSchema = mergeRuntimeMarkers(mappedTarget.inputContract().schema(), explicitSchema);
-            }
             return new SkillInputContract(
                     SkillInputContract.SkillInputContractKind.YAML_EXPLICIT,
-                    explicitSchema);
+                    fromManifest(definition.inputSchema()));
         }
 
         if (mappedTarget != null)
@@ -125,83 +119,6 @@ public class SkillInputContractResolver
         catch (IOException ex)
         {
             throw new IllegalStateException("Failed to parse capability input schema", ex);
-        }
-    }
-
-    public void validateStructuralCompatibility(SkillInputSchemaNode expected,
-            SkillInputSchemaNode actual,
-            String fieldPath)
-    {
-        Objects.requireNonNull(expected, "expected must not be null");
-        Objects.requireNonNull(actual, "actual must not be null");
-        if (!Objects.equals(expected.type(), actual.type()))
-        {
-            throw mismatch(fieldPath, "type mismatch: expected '%s' but found '%s'".formatted(expected.type(), actual.type()));
-        }
-        if (!new TreeSet<>(expected.required()).equals(new TreeSet<>(actual.required())))
-        {
-            throw mismatch(fieldPath, "required fields mismatch: expected %s but found %s"
-                    .formatted(expected.required(), actual.required()));
-        }
-        if (allowsAdditionalPropertiesSemantically(expected) != allowsAdditionalPropertiesSemantically(actual))
-        {
-            throw mismatch(fieldPath, "additionalProperties mismatch: expected %s but found %s"
-                    .formatted(expected.additionalProperties(), actual.additionalProperties()));
-        }
-        if (expected.additionalPropertiesSchema() != null || actual.additionalPropertiesSchema() != null)
-        {
-            if (expected.additionalPropertiesSchema() == null || actual.additionalPropertiesSchema() == null)
-            {
-                throw mismatch(fieldPath + ".additionalProperties", "additionalProperties schema mismatch");
-            }
-            validateStructuralCompatibility(
-                    expected.additionalPropertiesSchema(),
-                    actual.additionalPropertiesSchema(),
-                    fieldPath + ".additionalProperties");
-        }
-        if (!Objects.equals(new TreeSet<>(expected.enumValues()), new TreeSet<>(actual.enumValues())))
-        {
-            throw mismatch(fieldPath, "enum mismatch: expected %s but found %s"
-                    .formatted(expected.enumValues(), actual.enumValues()));
-        }
-        if (!Objects.equals(expected.format(), actual.format()))
-        {
-            throw mismatch(fieldPath, "format mismatch: expected %s but found %s"
-                    .formatted(expected.format(), actual.format()));
-        }
-        if (expected.isAttachment() != actual.isAttachment())
-        {
-            throw mismatch(fieldPath, "attachment marker mismatch");
-        }
-        if (!Objects.equals(expected.attachmentMediaType(), actual.attachmentMediaType()))
-        {
-            throw mismatch(fieldPath, "attachment media type mismatch: expected %s but found %s"
-                    .formatted(expected.attachmentMediaType(), actual.attachmentMediaType()));
-        }
-        if (!Objects.equals(new TreeSet<>(expected.allowedContentTypes()), new TreeSet<>(actual.allowedContentTypes())))
-        {
-            throw mismatch(fieldPath, "attachment allowed content types mismatch: expected %s but found %s"
-                    .formatted(expected.allowedContentTypes(), actual.allowedContentTypes()));
-        }
-        if (!new TreeSet<>(expected.properties().keySet()).equals(new TreeSet<>(actual.properties().keySet())))
-        {
-            throw mismatch(fieldPath, "properties mismatch: expected %s but found %s"
-                    .formatted(expected.properties().keySet(), actual.properties().keySet()));
-        }
-        for (String propertyName : expected.properties().keySet())
-        {
-            validateStructuralCompatibility(
-                    expected.properties().get(propertyName),
-                    actual.properties().get(propertyName),
-                    fieldPath + ".properties." + propertyName);
-        }
-        if (expected.items() != null || actual.items() != null)
-        {
-            if (expected.items() == null || actual.items() == null)
-            {
-                throw mismatch(fieldPath + ".items", "items mismatch");
-            }
-            validateStructuralCompatibility(expected.items(), actual.items(), fieldPath + ".items");
         }
     }
 
@@ -280,16 +197,6 @@ public class SkillInputContractResolver
                 allowedContentTypes);
     }
 
-    private IllegalStateException mismatch(String fieldPath, String detail)
-    {
-        return new IllegalStateException("input_schema compatibility failed at '" + fieldPath + "': " + detail);
-    }
-
-    private boolean allowsAdditionalPropertiesSemantically(SkillInputSchemaNode schema)
-    {
-        return schema != null && schema.allowsAdditionalProperties();
-    }
-
     private Map<String, Object> toJsonSchemaNode(SkillInputSchemaNode schema)
     {
         Map<String, Object> jsonSchema = new LinkedHashMap<>();
@@ -343,35 +250,4 @@ public class SkillInputContractResolver
         return jsonSchema;
     }
 
-    private SkillInputSchemaNode mergeRuntimeMarkers(SkillInputSchemaNode source, SkillInputSchemaNode target)
-    {
-        if (source == null || target == null)
-        {
-            return target;
-        }
-
-        Map<String, SkillInputSchemaNode> mergedProperties = new LinkedHashMap<>();
-        target.properties().forEach((name, child) -> mergedProperties.put(
-                name,
-                mergeRuntimeMarkers(source.properties().get(name), child)));
-
-        SkillInputSchemaNode mergedItems = target.items() == null
-                ? null
-                : mergeRuntimeMarkers(source.items(), target.items());
-
-        return new SkillInputSchemaNode(
-                target.type(),
-                mergedProperties,
-                target.required(),
-                target.additionalProperties(),
-                mergeRuntimeMarkers(source.additionalPropertiesSchema(), target.additionalPropertiesSchema()),
-                mergedItems,
-                target.enumValues(),
-                target.description(),
-                target.format(),
-                source.runtimeRefCapable(),
-                target.isAttachment(),
-                target.attachmentMediaType(),
-                target.allowedContentTypes());
-    }
 }

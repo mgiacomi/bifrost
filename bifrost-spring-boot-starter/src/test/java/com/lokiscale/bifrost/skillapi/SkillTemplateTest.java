@@ -9,7 +9,6 @@ import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
 import com.lokiscale.bifrost.runtime.input.SkillInputContract;
 import com.lokiscale.bifrost.runtime.input.SkillInputSchemaNode;
@@ -91,7 +90,6 @@ class SkillTemplateTest {
                 "yaml:invoiceParser",
                 "invoiceParser",
                 "Invoice parser",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 noopInvoker(),
@@ -199,7 +197,6 @@ class SkillTemplateTest {
                 "yaml:invoiceParser",
                 "invoiceParser",
                 "Invoice parser",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 noopInvoker(),

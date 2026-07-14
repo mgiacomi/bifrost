@@ -1,0 +1,5 @@
+name: mapped.with.retries.zero
+description: Invalid mapped retry declaration.
+output_schema_max_retries: 0
+mapping:
+  target_id: targetBean#deterministicTarget

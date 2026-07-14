@@ -1,0 +1,4 @@
+name: mapped.non.string.target
+description: Invalid non-string mapping target.
+mapping:
+  target_id: 123

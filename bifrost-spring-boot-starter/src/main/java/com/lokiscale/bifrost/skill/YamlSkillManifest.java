@@ -1,18 +1,63 @@
 package com.lokiscale.bifrost.skill;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.util.StringUtils;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Collections;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
 public class YamlSkillManifest
 {
+    enum Field
+    {
+        MODEL("model"),
+        THINKING_LEVEL("thinking_level"),
+        PROMPT("prompt"),
+        INPUT_SCHEMA("input_schema"),
+        OUTPUT_SCHEMA("output_schema"),
+        PLANNING_MODE("planning_mode"),
+        MAX_STEPS("max_steps"),
+        ALLOWED_SKILLS("allowed_skills"),
+        LINTER("linter"),
+        OUTPUT_SCHEMA_MAX_RETRIES("output_schema_max_retries"),
+        EVIDENCE_CONTRACT("evidence_contract"),
+        MAPPING("mapping");
+
+        private final String yamlName;
+
+        Field(String yamlName)
+        {
+            this.yamlName = yamlName;
+        }
+
+        String yamlName()
+        {
+            return yamlName;
+        }
+    }
+
+    private static final List<Field> MAPPED_INAPPLICABLE_FIELDS = List.of(
+            Field.MODEL,
+            Field.THINKING_LEVEL,
+            Field.PROMPT,
+            Field.INPUT_SCHEMA,
+            Field.OUTPUT_SCHEMA,
+            Field.PLANNING_MODE,
+            Field.MAX_STEPS,
+            Field.ALLOWED_SKILLS,
+            Field.LINTER,
+            Field.OUTPUT_SCHEMA_MAX_RETRIES,
+            Field.EVIDENCE_CONTRACT);
+
+    private final EnumSet<Field> declaredFields = EnumSet.noneOf(Field.class);
     private String name;
     private String description;
     private String model;
@@ -76,6 +121,7 @@ public class YamlSkillManifest
 
     public void setModel(String model)
     {
+        declaredFields.add(Field.MODEL);
         this.model = model;
     }
 
@@ -86,6 +132,7 @@ public class YamlSkillManifest
 
     public void setPrompt(String prompt)
     {
+        declaredFields.add(Field.PROMPT);
         this.prompt = StringUtils.hasText(prompt) ? prompt.strip() : null;
     }
 
@@ -96,6 +143,7 @@ public class YamlSkillManifest
 
     public void setThinkingLevel(String thinkingLevel)
     {
+        declaredFields.add(Field.THINKING_LEVEL);
         this.thinkingLevel = thinkingLevel;
     }
 
@@ -106,6 +154,7 @@ public class YamlSkillManifest
 
     public void setAllowedSkills(List<String> allowedSkills)
     {
+        declaredFields.add(Field.ALLOWED_SKILLS);
         this.allowedSkills = allowedSkills == null ? List.of() : List.copyOf(allowedSkills);
     }
 
@@ -126,6 +175,7 @@ public class YamlSkillManifest
 
     public void setPlanningMode(Boolean planningMode)
     {
+        declaredFields.add(Field.PLANNING_MODE);
         this.planningMode = planningMode;
     }
 
@@ -136,6 +186,7 @@ public class YamlSkillManifest
 
     public void setMaxSteps(Integer maxSteps)
     {
+        declaredFields.add(Field.MAX_STEPS);
         this.maxSteps = maxSteps;
     }
 
@@ -146,6 +197,7 @@ public class YamlSkillManifest
 
     public void setLinter(LinterManifest linter)
     {
+        declaredFields.add(Field.LINTER);
         this.linter = linter;
     }
 
@@ -156,6 +208,7 @@ public class YamlSkillManifest
 
     public void setMapping(MappingManifest mapping)
     {
+        declaredFields.add(Field.MAPPING);
         this.mapping = mapping == null ? new MappingManifest() : mapping;
     }
 
@@ -166,6 +219,7 @@ public class YamlSkillManifest
 
     public void setOutputSchema(OutputSchemaManifest outputSchema)
     {
+        declaredFields.add(Field.OUTPUT_SCHEMA);
         this.outputSchema = outputSchema;
     }
 
@@ -176,6 +230,7 @@ public class YamlSkillManifest
 
     public void setInputSchema(InputSchemaManifest inputSchema)
     {
+        declaredFields.add(Field.INPUT_SCHEMA);
         this.inputSchema = inputSchema;
     }
 
@@ -186,6 +241,7 @@ public class YamlSkillManifest
 
     public void setOutputSchemaMaxRetries(Integer outputSchemaMaxRetries)
     {
+        declaredFields.add(Field.OUTPUT_SCHEMA_MAX_RETRIES);
         this.outputSchemaMaxRetries = outputSchemaMaxRetries;
     }
 
@@ -196,7 +252,32 @@ public class YamlSkillManifest
 
     public void setEvidenceContract(EvidenceContractManifest evidenceContract)
     {
+        declaredFields.add(Field.EVIDENCE_CONTRACT);
         this.evidenceContract = evidenceContract;
+    }
+
+    @JsonIgnore
+    boolean isDeclared(Field field)
+    {
+        return declaredFields.contains(field);
+    }
+
+    @JsonIgnore
+    Set<Field> declaredFields()
+    {
+        return Set.copyOf(declaredFields);
+    }
+
+    static List<Field> mappedInapplicableFields()
+    {
+        return MAPPED_INAPPLICABLE_FIELDS;
+    }
+
+    @JsonIgnore
+    void restoreDeclaredFields(Set<Field> fields)
+    {
+        declaredFields.clear();
+        declaredFields.addAll(fields);
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)

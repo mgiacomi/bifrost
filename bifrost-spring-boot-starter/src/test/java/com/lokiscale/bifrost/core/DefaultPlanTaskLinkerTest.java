@@ -48,7 +48,6 @@ class DefaultPlanTaskLinkerTest {
                 "yaml:" + name,
                 name,
                 name,
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 arguments -> "ok",

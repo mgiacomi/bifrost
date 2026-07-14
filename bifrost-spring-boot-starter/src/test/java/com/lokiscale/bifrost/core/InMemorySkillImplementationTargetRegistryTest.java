@@ -80,7 +80,7 @@ class InMemorySkillImplementationTargetRegistryTest
 
     private SkillImplementationTarget target(String id)
     {
-        return new SkillImplementationTarget(id, "description", ModelPreference.LIGHT, arguments -> "ok",
+        return new SkillImplementationTarget(id, "description", arguments -> "ok",
                 "{\"type\":\"object\"}", SkillInputContract.genericObject());
     }
 }

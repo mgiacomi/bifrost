@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -41,10 +42,16 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BifrostAutoConfigurationTests {
+
+    private final ApplicationContextRunner modelFreeContextRunner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(
+                    ConfigurationPropertiesAutoConfiguration.class,
+                    BifrostAutoConfiguration.class));
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
@@ -116,6 +123,28 @@ class BifrostAutoConfigurationTests {
 
                     assertThat(ReflectionTestUtils.getField(beanPostProcessor, "inputContractResolver")).isSameAs(resolver);
                     assertThat(ReflectionTestUtils.getField(registrar, "inputContractResolver")).isSameAs(resolver);
+                });
+    }
+
+    @Test
+    void invokesMappedSkillWithoutModelsOrChatModel() {
+        modelFreeContextRunner
+                .withUserConfiguration(MappedSkillTargetConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/model-free-mapped-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(YamlSkillCatalog.class);
+                    assertThat(context).hasSingleBean(SkillImplementationTargetRegistry.class);
+                    assertThat(context).hasSingleBean(CapabilityRegistry.class);
+                    assertThat(context).hasSingleBean(SkillTemplate.class);
+                    assertThat(context.getBeansOfType(ChatModel.class)).isEmpty();
+
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class)
+                            .getCapability("model.free.mapped.skill");
+                    assertThat(metadata.skillExecution().configured()).isFalse();
+                    assertThat(context.getBean(SkillTemplate.class)
+                            .invoke("model.free.mapped.skill", Map.of("input", "alpha")))
+                            .isEqualTo("\"mapped:alpha\"");
                 });
     }
 

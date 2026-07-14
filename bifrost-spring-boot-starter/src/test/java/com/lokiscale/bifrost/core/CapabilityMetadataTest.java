@@ -19,7 +19,7 @@ class CapabilityMetadataTest
     void rejectsNullCapabilityKind()
     {
         assertThatThrownBy(() -> new CapabilityMetadata(
-                "id", "name", "description", ModelPreference.LIGHT, SkillExecutionDescriptor.none(),
+                "id", "name", "description", SkillExecutionDescriptor.none(),
                 Set.of(), arguments -> "ok", null, CapabilityToolDescriptor.generic("name", "description"), null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("kind must not be null");
@@ -29,7 +29,7 @@ class CapabilityMetadataTest
     void rejectsProviderToolNameThatDoesNotMatchPublicYamlName()
     {
         assertThatThrownBy(() -> new CapabilityMetadata(
-                "id", "public.skill", "description", ModelPreference.LIGHT, SkillExecutionDescriptor.none(),
+                "id", "public.skill", "description", SkillExecutionDescriptor.none(),
                 Set.of(), arguments -> "ok", CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic("bean#method", "description"), null))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -41,7 +41,7 @@ class CapabilityMetadataTest
     void normalizesBlankMappedTargetIdToUnmapped()
     {
         CapabilityMetadata metadata = new CapabilityMetadata(
-                "id", "public.skill", "description", ModelPreference.LIGHT, SkillExecutionDescriptor.none(),
+                "id", "public.skill", "description", SkillExecutionDescriptor.none(),
                 Set.of(), arguments -> "ok", CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic("public.skill", "description"), "   ");
 

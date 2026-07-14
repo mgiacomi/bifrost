@@ -155,7 +155,6 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor, BeanFact
         SkillImplementationTarget target = new SkillImplementationTarget(
                 targetId,
                 capabilityDescription,
-                annotation.modelPreference(),
                 capabilityInvoker,
                 inputSchema,
                 inputContractResolver.resolveJavaCapability(inputSchema));

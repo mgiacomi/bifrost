@@ -9,7 +9,6 @@ import com.lokiscale.bifrost.core.DefaultPlanTaskLinker;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.JournalEntry;
 import com.lokiscale.bifrost.core.JournalEntryType;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.PlanStatus;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
@@ -848,7 +847,6 @@ class PlanningServiceTest {
                 "yaml:child",
                 name,
                 "child",
-                ModelPreference.LIGHT,
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
                         AiProvider.OPENAI,

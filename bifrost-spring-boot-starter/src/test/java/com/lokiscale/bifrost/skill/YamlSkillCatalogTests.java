@@ -4,6 +4,8 @@ import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
 import com.lokiscale.bifrost.autoconfigure.AiProvider;
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -16,10 +18,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(OutputCaptureExtension.class)
 class YamlSkillCatalogTests {
+
+    private final ApplicationContextRunner modelFreeContextRunner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(
+                    ConfigurationPropertiesAutoConfiguration.class,
+                    BifrostAutoConfiguration.class));
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
@@ -36,6 +45,119 @@ class YamlSkillCatalogTests {
                     throw new IllegalStateException("Failed to load application-test.yml", ex);
                 }
             });
+
+    @Test
+    void discoversMappedSkillWhenModelCatalogIsEmpty() {
+        modelFreeContextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/model-free-mapped-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class)
+                            .getSkill("model.free.mapped.skill");
+                    assertThat(definition).isNotNull();
+                    assertThat(definition.implementationType())
+                            .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
+                    assertThat(definition.executionConfiguration()).isNull();
+                });
+    }
+
+    @Test
+    void rejectsLlmSkillWhenModelCatalogIsEmpty() {
+        modelFreeContextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/llm-missing-model.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("llm.missing.model")
+                        .hasMessageContaining("llm-missing-model.yaml")
+                        .hasMessageContaining("field 'model'")
+                        .hasMessageContaining("required field is missing or blank")
+                        .hasMessageContaining("declare a configured model"));
+    }
+
+    @TestFactory
+    List<DynamicTest> rejectsDeclaredMappingWithoutNonBlankTarget() {
+        record Case(String filename, String skillName) {}
+        return List.of(
+                new Case("mapped-null-mapping.yaml", "mapped.null.mapping"),
+                new Case("mapped-empty-mapping.yaml", "mapped.empty.mapping"),
+                new Case("mapped-non-object-mapping.yaml", "mapped.non.object.mapping"),
+                new Case("mapped-non-string-target.yaml", "mapped.non.string.target"),
+                new Case("mapped-null-target.yaml", "mapped.null.target"),
+                new Case("mapped-blank-target.yaml", "mapped.blank.target"))
+                .stream()
+                .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
+                        .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/" + testCase.filename())
+                        .run(context -> assertThat(context.getStartupFailure())
+                                .isNotNull()
+                                .hasMessageContaining(testCase.skillName())
+                                .hasMessageContaining(testCase.filename())
+                                .hasMessageContaining("field 'mapping.target_id'")
+                                .hasMessageContaining("target_id must be non-blank")
+                                .hasMessageContaining("declare a valid Java target or remove mapping"))))
+                .toList();
+    }
+
+    @TestFactory
+    List<DynamicTest> rejectsInapplicableMappedFieldByDeclarationPresence() {
+        record Case(String filename, String skillName, String field, String explanation, String remedy) {}
+        return List.of(
+                new Case("mapped-with-model-null.yaml", "mapped.with.model.null", "model", "no model executes", "remove the field"),
+                new Case("mapped-with-thinking-level-blank.yaml", "mapped.with.thinking.blank", "thinking_level", "no model executes", "remove the field"),
+                new Case("mapped-with-prompt-null.yaml", "mapped.with.prompt.null", "prompt", "no model executes", "remove the field"),
+                new Case("mapped-with-input-schema-null.yaml", "mapped.with.input.null", "input_schema", "reflected input contract", "create a Java adapter target"),
+                new Case("mapped-with-output-schema-null.yaml", "mapped.with.output.null", "output_schema", "owns the returned value", "create a Java adapter target"),
+                new Case("mapped-with-planning-mode-false.yaml", "mapped.with.planning.false", "planning_mode", "no model executes", "remove the field"),
+                new Case("mapped-with-planning-mode-object.yaml", "mapped.with.planning.object", "planning_mode", "no model executes", "remove the field"),
+                new Case("mapped-with-max-steps-zero.yaml", "mapped.with.steps.zero", "max_steps", "no model executes", "remove the field"),
+                new Case("mapped-with-max-steps-text.yaml", "mapped.with.steps.text", "max_steps", "no model executes", "remove the field"),
+                new Case("mapped-with-allowed-skills-empty.yaml", "mapped.with.allowed.empty", "allowed_skills", "LLM parent", "declare the mapped child"),
+                new Case("mapped-with-linter-null.yaml", "mapped.with.linter.null", "linter", "model-output validation", "remove the field"),
+                new Case("mapped-with-output-schema-retries-zero.yaml", "mapped.with.retries.zero", "output_schema_max_retries", "model-output validation", "remove the field"),
+                new Case("mapped-with-evidence-contract-null.yaml", "mapped.with.evidence.null", "evidence_contract", "invoking LLM parent", "declare tool evidence"))
+                .stream()
+                .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
+                        .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/" + testCase.filename())
+                        .run(context -> assertThat(context.getStartupFailure())
+                                .isNotNull()
+                                .hasMessageContaining(testCase.skillName())
+                                .hasMessageContaining(testCase.filename())
+                                .hasMessageContaining("field '" + testCase.field() + "'")
+                                .hasMessageContaining(testCase.explanation())
+                                .hasMessageContaining(testCase.remedy()))))
+                .toList();
+    }
+
+    @Test
+    void reportsMappedApplicabilityErrorsInStableOrderBeforeContentAndTargetValidation() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/mapped-with-multiple-inapplicable-fields.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("mapped.with.multiple.invalid")
+                        .hasMessageContaining("mapped-with-multiple-inapplicable-fields.yaml")
+                        .hasMessageContaining("field 'model'")
+                        .hasMessageContaining("no model executes")
+                        .hasMessageNotContaining("unknown implementation target"));
+    }
+
+    @Test
+    void exposesCompleteStableMappedApplicabilityOrder() {
+        assertThat(YamlSkillCatalog.mappedInapplicableFields())
+                .extracting(YamlSkillManifest.Field::yamlName)
+                .containsExactly(
+                        "model",
+                        "thinking_level",
+                        "prompt",
+                        "input_schema",
+                        "output_schema",
+                        "planning_mode",
+                        "max_steps",
+                        "allowed_skills",
+                        "linter",
+                        "output_schema_max_retries",
+                        "evidence_contract");
+    }
 
     @Test
     void defaultsThinkingLevelToMediumWhenModelSupportsThinking() {
@@ -88,10 +210,22 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     assertThat(context.getStartupFailure())
                             .isNotNull()
+                            .hasMessageContaining("invalid.unsupported.thinking.skill")
                             .hasMessageContaining("unsupported-thinking-skill.yaml")
                             .hasMessageContaining("field 'thinking_level'")
                             .hasMessageContaining("unsupported thinking_level 'high'");
                 });
+    }
+
+    @Test
+    void includesPublicSkillNameInPostParseLlmValidationErrors() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/negative-linter-max-retries-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("invalid.negative.linter.max.retries.skill")
+                        .hasMessageContaining("negative-linter-max-retries-skill.yaml")
+                        .hasMessageContaining("field 'linter.max_retries'"));
     }
 
     @Test
@@ -215,6 +349,7 @@ class YamlSkillCatalogTests {
                             .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
                     assertThat(catalog.getSkill("mapped.method.skill").mappingTargetId())
                             .isEqualTo("targetBean#deterministicTarget");
+                    assertThat(catalog.getSkill("mapped.method.skill").executionConfiguration()).isNull();
                 });
     }
 
@@ -252,7 +387,7 @@ class YamlSkillCatalogTests {
                         .isNotNull()
                         .hasMessageContaining("mapped-skill-with-prompt.yaml")
                         .hasMessageContaining("field 'prompt'")
-                        .hasMessageContaining("mapping.target_id"));
+                        .hasMessageContaining("no model executes"));
     }
 
     @Test
@@ -409,7 +544,8 @@ class YamlSkillCatalogTests {
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("mapped-method-skill-mismatched-input-schema.yaml")
-                        .hasMessageContaining("input_schema compatibility failed"));
+                        .hasMessageContaining("field 'input_schema'")
+                        .hasMessageContaining("Java target's reflected input contract"));
     }
 
     @Test
@@ -420,8 +556,8 @@ class YamlSkillCatalogTests {
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("mapped-method-skill-format-mismatched-input-schema.yaml")
-                        .hasMessageContaining("input_schema compatibility failed")
-                        .hasMessageContaining("format mismatch"));
+                        .hasMessageContaining("field 'input_schema'")
+                        .hasMessageContaining("Java target's reflected input contract"));
     }
 
     @Test
@@ -738,9 +874,11 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     assertThat(context.getStartupFailure())
                             .isNotNull()
+                            .hasMessageContaining("unknown.mapping.field.skill")
                             .hasMessageContaining("unknown-mapping-field-skill.yaml")
                             .hasMessageContaining("field 'mapping.target_ids'")
-                            .hasMessageContaining("unknown field");
+                            .hasMessageContaining("unknown field")
+                            .hasMessageContaining("mapping allows only target_id");
                 });
     }
 

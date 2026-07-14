@@ -1,5 +1,4 @@
 name: mapped.method.skill
 description: YAML skill mapped to a discovered Java implementation.
-model: gpt-5
 mapping:
   target_id: targetBean#deterministicTarget

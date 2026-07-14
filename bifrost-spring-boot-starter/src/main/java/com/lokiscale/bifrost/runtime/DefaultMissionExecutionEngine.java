@@ -122,7 +122,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
         Objects.requireNonNull(chatClient, "chatClient must not be null");
         Objects.requireNonNull(visibleTools, "visibleTools must not be null");
         String skillName = definition.manifest().getName();
-        EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
+        EffectiveSkillExecutionConfiguration executionConfiguration = definition.requireExecutionConfiguration();
         int baselineFrameDepth = session.getFramesSnapshot().size();
         AtomicReference<CleanupOwner> cleanupOwner = new AtomicReference<>(CleanupOwner.NONE);
         CountDownLatch cleanupComplete = new CountDownLatch(1);

@@ -4,7 +4,7 @@
 
 **Status:** Proposed
 
-**Type:** Pre-release authoring and manifest correction
+**Type:** Pre-release execution-kind authoring and manifest correction
 
 **Depends on:** [`eng-separate-public-skills-from-java-targets.md`](eng-separate-public-skills-from-java-targets.md)
 
@@ -12,17 +12,20 @@
 
 ## Summary
 
-Bifrost currently requires every YAML skill manifest to declare a catalog-valid `model`, including a mapped YAML skill that delegates directly to a deterministic Java `@SkillMethod`. Mapped execution does not invoke the configured model, so the field is misleading ceremony and forces skill authors to select an irrelevant value.
+Bifrost currently parses every YAML skill as though it were model-backed, even when `mapping.target_id` delegates execution directly to a deterministic Java `@SkillMethod`. That makes mapped manifests accept or require configuration that cannot participate in their execution. It also duplicates Java-owned input contracts in YAML, permits YAML output declarations that Java does not enforce, skips all YAML discovery when the configured model catalog is empty, and carries the unused legacy `ModelPreference` value through Java annotation and metadata types.
 
-The framework also lets a mapped YAML skill redeclare `input_schema`, then requires that declaration to remain structurally identical to the Java target's reflected contract. The duplicate schema cannot define a different input shape; it creates a second authoring source that can drift and fail compatibility validation.
+Make execution kind an explicit validation boundary:
 
-Give each execution kind one authoritative authoring source:
+- an LLM-backed YAML skill declares its model and may use model-execution fields;
+- a mapped YAML skill declares only public identity/governance plus `mapping.target_id`;
+- mapped input and output contracts are owned by the Java target;
+- mapped definitions contain no fabricated model execution configuration;
+- YAML discovery works for a mapped-only application with no model configuration or `ChatModel` bean;
+- the dead `ModelPreference` API and metadata are removed without a compatibility bridge.
 
-- an LLM-backed YAML skill declares its model, and YAML remains the source of any declared input contract;
-- a mapped YAML skill omits model configuration and inherits its input contract exclusively from its Java target;
-- mapped definitions need neither dummy execution configuration nor a duplicate YAML input schema.
+The project has no production release, so manifests, samples, fixtures, internal types, and obsolete APIs can be corrected destructively.
 
-The project has no production release, so manifests, samples, fixtures, and internal types can be corrected without a compatibility bridge.
+Destructive cleanup is explicitly preferred over compatibility scaffolding for this ticket. Reviewers should not request deprecated aliases, compatibility constructors, manifest fallbacks, or preservation of ignored mapped fields unless a new design decision changes the authoring contract.
 
 ## Feature-Lens Evaluation
 
@@ -30,241 +33,264 @@ This correction is justified under the [Bifrost Framework Feature Design Lens](.
 
 - The problem remains with a highly capable model because it is inaccurate manifest semantics, not model weakness.
 - A skill developer should understand locally whether a capability is model-driven or deterministic.
-- Omitting inapplicable or duplicate fields removes false choices rather than hiding important behavior.
-- The model choice cannot affect mapped execution, so requiring it provides no safety, validation, trace, or replay value.
-- An explicit mapped `input_schema` cannot currently define a different structure, so the Java target is already the effective implementation constraint.
-- One authoritative input contract eliminates drift and makes mapped authoring deterministic.
-- Conditional validation produces a clearer failure than silently accepting ignored configuration.
-- The correction preserves the explicit YAML public contract and Java mapping boundary.
+- Omitting inapplicable fields removes false choices rather than hiding behavior.
+- Java already determines mapped invocation, input binding, and returned values.
+- One authoritative contract source eliminates drift and makes mapped authoring deterministic.
+- Conditional validation is safer than silently accepting ignored configuration.
+- Declared-field presence must be honored: `false`, `0`, `[]`, blank, and explicit `null` are still declarations, not omissions.
 
 ## Current Behavior
 
-`YamlSkillCatalog.loadDefinition` currently:
+`YamlSkillCatalog.loadDefinition` currently resolves model configuration before registration knows whether a manifest is mapped. An empty configured model catalog returns before YAML discovery, so even model-free mapped skills are suppressed. A blank or incomplete `mapping` declaration can collapse into the LLM-backed path instead of failing as malformed mapping syntax.
 
-1. requires `name`, `description`, and `model` for every manifest;
-2. resolves the declared model through `BifrostModelsProperties`;
-3. resolves and validates a thinking level;
-4. constructs a non-null `EffectiveSkillExecutionConfiguration`;
-5. only later allows registration to distinguish a mapped definition through `mapping.target_id`.
+Mapped routing invokes the Java target directly. The mapped skill's `model`, `thinking_level`, `prompt`, `planning_mode`, `max_steps`, `allowed_skills`, `linter`, `output_schema_max_retries`, and evidence contract do not participate in that invocation. Explicit mapped `input_schema` only duplicates the Java-reflected schema; mapped `output_schema` is not an authoritative Java return contract.
 
-`YamlSkillCapabilityRegistrar` delegates a mapped YAML capability to its Java target. The model execution configuration stored on the YAML definition and capability metadata is not used to perform that mapped invocation.
-
-When a mapped skill omits `input_schema`, `SkillInputContractResolver` derives its effective contract from the Java target's reflected tool schema. When the YAML declares `input_schema`, the registrar requires the same types, properties, required fields, enums, formats, collection structure, and `additionalProperties` semantics. The explicit declaration therefore duplicates the Java structure rather than adapting it.
-
-This creates manifests such as:
-
-```yaml
-name: expenseLookup
-description: Retrieves the most recent expenses.
-model: granite4-tiny
-mapping:
-  target_id: expenseService#getLatestExpenses
-```
-
-The declaration falsely suggests that `granite4-tiny` participates in execution.
+`ModelPreference` is also carried by `@SkillMethod`, `SkillImplementationTarget`, and `CapabilityMetadata`, but no production selection or routing behavior consumes it. Keeping the value would imply a supported preference mechanism that does not exist.
 
 ## Desired Authoring Model
 
-An LLM-backed skill remains explicit about its model:
+An LLM-backed skill remains explicit about model execution:
 
 ```yaml
 name: summarizeExpenses
 description: Summarizes expense patterns.
 model: production-reasoning
+planning_mode: true
+max_steps: 8
 ```
 
-A mapped skill expresses only its public capability and deterministic target:
+A mapped skill contains only its public identity, applicable governance, and deterministic target:
 
 ```yaml
 name: expenseLookup
 description: Retrieves the most recent expenses.
+rbac_roles: [finance-reader]
 mapping:
   target_id: expenseService#getLatestExpenses
 ```
 
-The absence of `model` is meaningful: no LLM executes at that skill boundary.
+For mapped skills, Java is authoritative for both input and output. Bifrost publishes and validates the reflected Java input contract. If a different public input or output shape is needed, the developer supplies a distinct Java adapter target.
 
-The absence of `input_schema` is also meaningful: the mapped Java target is the authoritative input-contract source. Bifrost still publishes and validates the reflected effective contract for callers and planners.
+A parent LLM skill may still reference a mapped child through its own `allowed_skills` or `evidence_contract.tool_evidence`. Those fields govern the parent and are not declarations on the mapped child.
 
 ## Decision Locks
 
-The implementation plan must preserve these decisions unless a later design review explicitly changes them.
+The implementation must preserve these decisions unless a later design review explicitly changes them.
 
-1. **LLM-backed YAML skills still require a non-blank, known `model`.**
-2. **Mapped YAML skills omit `model`.** Do not assign a default model to them.
-3. **Do not introduce `model: none`.** Absence represents inapplicability without a sentinel value.
-4. **A mapped manifest that declares `model` fails startup with a clear error stating that the field is inapplicable because `mapping.target_id` delegates to Java.** Do not silently ignore it.
-5. **A mapped manifest that declares `thinking_level` also fails startup as inapplicable.** Thinking level is model execution configuration and cannot be meaningful without a model.
-6. **Mapped YAML skills omit `input_schema`.** Their effective input contract always comes from the mapped Java target's reflected contract.
-7. **A mapped manifest that declares `input_schema` fails startup with a clear error stating that mapped skills inherit the Java target's input contract.** Do not silently ignore it or maintain compatibility checking between duplicate schemas.
-8. **A different public input shape requires a different deterministic Java adapter target.** This ticket does not add YAML argument transformation, narrowing, renaming, or defaulting.
-9. **Multiple public YAML skills may map to one Java target, but all inherit that target's same reflected input contract.** They may still differ in public name, capability description, RBAC, visibility, evidence role, or other applicable YAML governance metadata.
-10. **Internal mapped definitions and capability metadata must not contain fabricated model or provider values.** Represent the absence of model execution configuration honestly.
-11. **Mapped invocation, inherited input validation, RBAC, evidence attribution, exception behavior, runtime ref binding, and tracing remain unchanged.**
-12. **Do not auto-register Java targets as public skills.** Public mapped skills remain explicit YAML capabilities connected through `mapping.target_id`.
-13. **Update the AI skill guide after implementation so these omissions become current authoring requirements rather than planned corrections.**
+1. **Manifest classification is syntactic and precedes model resolution.** An omitted `mapping` block means LLM-backed. An explicitly declared `mapping` must contain a non-blank `target_id`; blank, null, or incomplete mapping fails startup.
+2. **LLM-backed YAML skills require a non-blank, known `model`.** Existing LLM semantics remain unchanged.
+3. **Mapped YAML skills omit every model/runtime field.** The only mapped-wrapper fields are `name`, `description`, `mapping.target_id`, and `rbac_roles`.
+4. **Mapped declarations of `model`, `thinking_level`, `prompt`, `input_schema`, `output_schema`, `planning_mode`, `max_steps`, `allowed_skills`, `linter`, `output_schema_max_retries`, or `evidence_contract` fail startup.** Do not silently ignore them.
+5. **Declaration presence, not the parsed value, controls applicability validation.** Explicit `null`, blank strings, `false`, `0`, and empty collections still fail when the field is inapplicable. Parser defaults must not erase declaration presence.
+6. **Do not introduce sentinels or defaults such as `model: none`.** Absence represents inapplicability.
+7. **Java owns mapped input and output contracts.** Mapped YAML cannot redeclare `input_schema` or `output_schema`; a different shape requires a separate Java adapter target.
+8. **Multiple public mapped skills may target the same Java method, but they inherit the same Java input/output contracts.** They may differ only in public identity and applicable governance such as RBAC.
+9. **A YAML definition has exactly one execution invariant:** an LLM-backed definition has an execution configuration; a mapped definition has none. `CapabilityMetadata` projects the mapped case as `SkillExecutionDescriptor.none()`. Model-backed consumers establish the required configuration at their boundary instead of scattering nullable assumptions.
+10. **YAML resources are discovered even when the configured model catalog is empty.** A mapped-only application can start and invoke mapped skills without `bifrost.models` or a `ChatModel` bean; an LLM-backed manifest still fails for its missing model.
+11. **Applicability validation is fail-fast and precedes model lookup, schema-content validation, retry validation, and Java-target lookup.** Use one stable field order so a manifest has a deterministic first error.
+12. **Startup diagnostics identify both the public skill name and YAML resource, plus the contradictory field and remedy.**
+13. **Remove `ModelPreference` completely.** Delete the enum, the `@SkillMethod` member, metadata/target record components, constructor plumbing, imports, and tests. Do not deprecate it or retain compatibility overloads.
+14. **Mapped invocation behavior remains intact:** reflected input validation, argument binding, runtime ref binding, RBAC, evidence attribution from the invoking parent, exception behavior, and tracing.
+15. **Do not auto-register Java targets as public skills.** Public mapped skills remain explicit YAML capabilities joined through `mapping.target_id`.
+16. **Update samples, fixtures, and the AI skill guide to express the final contract.**
 
 ## Goals
 
-- Make the manifest accurately communicate whether a skill invokes an LLM.
-- Remove irrelevant model selection from deterministic mapped capability authoring.
-- Establish the Java target as the single source of truth for mapped input structure.
-- Remove duplicate mapped schemas and their compatibility failure mode.
-- Produce actionable startup validation for contradictory model and mapping declarations.
-- Allow internal catalog and capability types to represent mapped execution without fake configuration.
-- Reduce repeated sample boilerplate without weakening public YAML contracts.
+- Make mapped manifests contain only fields meaningful at their execution boundary.
+- Establish Java as the single source of truth for mapped input and output.
+- Produce deterministic, presence-aware startup validation for malformed or contradictory declarations.
+- Represent mapped execution without fake model/provider/thinking values.
+- Support truly model-free mapped-only application contexts.
+- Remove the dead `ModelPreference` API and data flow.
+- Preserve public YAML capability identity and deterministic Java mapping.
 
 ## Non-Goals
 
-- Do not add automatic YAML generation or direct public registration for `@SkillMethod` targets.
-- Do not add application-wide default models as part of this correction.
-- Do not redesign model selection for LLM-backed skills.
-- Do not introduce parent-input inheritance.
-- Do not add a YAML input-adaptation or contract-narrowing layer for mapped targets.
-- Do not add shared schema fragments, `$ref`, `extends`, or multi-skill YAML files.
-- Do not redesign output schemas, evidence contracts, linters, RBAC, or traces.
-- Do not decide the validity of other mapped execution fields such as `planning_mode` or `max_steps` unless a required implementation invariant makes a narrow validation change unavoidable. Record broader cleanup separately.
-
-The last item is a scope boundary, not an assertion that every other manifest field is meaningful on mapped skills. If implementation inventory reveals additional silently ignored fields, report them for a separate design decision rather than quietly expanding this ticket or preserving them as recommended sample syntax.
+- Do not auto-generate YAML or directly expose `@SkillMethod` targets as public skills.
+- Do not add application-wide default models or redesign LLM-backed model selection.
+- Do not add parent-input inheritance, YAML argument transformation, contract narrowing, shared schema fragments, `$ref`, `extends`, or multi-skill YAML files.
+- Do not add Java-reflected output-schema publication or return-value schema validation in this ticket. Reject mapped `output_schema`; Java owns the returned value until a separate output-contract design is approved.
+- Do not redesign the meaning of planning, retry, linter, evidence, or tool-allowlist fields for LLM-backed skills. This ticket only makes them inapplicable to mapped wrappers.
+- Do not redesign RBAC or tracing.
 
 ## Implementation Considerations
 
-### Classify before resolving execution configuration
+### Preserve field declaration presence
 
-Catalog loading should determine whether `mapping.target_id` is present before requiring or resolving model configuration. Validation must then follow the appropriate branch:
+Generic YAML binding and defaults cannot distinguish omission from declarations such as `planning_mode: false`, `max_steps: 0`, `allowed_skills: []`, or `field: null`. Add explicit presence tracking during manifest binding (for example, setters that record occurrence or a raw declared-field set) and use it for mapped-field applicability checks. `rbac_roles` remains allowed on mapped wrappers.
+
+### Classify and validate before resolving execution configuration
+
+Use this conceptual order:
 
 ```text
-LLM-backed YAML
-    require and resolve model
-    resolve thinking level
-    construct model execution configuration
+parse resource and retain declared-field presence
+require name and description
+classify mapping:
+    mapping omitted -> LLM-backed
+    mapping declared -> require non-blank mapping.target_id
 
-mapped YAML
-    reject model, thinking_level, and input_schema when declared
-    do not resolve a model
-    do not construct dummy model execution configuration
-    derive the effective input contract from the Java target
+if mapped:
+    reject in stable order:
+        model, thinking_level, prompt, input_schema, output_schema,
+        planning_mode, max_steps, allowed_skills, linter,
+        output_schema_max_retries, evidence_contract
+    do not resolve a model or validate ignored field contents
+    resolve Java target
+    derive the effective Java input contract
+
+if LLM-backed:
+    require and resolve model
+    apply existing model/runtime validation
 ```
 
-### Keep one mapped input-contract source
+This ordering ensures a contradictory mapped field wins over an unknown model, malformed schema, invalid retry count, or missing target. Publish a stable first-error field order and cover it with a multi-error fixture.
 
-Remove the explicit-mapped-schema compatibility path from registration. The reflected Java contract must continue to drive public tool-schema publication, root and nested input validation, argument binding, runtime markers, and SkillBuilder/catalog inspection.
+### Keep Java authoritative for mapped contracts
 
-Java parameter and DTO metadata must therefore carry the field names, types, requiredness, descriptions, and supported runtime markers intended for the mapped capability. If a developer needs a genuinely different public shape, a separate annotated adapter method makes the transformation explicit and testable.
+Remove explicit mapped-input-schema compatibility logic. Java parameter and DTO metadata continues to drive tool-schema publication, root and nested input validation, argument binding, and runtime markers. Mapped YAML `output_schema` is rejected because deterministic return behavior is Java-owned and the current direct route does not enforce a YAML output contract.
 
 ### Represent execution kind honestly
 
-Review `YamlSkillDefinition`, `EffectiveSkillExecutionConfiguration`, `SkillExecutionDescriptor`, and `CapabilityMetadata` so the type model does not require irrelevant model values for mapped capabilities. Prefer an explicit execution-kind representation or a narrowly optional model configuration whose absence is valid only for deterministic mapped execution.
+Allow `YamlSkillDefinition.executionConfiguration()` to be absent only for a definition already classified as mapped. Provide a narrow `requireExecutionConfiguration()` boundary (or equivalent sealed execution-kind API) for model-backed consumers. Registration translates the mapped absence to `SkillExecutionDescriptor.none()`; it does not manufacture a provider, provider-model, model name, or thinking level.
 
-Do not scatter nullable model assumptions through planner code. Code paths that execute LLM-backed skills should establish the model-backed invariant at their boundary and fail clearly if an impossible definition reaches them.
+### Discover mapped YAML without models
+
+Remove the empty-model-catalog early return that suppresses resource discovery. Model resolution belongs only in the LLM-backed branch. Add an application-context test with no `bifrost.models` and no `ChatModel` bean that discovers and invokes a mapped YAML skill through `SkillTemplate`.
+
+### Remove `ModelPreference`
+
+Delete `ModelPreference.java` and remove `modelPreference` from `@SkillMethod`, `SkillImplementationTarget`, `CapabilityMetadata`, registration construction, tests, and all call sites. Because the framework is unreleased and the value has no consumer, there is no deprecation period or migration shim.
 
 ### Coordinate with Java-target separation
 
-This work overlaps [eng-separate-public-skills-from-java-targets.md](eng-separate-public-skills-from-java-targets.md), which separates public YAML capabilities from internal Java implementation targets. Both tickets touch catalog definitions, registration metadata, and mapped execution.
+Complete [eng-separate-public-skills-from-java-targets.md](eng-separate-public-skills-from-java-targets.md) first. Keep the identity/registry refactor and this authoring correction independently reviewable even though both touch catalog and registration metadata.
 
-Complete the identity/registry correction first. Keep acceptance criteria and commits independently reviewable; do not fold this authoring correction invisibly into the registry refactor.
+### Implementation and code-review guardrails
+
+- Treat the already-applied `ModelPreference` removal as completed work within this ticket and the same pull request. Keep it visible in the diff and acceptance criteria so reviewers understand that it is intentional, but do not reimplement, revert, or split it into a separate delivery.
+- Verify that declaration-presence metadata survives every `YamlSkillDefinition` defensive copy. Jackson value copying must not turn omitted null/default properties into declared fields.
+- Verify classification and mapped-field applicability before model lookup, schema/linter/evidence validation, retry validation/defaulting, and Java-target lookup. Multi-error fixtures must lock the deterministic first-error order.
+- Build the model-free integration test from a context that does not import the existing `application-test.yml` model catalog and does not register a provider `ChatModel`; otherwise the test does not prove the acceptance criterion.
+- Remove mapped input-schema compatibility without weakening pure LLM YAML `input_schema` validation or Java-reflected runtime-marker behavior.
+- Prefer direct removal and fixture/sample migration over compatibility branches because the framework is still in development and has no production-release contract to preserve.
 
 ## Required Startup Errors
 
-Errors must identify the contradictory field, the mapped skill, and the inherited Java source of truth. Exact punctuation may vary, but the remedy must remain explicit.
-
-### Model on a mapped skill
+Exact punctuation may vary, but errors must include the public skill name, YAML resource, field, reason, and remedy. Representative shape:
 
 ```text
-Invalid YAML skill 'expenseLookup' for field 'model':
+Invalid YAML skill 'expenseLookup' in 'classpath:skills/expense-lookup.yaml' for field 'model':
 model cannot be declared when mapping.target_id is present because mapped skills delegate to Java.
 ```
 
-### Thinking level on a mapped skill
+Use field-specific reasons:
+
+| Field | Required explanation |
+| --- | --- |
+| `model`, `thinking_level`, `prompt`, `planning_mode`, `max_steps` | No model executes at the mapped boundary. |
+| `input_schema` | Mapped skills inherit the Java target's reflected input contract. |
+| `output_schema` | The deterministic Java target owns the returned value. |
+| `allowed_skills` | A mapped wrapper does not perform nested model tool selection; declare the mapped child on its LLM parent instead. |
+| `linter`, `output_schema_max_retries` | Model-output validation/retry does not run on direct Java routing. |
+| `evidence_contract` | The mapped child's own model evidence contract is not evaluated; an invoking parent may declare tool evidence. |
+
+Malformed mapping must be diagnosed separately:
 
 ```text
-Invalid YAML skill 'expenseLookup' for field 'thinking_level':
-thinking_level cannot be declared when mapping.target_id is present because no model executes at this boundary.
+Invalid YAML skill 'expenseLookup' in 'classpath:skills/expense-lookup.yaml' for field 'mapping.target_id':
+mapping was declared, so target_id must be non-blank.
 ```
-
-### Input schema on a mapped skill
-
-```text
-Invalid YAML skill 'expenseLookup' for field 'input_schema':
-input_schema cannot be declared when mapping.target_id is present; mapped skills inherit the Java target's reflected input contract.
-```
-
-Do not silently ignore these fields, resolve a default model, or retain compatibility checking between duplicate schemas.
 
 ## Suggested Ticket Phases
 
-### Phase 1 - Manifest and type design
+### Phase 1 - Manifest and type invariants
 
-- Identify every consumer that currently assumes `YamlSkillDefinition.executionConfiguration()` is non-null.
-- Choose an explicit representation for model-backed versus deterministic mapped definitions.
-- Define conditional validation messages for missing and inapplicable model, thinking, and input-schema fields.
+- Add declared-field presence tracking and explicit mapping-block presence tracking.
+- Encode the LLM-backed/configured versus mapped/unconfigured definition invariant.
+- Add a model-backed configuration-requirement boundary and mapped `SkillExecutionDescriptor.none()` projection.
+- Remove `ModelPreference` and all compatibility/plumbing code.
 
 ### Phase 2 - Catalog and registration
 
-- Classify the manifest before resolving model configuration.
-- Require and resolve model/thinking configuration only for LLM-backed definitions.
-- Register mapped YAML capabilities without fabricated execution configuration.
-- Reject `input_schema` on mapped definitions.
-- Preserve mapped target resolution and reflected input-contract inheritance.
+- Always discover YAML resources, including with an empty model catalog.
+- Classify and validate mapping before resolving model configuration.
+- Reject all inapplicable mapped fields in stable order.
+- Remove mapped input-schema compatibility and reject mapped output schemas.
+- Preserve Java target resolution, reflected input inheritance, and direct routing.
 
 ### Phase 3 - Tests and fixtures
 
-- Add a valid mapped fixture with no `model`.
-- Add an invalid mapped fixture that declares `model`.
-- Add an invalid mapped fixture that declares `thinking_level`.
-- Add an invalid mapped fixture that declares `input_schema`.
-- Preserve tests proving an LLM-backed skill fails when `model` is absent or unknown.
-- Replace explicit mapped-schema compatibility tests with tests proving reflected contracts remain authoritative for entry and nested invocation.
-- Verify mapped entry and nested invocation still avoid model execution.
+- Add a valid mapped fixture containing only identity, optional RBAC, and a non-blank target.
+- Add invalid fixtures for every rejected field.
+- Include explicit null/blank, `planning_mode: false`, `max_steps: 0`, and empty-list declarations to prove presence-aware rejection.
+- Add missing, null, and blank `mapping.target_id` coverage plus a multi-error validation-order fixture.
+- Preserve LLM missing/unknown-model coverage.
+- Replace explicit mapped-schema compatibility tests with Java-authoritative input tests and mapped-output-schema rejection.
+- Add the model-free application-context/`SkillTemplate` invocation test.
+- Verify entry and nested mapped invocation, RBAC, runtime markers, binding, evidence attribution, exceptions, and tracing remain intact.
+- Verify the removed `ModelPreference` type and members have no source or binary/API assertions remaining.
 
 ### Phase 4 - Samples and documentation
 
-- Remove `model` from all mapped sample manifests.
-- Remove `input_schema` from all mapped sample manifests and ensure Java target metadata expresses the effective contract.
-- Update manifest documentation and examples to show conditional model applicability and Java-owned mapped input contracts.
-- Remove the temporary current-checkout warning from the AI skill guide and make omission normative.
-- Verify the Incident Commander mapped leaves contain no irrelevant model configuration.
+- Remove every inapplicable field from mapped sample manifests, including explicit false/zero/empty declarations.
+- Ensure Java target metadata expresses mapped input contracts.
+- Update manifest documentation, examples, and the AI skill guide with the strict allowed-field set and Java-owned input/output rule.
+- Verify Incident Commander mapped leaves contain only the allowed mapped-wrapper fields.
 
 ## Acceptance Criteria
 
-- [ ] An LLM-backed YAML skill without `model` fails startup with an actionable required-field error.
-- [ ] An LLM-backed YAML skill with an unknown model still fails startup.
-- [ ] A mapped YAML skill without `model` loads and invokes its Java target successfully.
-- [ ] A mapped YAML skill declaring `model` fails startup with an actionable inapplicable-field error.
-- [ ] A mapped YAML skill declaring `thinking_level` fails startup with an actionable inapplicable-field error.
-- [ ] A mapped YAML skill without `input_schema` publishes and enforces its Java target's reflected input contract.
-- [ ] A mapped YAML skill declaring `input_schema` fails startup with an actionable inheritance explanation.
-- [ ] No dummy model, provider, provider-model, or thinking value is stored for mapped execution.
-- [ ] Explicit mapped-schema compatibility code and fixtures are removed.
-- [ ] Reflected mapped input validation, runtime markers, and argument binding continue to pass.
-- [ ] Nested and entry mapped invocation continue to enforce RBAC and execution-time protections.
-- [ ] Existing mapped samples omit `model` after the correction.
-- [ ] Existing mapped samples omit `input_schema` after the correction and expose equivalent reflected Java contracts.
-- [ ] The AI skill guide describes the implemented behavior without a temporary limitation warning.
-- [ ] The completed public-skill/Java-target separation remains compatible with the new execution-configuration and input-contract representation.
+- [ ] An omitted `mapping` block selects LLM-backed validation; an explicit mapping with missing, null, or blank `target_id` fails as malformed mapping.
+- [ ] An LLM-backed YAML skill without `model` or with an unknown model fails startup actionably.
+- [ ] A mapped-only application with no configured framework models and no `ChatModel` bean discovers and invokes its Java target through `SkillTemplate`.
+- [ ] A mapped YAML skill may declare only `name`, `description`, `mapping.target_id`, and `rbac_roles`.
+- [ ] A mapped declaration of any of `model`, `thinking_level`, `prompt`, `input_schema`, `output_schema`, `planning_mode`, `max_steps`, `allowed_skills`, `linter`, `output_schema_max_retries`, or `evidence_contract` fails startup with an actionable field-specific error.
+- [ ] Applicability checks treat explicit null, blank, false, zero, and empty collections as declarations.
+- [ ] Applicability validation runs before model lookup, field-content validation, retry validation, and Java-target lookup, with deterministic first-error ordering.
+- [ ] Every manifest error identifies the public skill name and YAML resource.
+- [ ] A mapped skill publishes and enforces its Java target's reflected input contract; explicit mapped-schema compatibility code and fixtures are removed.
+- [ ] Mapped `output_schema` is rejected because output is Java-owned; this ticket adds no YAML return adapter or reflected output-schema feature.
+- [ ] No dummy model, provider, provider-model, or thinking value is stored for mapped definitions; mapped capability metadata uses `SkillExecutionDescriptor.none()`.
+- [ ] Model-backed consumers fail clearly if an impossible unconfigured LLM definition reaches them.
+- [ ] Parent LLM skills may continue to list mapped children in parent-owned `allowed_skills` and evidence contracts.
+- [x] `ModelPreference.java`, the `@SkillMethod` member, record components, constructor arguments, imports, compatibility overloads, and tests are removed; starter and full-reactor tests pass.
+- [ ] Reflected input validation, runtime markers, binding, direct invocation, RBAC, parent evidence attribution, exceptions, and tracing continue to pass for mapped skills.
+- [ ] All mapped samples and fixtures use only the allowed mapped-wrapper fields.
+- [ ] Documentation describes the implemented behavior without a temporary limitation warning.
+- [ ] The completed public-skill/Java-target separation remains compatible with the execution-kind representation.
 
 ## Verification Targets
 
 - `YamlSkillCatalogTests`
 - `YamlSkillCapabilityRegistrarTests`
+- `BifrostAutoConfigurationTests` or an equivalent model-free application-context test
 - `CapabilityExecutionRouterTest`
 - `SkillTemplateTest`
-- mapped input-contract inheritance, validation, and runtime-marker tests
-- application-context startup with mixed LLM-backed and mapped skills
+- `SkillMethodTest`
+- `SkillImplementationTargetTest`
+- `CapabilityMetadataTest`
+- mapped input-contract inheritance, validation, binding, runtime-marker, RBAC, evidence, and tracing tests
 - sample context and catalog tests
+- full starter and reactor test suites
+- repository search proving no live `ModelPreference` reference remains
 
 ## Implementation Anchors
 
 - [`YamlSkillCatalog.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillCatalog.java)
+- [`YamlSkillManifest.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillManifest.java)
 - [`YamlSkillDefinition.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillDefinition.java)
 - [`YamlSkillCapabilityRegistrar.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillCapabilityRegistrar.java)
 - [`EffectiveSkillExecutionConfiguration.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/EffectiveSkillExecutionConfiguration.java)
 - [`SkillExecutionDescriptor.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillExecutionDescriptor.java)
 - [`CapabilityMetadata.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/CapabilityMetadata.java)
+- [`SkillImplementationTarget.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillImplementationTarget.java)
+- [`SkillMethod.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/annotation/SkillMethod.java)
+- [`SkillMethodBeanPostProcessor.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillMethodBeanPostProcessor.java)
 - [`SkillInputContractResolver.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/input/SkillInputContractResolver.java)
 
 ## Related Work
 
+- [Codebase research and gap analysis](../research/2026-07-13-simplify-mapped-yaml-skill-manifests.md)
 - [Public YAML skill and Java target separation](eng-separate-public-skills-from-java-targets.md)
 - [Public YAML skill-name validation](eng-validate-public-yaml-skill-names.md)
 - [Incident Commander sample](eng-sample-htn-incident-commander.md)

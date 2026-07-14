@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 
 @ExtendWith(OutputCaptureExtension.class)
 class SkillMethodBeanPostProcessorTest {
@@ -43,7 +42,6 @@ class SkillMethodBeanPostProcessorTest {
         assertThat(metadata).isNotNull();
         assertThat(metadata.id()).isEqualTo("registrationBean#mappedOperation");
         assertThat(metadata.description()).isEqualTo("Test desc");
-        assertThat(metadata.modelPreference()).isEqualTo(ModelPreference.HEAVY);
         assertThat(registry.getTarget("registrationBean#nonSkillOperation")).isNull();
         assertThat(registry.getAllTargets()).hasSize(1);
     }
@@ -294,31 +292,6 @@ class SkillMethodBeanPostProcessorTest {
         assertThat(contract.schema().allowsAdditionalProperties()).isFalse();
     }
 
-    @Test
-    void treatsOmittedAndExplicitTrueAdditionalPropertiesAsCompatible() {
-        SkillInputContractResolver resolver = new SkillInputContractResolver();
-        SkillInputSchemaNode omitted = resolver.fromJsonSchema("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "payload": { "type": "string" }
-                  }
-                }
-                """);
-        SkillInputSchemaNode explicitTrue = resolver.fromJsonSchema("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "payload": { "type": "string" }
-                  },
-                  "additionalProperties": true
-                }
-                """);
-
-        assertThatNoException().isThrownBy(() ->
-                resolver.validateStructuralCompatibility(omitted, explicitTrue, "input_schema"));
-    }
-
     private SkillMethodBeanPostProcessor processor(InMemorySkillImplementationTargetRegistry registry) {
         SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
         processor.setBeanFactory(beanFactory);
@@ -341,7 +314,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class RegistrationBean {
 
-        @SkillMethod(description = "Test desc", modelPreference = ModelPreference.HEAVY)
+        @SkillMethod(description = "Test desc")
         String mappedOperation() {
             return "ok";
         }

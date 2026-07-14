@@ -97,7 +97,7 @@ bifrost:
       - classpath:/skills/**/*.yaml
 ```
 
-Named Bifrost models (each YAML skill must set `model` to one of these keys):
+Named Bifrost models (each LLM-backed YAML skill must set `model` to one of these keys; mapped Java wrappers omit it):
 
 | Key | Provider | Provider model |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ Named Bifrost models (each YAML skill must set `model` to one of these keys):
 
 Notes:
 
-- `default-model` is an ordinary named model key; it is **not** auto-selected for skills that omit `model`.
+- `default-model` is an ordinary named model key; it is **not** auto-selected for LLM-backed skills that omit `model`.
 - Session mission timeout is raised to `6000s` for long vision/planning runs.
 - `execution-trace.persistence: ALWAYS` keeps full execution traces for inspection (useful with `bifrost-cli`).
 
@@ -128,7 +128,7 @@ On-ramp patterns: mapped Java, single-shot LLM, shallow planning.
 
 - **File:** `skills/basics/expense_lookup.yml`
 - **Type:** Mapped skill (`mapping.target_id: expenseService#getLatestExpenses`)
-- **Model:** `granite4-tiny` (required by schema; execution is pure Java)
+- **Execution:** Model-free deterministic Java; the wrapper inherits the reflected Java input contract.
 - **Behavior:** Returns a fixed list of fake expenses from `ExpenseService`.
 
 Demonstrates: exposing an internal Spring `@SkillMethod` target through a public YAML skill. The controller and `allowed_skills` use `expenseLookup`; `expenseService#getLatestExpenses` is mapping-only implementation metadata.
@@ -268,7 +268,7 @@ Date: 03/30/2026
 1. Spring Boot starts `SampleApplication`; Bifrost publishes YAML skills and discovers `@SkillMethod` methods in a separate internal target registry.
 2. `SampleController` injects `SkillTemplate`.
 3. Controllers call `skillTemplate.invoke(yamlSkillName, inputs)` or the overload with a `Consumer<SkillExecutionView>` observer. Raw Java method names and `beanName#methodName` target IDs are not invocation aliases.
-4. Bifrost resolves the skill, selects the named model provider, runs planning or direct execution, and returns text (plus optional journal).
+4. Bifrost resolves the skill, then either selects the named model provider for LLM-backed execution or routes a mapped skill directly to its Java target, and returns text (plus optional journal).
 
 Minimal pattern used throughout the sample:
 

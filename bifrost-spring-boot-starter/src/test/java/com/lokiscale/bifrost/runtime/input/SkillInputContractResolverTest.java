@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SkillInputContractResolverTest
 {
@@ -33,21 +32,6 @@ class SkillInputContractResolverTest
         assertThat(imageNode.path("x-bifrost-attachment").asBoolean()).isTrue();
         assertThat(imageNode.path("x-bifrost-media-type").asText()).isEqualTo("image");
         assertThat(imageNode.path("x-bifrost-allowed-content-types").get(0).asText()).isEqualTo("image/jpeg");
-    }
-
-    @Test
-    void structuralCompatibilityIncludesAttachmentMetadata()
-    {
-        SkillInputSchemaNode expected = resolver.fromManifest(attachmentInputManifest());
-        YamlSkillManifest.InputSchemaManifest actualManifest = attachmentInputManifest();
-        actualManifest.getProperties().get("image").setAllowedContentTypes(List.of("image/png"));
-
-        assertThatThrownBy(() -> resolver.validateStructuralCompatibility(
-                expected,
-                resolver.fromManifest(actualManifest),
-                "input_schema"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("attachment allowed content types mismatch");
     }
 
     static YamlSkillManifest.InputSchemaManifest attachmentInputManifest()

@@ -1,0 +1,5 @@
+name: mapped.with.allowed.empty
+description: Invalid mapped allowed skills declaration.
+allowed_skills: []
+mapping:
+  target_id: targetBean#deterministicTarget

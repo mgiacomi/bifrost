@@ -74,7 +74,7 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
     private ChatClient create(YamlSkillDefinition definition, boolean includeFinalResponseValidators)
     {
         Objects.requireNonNull(definition, "definition must not be null");
-        EffectiveSkillExecutionConfiguration executionConfiguration = definition.executionConfiguration();
+        EffectiveSkillExecutionConfiguration executionConfiguration = definition.requireExecutionConfiguration();
         String skillName = definition.manifest().getName();
         SkillChatOptionsAdapter adapter = adaptersByProvider.get(executionConfiguration.provider());
         if (adapter == null)

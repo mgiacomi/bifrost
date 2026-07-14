@@ -11,7 +11,6 @@ import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.core.SkillImplementationTarget;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
-import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.TestBifrostSessions;
 import com.lokiscale.bifrost.runtime.input.SkillInputContract;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
@@ -82,25 +81,6 @@ class YamlSkillCapabilityRegistrarTests {
     }
 
     @Test
-    void normalizesBlankMappingTargetToLlmBackedMetadata() {
-        YamlSkillDefinition definition = definition("blank.mapping.skill", "   ");
-        YamlSkillCatalog catalog = mock(YamlSkillCatalog.class);
-        when(catalog.getSkills()).thenReturn(List.of(definition));
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-
-        new YamlSkillCapabilityRegistrar(
-                registry,
-                new InMemorySkillImplementationTargetRegistry(),
-                catalog,
-                new SkillInputContractResolver()).afterSingletonsInstantiated();
-
-        CapabilityMetadata metadata = registry.getCapability("blank.mapping.skill");
-        assertThat(metadata.mappedTargetId()).isNull();
-        assertThat(metadata.implementationType())
-                .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.LLM_BACKED);
-    }
-
-    @Test
     void rejectsCustomTargetRegistryReturningDifferentIdentity() {
         YamlSkillDefinition definition = definition("mapped.identity.skill", "targetBean#deterministicTarget");
         YamlSkillCatalog catalog = mock(YamlSkillCatalog.class);
@@ -109,7 +89,6 @@ class YamlSkillCapabilityRegistrarTests {
         when(targetRegistry.getTarget("targetBean#deterministicTarget")).thenReturn(new SkillImplementationTarget(
                 "otherBean#otherMethod",
                 "wrong target",
-                ModelPreference.LIGHT,
                 arguments -> "wrong",
                 "{\"type\":\"object\"}",
                 SkillInputContract.genericObject()));
@@ -140,7 +119,11 @@ class YamlSkillCapabilityRegistrarTests {
                             .getName();
 
                     assertThat(metadata).isNotNull();
-                    assertThat(metadata.skillExecution().frameworkModel()).isEqualTo("gpt-5");
+                    assertThat(metadata.skillExecution().configured()).isFalse();
+                    assertThat(metadata.skillExecution().frameworkModel()).isNull();
+                    assertThat(metadata.skillExecution().provider()).isNull();
+                    assertThat(metadata.skillExecution().providerModel()).isNull();
+                    assertThat(metadata.skillExecution().thinkingLevel()).isNull();
                     assertThat(metadata.kind()).isEqualTo(com.lokiscale.bifrost.core.CapabilityKind.YAML_SKILL);
                     assertThat(metadata.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
                     assertThat(metadata.tool().inputSchema()).contains(parameterName);
@@ -342,26 +325,23 @@ class YamlSkillCapabilityRegistrarTests {
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("unknown.mapped.target.skill")
+                        .hasMessageContaining("unknown-mapped-target-skill.yaml")
                         .hasMessageContaining("field 'mapping.target_id'")
-                        .hasMessageContaining("unknown implementation target 'missingBean#missingTarget'"));
+                        .hasMessageContaining("unknown implementation target 'missingBean#missingTarget'")
+                        .hasMessageContaining("correct mapping.target_id to reference a registered bean#method target"));
     }
 
     private static YamlSkillDefinition definition(String name, String targetId) {
         YamlSkillManifest manifest = new YamlSkillManifest();
         manifest.setName(name);
         manifest.setDescription(name);
-        manifest.setModel("gpt-5");
         YamlSkillManifest.MappingManifest mapping = new YamlSkillManifest.MappingManifest();
         mapping.setTargetId(targetId);
         manifest.setMapping(mapping);
         return new YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),
                 manifest,
-                new EffectiveSkillExecutionConfiguration(
-                        "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
-                        "openai/gpt-5",
-                        "medium"));
+                null);
     }
 
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
