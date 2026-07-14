@@ -21,6 +21,16 @@ import static org.mockito.Mockito.verify;
 class SampleControllerTest {
 
     @Test
+    void sampleControllerDelegatesExpensesToPublicYamlSkill() {
+        SkillTemplate skillTemplate = mock(SkillTemplate.class);
+        SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());
+        org.mockito.Mockito.when(skillTemplate.invoke("expenseLookup", Map.of())).thenReturn("[\"expense\"]");
+
+        assertThat(controller.getExpenses()).isEqualTo("[\"expense\"]");
+        verify(skillTemplate).invoke("expenseLookup", Map.of());
+    }
+
+    @Test
     void sampleControllerDelegatesFeedstockSampleToSkillTemplate() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());

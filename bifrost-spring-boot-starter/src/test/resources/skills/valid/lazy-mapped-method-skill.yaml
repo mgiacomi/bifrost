@@ -1,0 +1,5 @@
+name: lazy.mapped.skill
+description: Mapped YAML skill backed by a lazy singleton target
+model: gpt-5
+mapping:
+  target_id: lazyTargetBean#execute

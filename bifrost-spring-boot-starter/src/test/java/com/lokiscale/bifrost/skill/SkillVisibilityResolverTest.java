@@ -8,11 +8,12 @@ import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
 import com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
-import com.lokiscale.bifrost.core.CapabilityKind;
-import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
+import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.core.SkillImplementationTarget;
 import com.lokiscale.bifrost.core.ModelPreference;
-import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
+import com.lokiscale.bifrost.runtime.input.SkillInputContract;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.security.DefaultAccessGuard;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -32,9 +33,8 @@ class SkillVisibilityResolverTest {
         YamlSkillCatalog catalog = catalog("classpath:/skills/valid/allowed-*.yaml");
         catalog.afterPropertiesSet();
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        registerTargetCapabilities(registry);
-        new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
-        registry.register("internal.only.target", metadata("internal.only.target", Set.of()));
+        InMemorySkillImplementationTargetRegistry targets = targetRegistry();
+        new YamlSkillCapabilityRegistrar(registry, targets, catalog, new SkillInputContractResolver()).afterSingletonsInstantiated();
 
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
@@ -50,13 +50,13 @@ class SkillVisibilityResolverTest {
     }
 
     @Test
-    void excludesNonYamlCapabilitiesEvenIfListedInAllowedSkills() {
+    void doesNotExposeImplementationTargetIdsAsAllowedChildren() {
         YamlSkillCatalog catalog = catalog("classpath:/skills/valid/allowed-*.yaml");
         catalog.afterPropertiesSet();
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        registerTargetCapabilities(registry);
-        new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
-        registry.register("internal.only.target", metadata("internal.only.target", Set.of()));
+        InMemorySkillImplementationTargetRegistry targets = targetRegistry();
+        assertThat(targets.getTarget("targetBean#deterministicTarget")).isNotNull();
+        new YamlSkillCapabilityRegistrar(registry, targets, catalog, new SkillInputContractResolver()).afterSingletonsInstantiated();
 
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
@@ -76,8 +76,8 @@ class SkillVisibilityResolverTest {
         YamlSkillCatalog catalog = catalog("classpath:/skills/valid/allowed-*.yaml");
         catalog.afterPropertiesSet();
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        registerTargetCapabilities(registry);
-        new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
+        InMemorySkillImplementationTargetRegistry targets = targetRegistry();
+        new YamlSkillCapabilityRegistrar(registry, targets, catalog, new SkillInputContractResolver()).afterSingletonsInstantiated();
 
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
@@ -94,8 +94,8 @@ class SkillVisibilityResolverTest {
         YamlSkillCatalog catalog = catalog("classpath:/skills/valid/allowed-*.yaml");
         catalog.afterPropertiesSet();
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        registerTargetCapabilities(registry);
-        new YamlSkillCapabilityRegistrar(registry, catalog).afterSingletonsInstantiated();
+        InMemorySkillImplementationTargetRegistry targets = targetRegistry();
+        new YamlSkillCapabilityRegistrar(registry, targets, catalog, new SkillInputContractResolver()).afterSingletonsInstantiated();
 
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
@@ -109,8 +109,16 @@ class SkillVisibilityResolverTest {
         assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowed.visible.skill");
     }
 
-    private static void registerTargetCapabilities(InMemoryCapabilityRegistry registry) {
-        registry.register("deterministicTarget", metadata("deterministicTarget", Set.of()));
+    private static InMemorySkillImplementationTargetRegistry targetRegistry() {
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        registry.register(new SkillImplementationTarget(
+                "targetBean#deterministicTarget",
+                "desc",
+                ModelPreference.LIGHT,
+                arguments -> "ok",
+                "{\"type\":\"object\"}",
+                SkillInputContract.genericObject()));
+        return registry;
     }
 
     private static YamlSkillCatalog catalog(String location) {
@@ -129,21 +137,4 @@ class SkillVisibilityResolverTest {
         return new YamlSkillCatalog(models, skills, new PathMatchingResourcePatternResolver(), mapper);
     }
 
-    private static CapabilityMetadata metadata(String name, Set<String> roles) {
-        return new CapabilityMetadata(
-                targetId(name),
-                name,
-                "desc",
-                ModelPreference.LIGHT,
-                new SkillExecutionDescriptor("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"),
-                roles,
-                arguments -> "ok",
-                "deterministicTarget".equals(name) ? CapabilityKind.JAVA_METHOD : CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic(name, "desc"),
-                "deterministicTarget".equals(name) ? null : targetId(name));
-    }
-
-    private static String targetId(String name) {
-        return "deterministicTarget".equals(name) ? "targetBean#deterministicTarget" : "yaml:" + name;
-    }
 }

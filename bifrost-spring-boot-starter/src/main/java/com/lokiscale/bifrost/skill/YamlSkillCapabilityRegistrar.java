@@ -7,8 +7,13 @@ import com.lokiscale.bifrost.core.CapabilityToolDescriptor;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.ModelPreference;
 import com.lokiscale.bifrost.core.SkillExecutionDescriptor;
+import com.lokiscale.bifrost.core.SkillImplementationTarget;
+import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.runtime.input.SkillInputContract;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.core.io.Resource;
 import org.springframework.util.StringUtils;
@@ -16,24 +21,29 @@ import org.springframework.util.StringUtils;
 import java.util.Objects;
 import java.util.Set;
 
-public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
+public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton, BeanFactoryAware
 {
     private final CapabilityRegistry capabilityRegistry;
+    private final SkillImplementationTargetRegistry targetRegistry;
     private final YamlSkillCatalog yamlSkillCatalog;
     private final SkillInputContractResolver inputContractResolver;
-
-    public YamlSkillCapabilityRegistrar(CapabilityRegistry capabilityRegistry, YamlSkillCatalog yamlSkillCatalog)
-    {
-        this(capabilityRegistry, yamlSkillCatalog, new SkillInputContractResolver());
-    }
+    private BeanFactory beanFactory;
 
     public YamlSkillCapabilityRegistrar(CapabilityRegistry capabilityRegistry,
+            SkillImplementationTargetRegistry targetRegistry,
             YamlSkillCatalog yamlSkillCatalog,
             SkillInputContractResolver inputContractResolver)
     {
         this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
+        this.targetRegistry = Objects.requireNonNull(targetRegistry, "targetRegistry must not be null");
         this.yamlSkillCatalog = Objects.requireNonNull(yamlSkillCatalog, "yamlSkillCatalog must not be null");
         this.inputContractResolver = Objects.requireNonNull(inputContractResolver, "inputContractResolver must not be null");
+    }
+
+    @Override
+    public void setBeanFactory(BeanFactory beanFactory) throws BeansException
+    {
+        this.beanFactory = Objects.requireNonNull(beanFactory, "beanFactory must not be null");
     }
 
     @Override
@@ -41,7 +51,7 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
     {
         for (YamlSkillDefinition definition : yamlSkillCatalog.getSkills())
         {
-            CapabilityMetadata target = resolveMappedTarget(definition);
+            SkillImplementationTarget target = resolveMappedTarget(definition);
             SkillInputContract inputContract = resolveInputContract(definition, target);
 
             CapabilityMetadata metadata = new CapabilityMetadata(
@@ -51,7 +61,7 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
                     ModelPreference.LIGHT,
                     SkillExecutionDescriptor.from(definition.executionConfiguration()),
                     Set.copyOf(definition.rbacRoles()),
-                    resolveInvoker(definition),
+                    resolveInvoker(definition, target),
                     CapabilityKind.YAML_SKILL,
                     resolveToolDescriptor(definition, target, inputContract),
                     inputContract,
@@ -61,19 +71,22 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
         }
     }
 
-    private CapabilityInvoker resolveInvoker(YamlSkillDefinition definition)
+    private CapabilityInvoker resolveInvoker(YamlSkillDefinition definition, SkillImplementationTarget target)
     {
-        String targetId = definition.manifest().getMapping().getTargetId();
-
-        if (StringUtils.hasText(targetId))
+        if (target != null)
         {
-            CapabilityMetadata target = capabilityRegistry.getAllCapabilities().stream()
-                    .filter(candidate -> targetId.equals(candidate.id()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Invalid YAML skill '" + definition.resource().getDescription()
-                            + "' for field 'mapping.target_id': unknown target_id '" + targetId + "'"));
-
-            return target.invoker();
+            return arguments ->
+            {
+                try
+                {
+                    return target.invoker().invoke(arguments);
+                }
+                catch (RuntimeException ex)
+                {
+                    throw new IllegalStateException("Mapped YAML skill '" + definition.manifest().getName()
+                            + "' failed during deterministic execution", ex);
+                }
+            };
         }
 
         return arguments ->
@@ -83,7 +96,7 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
         };
     }
 
-    private CapabilityToolDescriptor resolveToolDescriptor(YamlSkillDefinition definition, CapabilityMetadata target, SkillInputContract inputContract)
+    private CapabilityToolDescriptor resolveToolDescriptor(YamlSkillDefinition definition, SkillImplementationTarget target, SkillInputContract inputContract)
     {
         if (definition.hasDeclaredInputSchema() && !inputContract.isGeneric())
         {
@@ -97,17 +110,17 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
             return CapabilityToolDescriptor.generic(definition.manifest().getName(), definition.manifest().getDescription());
         }
 
-        return new CapabilityToolDescriptor(definition.manifest().getName(), definition.manifest().getDescription(), target.tool().inputSchema());
+        return new CapabilityToolDescriptor(definition.manifest().getName(), definition.manifest().getDescription(), target.inputSchema());
     }
 
-    private SkillInputContract resolveInputContract(YamlSkillDefinition definition, CapabilityMetadata target)
+    private SkillInputContract resolveInputContract(YamlSkillDefinition definition, SkillImplementationTarget target)
     {
         if (definition.hasDeclaredInputSchema() && target != null)
         {
             try
             {
                 inputContractResolver.validateStructuralCompatibility(
-                        inputContractResolver.resolveJavaCapability(target.tool().inputSchema()).schema(),
+                        inputContractResolver.resolveJavaCapability(target.inputSchema()).schema(),
                         inputContractResolver.fromManifest(definition.inputSchema()),
                         "input_schema");
             }
@@ -121,7 +134,7 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
         return inputContractResolver.resolveYamlCapability(definition, target);
     }
 
-    private CapabilityMetadata resolveMappedTarget(YamlSkillDefinition definition)
+    private SkillImplementationTarget resolveMappedTarget(YamlSkillDefinition definition)
     {
         String targetId = definition.mappingTargetId();
 
@@ -130,11 +143,39 @@ public class YamlSkillCapabilityRegistrar implements SmartInitializingSingleton
             return null;
         }
 
-        return capabilityRegistry.getAllCapabilities().stream()
-                .filter(candidate -> targetId.equals(candidate.id()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Invalid YAML skill '" + definition.resource().getDescription()
-                        + "' for field 'mapping.target_id': unknown target_id '" + targetId + "'"));
+        SkillImplementationTarget target = targetRegistry.getTarget(targetId);
+        if (target == null)
+        {
+            initializeMappedTargetBean(targetId);
+            target = targetRegistry.getTarget(targetId);
+        }
+        if (target == null)
+        {
+            throw new IllegalStateException("Invalid YAML skill '" + definition.manifest().getName()
+                    + "' for field 'mapping.target_id': unknown implementation target '" + targetId + "'.");
+        }
+        if (!targetId.equals(target.id()))
+        {
+            throw new IllegalStateException("Invalid YAML skill '" + definition.manifest().getName()
+                    + "' for field 'mapping.target_id': registry returned implementation target '"
+                    + target.id() + "' for requested ID '" + targetId + "'.");
+        }
+        return target;
+    }
+
+    private void initializeMappedTargetBean(String targetId)
+    {
+        int separator = targetId.lastIndexOf('#');
+        if (beanFactory == null || separator <= 0)
+        {
+            return;
+        }
+
+        String beanName = targetId.substring(0, separator);
+        if (beanFactory.containsBean(beanName))
+        {
+            beanFactory.getBean(beanName);
+        }
     }
 
     private String capabilityId(Resource resource, String skillName)

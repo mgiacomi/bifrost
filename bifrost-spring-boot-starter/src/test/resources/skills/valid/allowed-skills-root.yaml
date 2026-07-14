@@ -4,5 +4,5 @@ model: gpt-5
 planning_mode: true
 allowed_skills:
   - allowed.visible.skill
-  - internal.only.target
+  - targetBean#deterministicTarget
   - disallowed.visible.skill

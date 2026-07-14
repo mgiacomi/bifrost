@@ -28,9 +28,14 @@ public record CapabilityMetadata(
         skillExecution = skillExecution == null ? SkillExecutionDescriptor.none() : skillExecution;
         rbacRoles = rbacRoles == null ? Set.of() : Set.copyOf(rbacRoles);
         invoker = Objects.requireNonNull(invoker, "invoker must not be null");
-        kind = kind == null ? CapabilityKind.JAVA_METHOD : kind;
+        kind = Objects.requireNonNull(kind, "kind must not be null");
         tool = tool == null ? CapabilityToolDescriptor.generic(name, description) : tool;
+        if (!name.equals(tool.name()))
+        {
+            throw new IllegalArgumentException("tool.name must match the public YAML skill name");
+        }
         inputContract = inputContract == null ? SkillInputContract.genericObject() : inputContract;
+        mappedTargetId = mappedTargetId == null || mappedTargetId.isBlank() ? null : mappedTargetId.trim();
     }
 
     public CapabilityMetadata(String id,
@@ -45,6 +50,13 @@ public record CapabilityMetadata(
             @Nullable String mappedTargetId)
     {
         this(id, name, description, modelPreference, skillExecution, rbacRoles, invoker, kind, tool, null, mappedTargetId);
+    }
+
+    public PublicSkillImplementationType implementationType()
+    {
+        return mappedTargetId == null || mappedTargetId.isBlank()
+                ? PublicSkillImplementationType.LLM_BACKED
+                : PublicSkillImplementationType.MAPPED_JAVA;
     }
 
     private static String requireNonBlank(String value, String fieldName)

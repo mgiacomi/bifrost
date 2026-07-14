@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
 class SkillTemplateTest {
 
     @Test
-    void skillTemplateInvokesYamlSkillsOnly() {
+    void rejectsImplementationTargetIdsAsUnknownYamlSkills() {
         CapabilityRegistry registry = new InMemoryCapabilityRegistry();
         CapabilityExecutionRouter router = mock(CapabilityExecutionRouter.class);
         DefaultSkillTemplate template = new DefaultSkillTemplate(
@@ -46,25 +46,35 @@ class SkillTemplateTest {
                 new ObjectMapper(),
                 new SkillInputValidator());
 
-        registry.register("javaSkill", new CapabilityMetadata(
-                "bean#javaSkill",
-                "javaSkill",
-                "Java skill",
-                ModelPreference.LIGHT,
-                SkillExecutionDescriptor.none(),
-                java.util.Set.of(),
-                noopInvoker(),
-                CapabilityKind.JAVA_METHOD,
-                CapabilityToolDescriptor.generic("javaSkill", "Java skill"),
-                SkillInputContract.genericObject(),
-                null));
-
         assertThatThrownBy(() -> template.invoke("missingSkill", Map.of()))
                 .isInstanceOf(SkillException.class)
                 .hasMessageContaining("Unknown YAML skill");
         assertThatThrownBy(() -> template.invoke("javaSkill", Map.of()))
                 .isInstanceOf(SkillException.class)
-                .hasMessageContaining("only supports YAML skills");
+                .hasMessageContaining("Unknown YAML skill");
+        assertThatThrownBy(() -> template.invoke("bean#javaSkill", Map.of()))
+                .isInstanceOf(SkillException.class)
+                .hasMessageContaining("Unknown YAML skill");
+    }
+
+    @Test
+    void rejectsCustomRegistryMetadataThatDoesNotMatchRequestedYamlName() {
+        CapabilityRegistry registry = mock(CapabilityRegistry.class);
+        CapabilityExecutionRouter router = mock(CapabilityExecutionRouter.class);
+        DefaultSkillTemplate template = new DefaultSkillTemplate(
+                registry,
+                router,
+                new BifrostSessionRunner(4, com.lokiscale.bifrost.core.TracePersistencePolicy.ALWAYS, fixedClock()),
+                new ObjectMapper(),
+                new SkillInputValidator());
+        CapabilityMetadata otherSkill = yamlSkillMetadata();
+        when(registry.getCapability("requested.skill")).thenReturn(otherSkill);
+
+        assertThatThrownBy(() -> template.invoke("requested.skill", Map.of("payload", "hello")))
+                .isInstanceOf(SkillException.class)
+                .hasMessageContaining("invoiceParser")
+                .hasMessageContaining("requested.skill");
+        verify(router, never()).execute(any(), any(), any(), any());
     }
 
     @Test

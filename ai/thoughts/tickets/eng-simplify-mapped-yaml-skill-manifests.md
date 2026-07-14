@@ -8,7 +8,7 @@
 
 **Depends on:** [`eng-separate-public-skills-from-java-targets.md`](eng-separate-public-skills-from-java-targets.md)
 
-**Delivery order:** Framework prerequisite 2 of 2. Complete this ticket after public-skill/Java-target separation and before beginning new HTN gallery sample implementation.
+**Delivery order:** Framework prerequisite 2 of 3. Complete this ticket after public-skill/Java-target separation, then complete [`eng-validate-public-yaml-skill-names.md`](eng-validate-public-yaml-skill-names.md) before beginning new HTN gallery sample implementation.
 
 ## Summary
 
@@ -266,5 +266,6 @@ Do not silently ignore these fields, resolve a default model, or retain compatib
 ## Related Work
 
 - [Public YAML skill and Java target separation](eng-separate-public-skills-from-java-targets.md)
+- [Public YAML skill-name validation](eng-validate-public-yaml-skill-names.md)
 - [Incident Commander sample](eng-sample-htn-incident-commander.md)
 - [Bifrost Framework Feature Design Lens](../framework-feature-design-lens.md)

@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.sample;
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
 import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
+import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,9 @@ class SampleApplicationTests {
     private CapabilityRegistry capabilityRegistry;
 
     @Autowired
+    private SkillImplementationTargetRegistry targetRegistry;
+
+    @Autowired
     private YamlSkillCatalog yamlSkillCatalog;
 
     @Autowired
@@ -40,9 +44,12 @@ class SampleApplicationTests {
     }
 
     @Test
-    void registersSkillsTocapabilityRegistry() {
-        assertThat(capabilityRegistry.getCapability("getLatestExpenses")).isNotNull();
+    void publishesYamlSkillsAndKeepsExpenseTargetInternal() {
+        assertThat(capabilityRegistry.getCapability("expenseLookup")).isNotNull();
         assertThat(capabilityRegistry.getCapability("invoiceParser")).isNotNull();
+        assertThat(capabilityRegistry.getCapability("getLatestExpenses")).isNull();
+        assertThat(capabilityRegistry.getCapability("expenseService#getLatestExpenses")).isNull();
+        assertThat(targetRegistry.getTarget("expenseService#getLatestExpenses")).isNotNull();
     }
 
     @Test

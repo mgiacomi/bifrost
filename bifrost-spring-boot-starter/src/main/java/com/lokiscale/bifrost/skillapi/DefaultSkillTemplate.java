@@ -105,6 +105,11 @@ public class DefaultSkillTemplate implements SkillTemplate
         {
             throw new SkillException("SkillTemplate only supports YAML skills. '" + skillName + "' is a " + capability.kind());
         }
+        if (!skillName.equals(capability.name()))
+        {
+            throw new SkillException("CapabilityRegistry returned YAML skill '" + capability.name()
+                    + "' for requested name '" + skillName + "'");
+        }
 
         return capability;
     }

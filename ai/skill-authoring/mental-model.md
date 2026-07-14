@@ -13,7 +13,7 @@ Use this document to establish shared vocabulary and choose the broad shape of a
 
 ## Core Model
 
-Bifrost combines model-driven YAML skills with deterministic Spring capabilities. A skill tree is a hierarchy of capability boundaries, not a static rule tree: an LLM-backed skill reasons about its mission and can invoke only the child capabilities exposed to it.
+Bifrost combines public model-driven YAML skills with internal deterministic Spring implementation targets. A skill tree is a hierarchy of YAML capability boundaries, not a static rule tree: an LLM-backed skill reasons about its mission and can invoke only the child YAML capabilities exposed to it.
 
 The normal shape is:
 
@@ -94,9 +94,11 @@ This inheritance applies only across an explicit YAML-to-Java mapping. It does n
 
 ### Java `@SkillMethod`
 
-`@SkillMethod` registers deterministic Spring method behavior as a Java capability. The reflected method signature supplies its Java-side tool contract.
+`@SkillMethod` registers deterministic Spring method behavior as an internal implementation target keyed by `beanName#methodName`. It does not declare a public name or enter the public `CapabilityRegistry`; the reflected method signature supplies the target schema and input contract.
 
-In the current tree surface, `allowed_skills` resolves YAML skill definitions before exposing capability metadata. Therefore, wrap a Java method with a mapped YAML skill when an LLM-backed skill must call it.
+Annotated method names MUST be unique within one Spring bean because overloads would produce the same target ID. Multiple independently named and governed YAML skills MAY map to one target. Spring proxy, interface, and bridge methods are canonicalized, and invocation resolves the final bean by name so configured advice remains active.
+
+`CapabilityRegistry`, `SkillTemplate`, and `allowed_skills` expose YAML names only. Wrap a Java method with a mapped YAML skill whenever application code or an LLM-backed skill must call it. A target ID is trusted mapping/diagnostic metadata, never a public invocation alias.
 
 Java leaves SHOULD own operations whose correctness should not depend on model reasoning, such as database lookups, calculations, controlled API calls, policy enforcement, and stable fixture access.
 
@@ -205,6 +207,10 @@ Use these only when current behavior or an edge case needs verification:
 - [`YamlSkillManifest.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillManifest.java) defines the accepted manifest object shape.
 - [`YamlSkillDefinition.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillDefinition.java) exposes normalized YAML skill settings.
 - [`YamlSkillCapabilityRegistrar.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillCapabilityRegistrar.java) registers pure and mapped YAML capabilities.
+- [`SkillImplementationTarget.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillImplementationTarget.java) defines internal Java target metadata without provider-facing tool identity.
+- [`SkillImplementationTargetRegistry.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillImplementationTargetRegistry.java) defines the internal `beanName#methodName` registry boundary.
+- [`SkillMethodBeanPostProcessor.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillMethodBeanPostProcessor.java) discovers canonical annotated methods and builds proxy-safe target invokers.
+- [`YamlSkillCapabilityRegistrarTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/skill/YamlSkillCapabilityRegistrarTests.java) covers equal YAML/Java names, shared targets, contract inheritance, advice, errors, and public metadata.
 - [`SkillInputContractResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/input/SkillInputContractResolver.java) selects explicit YAML, inherited Java, or generic input contracts.
 - [`DefaultSkillVisibilityResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/DefaultSkillVisibilityResolver.java) defines the current local YAML child surface and access filtering.
 - [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/CapabilityExecutionRouter.java) distinguishes nested LLM-backed YAML execution from mapped/Java invocation and preserves parent state.

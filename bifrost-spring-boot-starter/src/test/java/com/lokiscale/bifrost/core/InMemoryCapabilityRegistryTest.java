@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class InMemoryCapabilityRegistryTest {
 
@@ -55,7 +57,7 @@ class InMemoryCapabilityRegistryTest {
                 SkillExecutionDescriptor.none(),
                 Set.of("math-admin"),
                 args -> 2,
-                CapabilityKind.JAVA_METHOD,
+                CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic("calculator.add", "Duplicate add operation."),
                 null);
 
@@ -64,6 +66,18 @@ class InMemoryCapabilityRegistryTest {
         assertThatThrownBy(() -> registry.register(duplicate.name(), duplicate))
                 .isInstanceOf(CapabilityCollisionException.class)
                 .hasMessageContaining("calculator.add");
+    }
+
+    @Test
+    void rejectsNonYamlMetadataBeforeMutation() {
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+        CapabilityMetadata malformed = mock(CapabilityMetadata.class);
+        when(malformed.kind()).thenReturn(null);
+
+        assertThatThrownBy(() -> registry.register("internal.target", malformed))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("public YAML skill registry");
+        assertThat(registry.getAllCapabilities()).isEmpty();
     }
 
     @Test
@@ -86,7 +100,7 @@ class InMemoryCapabilityRegistryTest {
                         SkillExecutionDescriptor.none(),
                         Set.of("role-" + index),
                         args -> index,
-                        CapabilityKind.JAVA_METHOD,
+                        CapabilityKind.YAML_SKILL,
                         CapabilityToolDescriptor.generic("capability." + index, "Capability number " + index),
                         null);
                 registry.register(metadata.name(), metadata);
@@ -128,7 +142,7 @@ class InMemoryCapabilityRegistryTest {
                 null,
                 Set.of("math-user"),
                 invoker,
-                CapabilityKind.JAVA_METHOD,
+                CapabilityKind.YAML_SKILL,
                 CapabilityToolDescriptor.generic(name, "Adds two integers."),
                 null);
     }

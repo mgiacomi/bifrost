@@ -24,7 +24,7 @@ class SkillMethodTest {
     }
 
     @Test
-    void exposesDefaultsAndConfiguredValues() throws NoSuchMethodException {
+    void exposesDescriptionAndModelPreferenceWithoutPublicName() throws NoSuchMethodException {
         SkillMethod defaultAnnotation = SampleSkills.class
                 .getDeclaredMethod("defaultSkill")
                 .getAnnotation(SkillMethod.class);
@@ -33,14 +33,15 @@ class SkillMethodTest {
                 .getAnnotation(SkillMethod.class);
 
         assertThat(defaultAnnotation).isNotNull();
-        assertThat(defaultAnnotation.name()).isEmpty();
         assertThat(defaultAnnotation.description()).isEqualTo("Default route");
         assertThat(defaultAnnotation.modelPreference()).isEqualTo(ModelPreference.LIGHT);
 
         assertThat(configuredAnnotation).isNotNull();
-        assertThat(configuredAnnotation.name()).isEqualTo("heavy.route");
         assertThat(configuredAnnotation.description()).isEqualTo("Heavy route");
         assertThat(configuredAnnotation.modelPreference()).isEqualTo(ModelPreference.HEAVY);
+        assertThat(SkillMethod.class.getDeclaredMethods())
+                .extracting(java.lang.reflect.Method::getName)
+                .doesNotContain("name");
     }
 
     static class SampleSkills {
@@ -49,7 +50,7 @@ class SkillMethodTest {
         void defaultSkill() {
         }
 
-        @SkillMethod(name = "heavy.route", description = "Heavy route", modelPreference = ModelPreference.HEAVY)
+        @SkillMethod(description = "Heavy route", modelPreference = ModelPreference.HEAVY)
         void heavySkill() {
         }
     }

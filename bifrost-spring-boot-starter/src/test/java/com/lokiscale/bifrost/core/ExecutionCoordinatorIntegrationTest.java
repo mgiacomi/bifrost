@@ -85,6 +85,8 @@ class ExecutionCoordinatorIntegrationTest {
             assertThat(session.getExecutionPlan()).isPresent();
             assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
                     .containsExactly(PlanTaskStatus.COMPLETED);
+            assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::capabilityName)
+                    .containsExactly("allowed.visible.skill");
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
@@ -104,6 +106,12 @@ class ExecutionCoordinatorIntegrationTest {
                     .get("arguments");
             assertThat(loggedArguments.properties())
                     .anySatisfy(property -> assertThat(property.getValue().textValue()).isEqualTo("ref://artifacts/message.txt"));
+            String publicJournal = session.getJournalSnapshot().stream()
+                    .map(entry -> entry.payload().toString())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(publicJournal)
+                    .contains("allowed.visible.skill")
+                    .doesNotContain("targetBean#deterministicTarget", "internal.only.target", "deterministicTarget");
             assertThat(session.getFramesSnapshot()).isEmpty();
         });
     }
@@ -300,17 +308,17 @@ class ExecutionCoordinatorIntegrationTest {
 
     static class TargetBean {
 
-        @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
+        @SkillMethod(description = "Deterministic target")
         String deterministicTarget(String payload) {
             return "child:" + payload;
         }
 
-        @SkillMethod(name = "internal.only.target", description = "Internal only target")
+        @SkillMethod(description = "Internal only target")
         String internalOnlyTarget(String payload) {
             return "internal:" + payload;
         }
 
-        @SkillMethod(name = "binaryTarget", description = "Binary target")
+        @SkillMethod(description = "Binary target")
         String binaryTarget(byte[] payload) {
             StringBuilder builder = new StringBuilder();
             for (byte value : payload) {

@@ -1,7 +1,10 @@
 package com.lokiscale.bifrost.skill;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.core.io.Resource;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
+import com.lokiscale.bifrost.core.PublicSkillImplementationType;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -14,8 +17,11 @@ public record YamlSkillDefinition(
         EffectiveSkillExecutionConfiguration executionConfiguration,
         EvidenceContract evidenceContract)
 {
+    private static final ObjectMapper COPY_MAPPER = new ObjectMapper();
+
     public YamlSkillDefinition
     {
+        manifest = copyManifest(manifest);
         evidenceContract = evidenceContract == null ? EvidenceContract.empty() : evidenceContract;
     }
 
@@ -38,12 +44,12 @@ public record YamlSkillDefinition(
 
     public YamlSkillManifest.LinterManifest linter()
     {
-        return manifest.getLinter();
+        return copyValue(manifest.getLinter(), YamlSkillManifest.LinterManifest.class);
     }
 
     public YamlSkillManifest.OutputSchemaManifest outputSchema()
     {
-        return manifest.getOutputSchema();
+        return copyValue(manifest.getOutputSchema(), YamlSkillManifest.OutputSchemaManifest.class);
     }
 
     public String prompt()
@@ -53,7 +59,7 @@ public record YamlSkillDefinition(
 
     public YamlSkillManifest.InputSchemaManifest inputSchema()
     {
-        return manifest.getInputSchema();
+        return copyValue(manifest.getInputSchema(), YamlSkillManifest.InputSchemaManifest.class);
     }
 
     public boolean hasDeclaredInputSchema()
@@ -78,7 +84,21 @@ public record YamlSkillDefinition(
 
     public String mappingTargetId()
     {
-        return manifest.getMapping().getTargetId();
+        String targetId = manifest.getMapping().getTargetId();
+        return StringUtils.hasText(targetId) ? targetId.trim() : null;
+    }
+
+    /** Returns a defensive copy so catalog state cannot be mutated after registration. */
+    public YamlSkillManifest manifest()
+    {
+        return copyManifest(manifest);
+    }
+
+    public PublicSkillImplementationType implementationType()
+    {
+        return mappingTargetId() == null || mappingTargetId().isBlank()
+                ? PublicSkillImplementationType.LLM_BACKED
+                : PublicSkillImplementationType.MAPPED_JAVA;
     }
 
     public boolean planningModeEnabled(boolean defaultValue)
@@ -94,5 +114,19 @@ public record YamlSkillDefinition(
     public int maxSteps(int defaultValue)
     {
         return manifest.getMaxSteps() == null ? defaultValue : manifest.getMaxSteps();
+    }
+
+    private static YamlSkillManifest copyManifest(YamlSkillManifest source)
+    {
+        if (source == null)
+        {
+            throw new NullPointerException("manifest must not be null");
+        }
+        return COPY_MAPPER.convertValue(source, YamlSkillManifest.class);
+    }
+
+    private static <T> T copyValue(T source, Class<T> type)
+    {
+        return source == null ? null : COPY_MAPPER.convertValue(source, type);
     }
 }

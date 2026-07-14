@@ -4,6 +4,20 @@ import com.lokiscale.bifrost.annotation.SkillMethod;
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
+import com.lokiscale.bifrost.core.BifrostSession;
+import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
+import com.lokiscale.bifrost.core.ExecutionCoordinator;
+import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.core.SkillImplementationTarget;
+import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
+import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.core.ModelPreference;
+import com.lokiscale.bifrost.core.TestBifrostSessions;
+import com.lokiscale.bifrost.runtime.input.SkillInputContract;
+import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.security.DefaultAccessGuard;
+import com.lokiscale.bifrost.vfs.RefResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -11,13 +25,32 @@ import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Scope;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
 
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class YamlSkillCapabilityRegistrarTests {
 
@@ -36,6 +69,63 @@ class YamlSkillCapabilityRegistrarTests {
                     throw new IllegalStateException("Failed to load application-test.yml", ex);
                 }
             });
+
+    @Test
+    void exposesOnlySharedRegistryConstructor() {
+        assertThat(YamlSkillCapabilityRegistrar.class.getConstructors())
+                .singleElement()
+                .satisfies(constructor -> assertThat(constructor.getParameterTypes()).containsExactly(
+                        CapabilityRegistry.class,
+                        SkillImplementationTargetRegistry.class,
+                        YamlSkillCatalog.class,
+                        SkillInputContractResolver.class));
+    }
+
+    @Test
+    void normalizesBlankMappingTargetToLlmBackedMetadata() {
+        YamlSkillDefinition definition = definition("blank.mapping.skill", "   ");
+        YamlSkillCatalog catalog = mock(YamlSkillCatalog.class);
+        when(catalog.getSkills()).thenReturn(List.of(definition));
+        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
+
+        new YamlSkillCapabilityRegistrar(
+                registry,
+                new InMemorySkillImplementationTargetRegistry(),
+                catalog,
+                new SkillInputContractResolver()).afterSingletonsInstantiated();
+
+        CapabilityMetadata metadata = registry.getCapability("blank.mapping.skill");
+        assertThat(metadata.mappedTargetId()).isNull();
+        assertThat(metadata.implementationType())
+                .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.LLM_BACKED);
+    }
+
+    @Test
+    void rejectsCustomTargetRegistryReturningDifferentIdentity() {
+        YamlSkillDefinition definition = definition("mapped.identity.skill", "targetBean#deterministicTarget");
+        YamlSkillCatalog catalog = mock(YamlSkillCatalog.class);
+        SkillImplementationTargetRegistry targetRegistry = mock(SkillImplementationTargetRegistry.class);
+        when(catalog.getSkills()).thenReturn(List.of(definition));
+        when(targetRegistry.getTarget("targetBean#deterministicTarget")).thenReturn(new SkillImplementationTarget(
+                "otherBean#otherMethod",
+                "wrong target",
+                ModelPreference.LIGHT,
+                arguments -> "wrong",
+                "{\"type\":\"object\"}",
+                SkillInputContract.genericObject()));
+
+        YamlSkillCapabilityRegistrar registrar = new YamlSkillCapabilityRegistrar(
+                new InMemoryCapabilityRegistry(),
+                targetRegistry,
+                catalog,
+                new SkillInputContractResolver());
+
+        assertThatThrownBy(registrar::afterSingletonsInstantiated)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("mapped.identity.skill")
+                .hasMessageContaining("otherBean#otherMethod")
+                .hasMessageContaining("targetBean#deterministicTarget");
+    }
 
     @Test
     void mapsDeterministicYamlSkillToDiscoveredSkillMethodTarget() {
@@ -57,6 +147,113 @@ class YamlSkillCapabilityRegistrarTests {
                     assertThat(metadata.inputContract().kind())
                             .isEqualTo(com.lokiscale.bifrost.runtime.input.SkillInputContract.SkillInputContractKind.YAML_INHERITED);
                     assertThat(metadata.invoker().invoke(Map.of(parameterName, "alpha"))).isEqualTo("\"mapped:alpha\"");
+                });
+    }
+
+    @Test
+    void sameNamedYamlSkillAndJavaMethodRegisterInSeparateNamespaces() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/same-name-mapped-method-skill.yaml")
+                .run(context -> {
+                    CapabilityRegistry capabilityRegistry = context.getBean(CapabilityRegistry.class);
+                    SkillImplementationTargetRegistry targetRegistry = context.getBean(SkillImplementationTargetRegistry.class);
+
+                    assertThat(context).hasNotFailed();
+                    assertThat(capabilityRegistry.getCapability("deterministicTarget"))
+                            .isNotNull()
+                            .extracting(CapabilityMetadata::kind)
+                            .isEqualTo(com.lokiscale.bifrost.core.CapabilityKind.YAML_SKILL);
+                    assertThat(capabilityRegistry.getAllCapabilities())
+                            .extracting(CapabilityMetadata::name)
+                            .containsExactly("deterministicTarget");
+                    assertThat(capabilityRegistry.getCapability("targetBean#deterministicTarget")).isNull();
+                    assertThat(targetRegistry.getTarget("targetBean#deterministicTarget")).isNotNull();
+                });
+    }
+
+    @Test
+    void multipleYamlSkillsCanShareOneTargetWithIndependentPublicMetadata() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/shared-target-*.yaml")
+                .run(context -> {
+                    CapabilityRegistry registry = context.getBean(CapabilityRegistry.class);
+                    CapabilityMetadata first = registry.getCapability("shared.target.one");
+                    CapabilityMetadata second = registry.getCapability("shared.target.two");
+
+                    assertThat(first.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
+                    assertThat(second.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
+                    assertThat(first.description()).isNotEqualTo(second.description());
+                    assertThat(first.rbacRoles()).containsExactly("ROLE_ONE");
+                    assertThat(second.rbacRoles()).containsExactly("ROLE_TWO");
+                    assertThat(first.inputContract().schema()).isEqualTo(second.inputContract().schema());
+                    assertThat(first.implementationType()).isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
+                    assertThat(second.implementationType()).isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
+
+                    RefResolver refResolver = mock(RefResolver.class);
+                    ExecutionStateService stateService = mock(ExecutionStateService.class);
+                    BifrostSession session = TestBifrostSessions.withId("shared-target-session", 2);
+                    CapabilityExecutionRouter router = new CapabilityExecutionRouter(
+                            refResolver,
+                            new StaticListableBeanFactory().getBeanProvider(ExecutionCoordinator.class),
+                            stateService,
+                            new DefaultAccessGuard());
+                    when(refResolver.resolveArguments(any(), eq(session))).thenAnswer(invocation -> invocation.getArgument(0));
+
+                    assertThat(router.execute(first, Map.of("input", "alpha"), session, authentication("ROLE_ONE")))
+                            .isEqualTo("\"mapped:alpha\"");
+                    assertThatThrownBy(() -> router.execute(first, Map.of("input", "alpha"), session, authentication("ROLE_TWO")))
+                            .isInstanceOf(AccessDeniedException.class);
+                    assertThat(router.execute(second, Map.of("input", "beta"), session, authentication("ROLE_TWO")))
+                            .isEqualTo("\"mapped:beta\"");
+                    assertThatThrownBy(() -> router.execute(second, Map.of("input", "beta"), session, authentication("ROLE_ONE")))
+                            .isInstanceOf(AccessDeniedException.class);
+                });
+    }
+
+    private static UsernamePasswordAuthenticationToken authentication(String role) {
+        return UsernamePasswordAuthenticationToken.authenticated(
+                "user",
+                "pw",
+                AuthorityUtils.createAuthorityList(role));
+    }
+
+    @Test
+    void mappedInvocationResolvesFinalAdvisedBean() {
+        contextRunner
+                .withUserConfiguration(AdvisedTargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
+                .run(context -> {
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("mapped.method.skill");
+                    String parameterName = getDeclaredMethod(TargetBean.class, "deterministicTarget", String.class)
+                            .getParameters()[0].getName();
+
+                    assertThat(metadata.invoker().invoke(Map.of(parameterName, "alpha"))).isEqualTo("\"mapped:alpha\"");
+                    assertThat(context.getBean(AtomicInteger.class)).hasValue(1);
+                    assertThat(context.getBean(AtomicBoolean.class)).isTrue();
+                    assertThat(AopUtils.isAopProxy(context.getBean("targetBean"))).isTrue();
+                });
+    }
+
+    @Test
+    void initializesReferencedLazyAndPrototypeTargetsBeforeMappingResolution() {
+        contextRunner
+                .withUserConfiguration(ScopedTargetBeanConfiguration.class)
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/lazy-mapped-method-skill.yaml,classpath:/skills/valid/prototype-mapped-method-skill.yaml")
+                .run(context -> {
+                    CapabilityRegistry registry = context.getBean(CapabilityRegistry.class);
+                    SkillImplementationTargetRegistry targets = context.getBean(SkillImplementationTargetRegistry.class);
+
+                    assertThat(targets.getTarget("lazyTargetBean#execute")).isNotNull();
+                    assertThat(targets.getTarget("prototypeTargetBean#execute")).isNotNull();
+                    assertThat(registry.getCapability("lazy.mapped.skill").invoker().invoke(Map.of("input", "one")))
+                            .isEqualTo("\"lazy:one\"");
+                    assertThat(registry.getCapability("prototype.mapped.skill").invoker().invoke(Map.of("input", "two")))
+                            .isEqualTo("\"prototype:two\"");
+                    assertThat(registry.getCapability("prototype.mapped.skill").invoker().invoke(Map.of("input", "three")))
+                            .isEqualTo("\"prototype:three\"");
                 });
     }
 
@@ -121,14 +318,50 @@ class YamlSkillCapabilityRegistrarTests {
     }
 
     @Test
+    void mappedSerializationFailureUsesPublicYamlNameAtBoundary() {
+        contextRunner
+                .withUserConfiguration(UnserializableTargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
+                .run(context -> {
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class)
+                            .getCapability("mapped.method.skill");
+
+                    assertThatThrownBy(() -> metadata.invoker().invoke(Map.of("input", "alpha")))
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("mapped.method.skill")
+                            .hasMessageNotContaining("targetBean#deterministicTarget")
+                            .satisfies(error -> assertThat(error.getCause())
+                                    .hasMessageContaining("targetBean#deterministicTarget"));
+                });
+    }
+
+    @Test
     void failsStartupWhenMappedYamlSkillReferencesUnknownTargetId() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-mapped-target-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("unknown-mapped-target-skill.yaml")
+                        .hasMessageContaining("unknown.mapped.target.skill")
                         .hasMessageContaining("field 'mapping.target_id'")
-                        .hasMessageContaining("unknown target_id 'missingBean#missingTarget'"));
+                        .hasMessageContaining("unknown implementation target 'missingBean#missingTarget'"));
+    }
+
+    private static YamlSkillDefinition definition(String name, String targetId) {
+        YamlSkillManifest manifest = new YamlSkillManifest();
+        manifest.setName(name);
+        manifest.setDescription(name);
+        manifest.setModel("gpt-5");
+        YamlSkillManifest.MappingManifest mapping = new YamlSkillManifest.MappingManifest();
+        mapping.setTargetId(targetId);
+        manifest.setMapping(mapping);
+        return new YamlSkillDefinition(
+                new org.springframework.core.io.ByteArrayResource(new byte[0]),
+                manifest,
+                new EffectiveSkillExecutionConfiguration(
+                        "gpt-5",
+                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "openai/gpt-5",
+                        "medium"));
     }
 
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
@@ -151,7 +384,7 @@ class YamlSkillCapabilityRegistrarTests {
 
     static class TargetBean {
 
-        @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
+        @SkillMethod(description = "Deterministic target")
         String deterministicTarget(String input) {
             return "mapped:" + input;
         }
@@ -168,9 +401,110 @@ class YamlSkillCapabilityRegistrarTests {
 
     static class ThrowingTargetBean {
 
-        @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
+        @SkillMethod(description = "Deterministic target")
         String deterministicTarget(String input) {
             throw new IllegalStateException("wrapper", new IllegalArgumentException("mapped boom"));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UnserializableTargetBeanConfiguration {
+        @Bean
+        UnserializableTargetBean targetBean() {
+            return new UnserializableTargetBean();
+        }
+    }
+
+    static class UnserializableTargetBean {
+        @SkillMethod(description = "Unserializable target")
+        CyclicResult deterministicTarget(String input) {
+            return new CyclicResult(input);
+        }
+    }
+
+    static class CyclicResult {
+        private final String value;
+
+        CyclicResult(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public CyclicResult getSelf() {
+            return this;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ScopedTargetBeanConfiguration {
+        @Bean
+        @Lazy
+        LazyTargetBean lazyTargetBean() {
+            return new LazyTargetBean();
+        }
+
+        @Bean
+        @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+        PrototypeTargetBean prototypeTargetBean() {
+            return new PrototypeTargetBean();
+        }
+    }
+
+    static class LazyTargetBean {
+        @SkillMethod(description = "Lazy target")
+        String execute(String input) {
+            return "lazy:" + input;
+        }
+    }
+
+    static class PrototypeTargetBean {
+        @SkillMethod(description = "Prototype target")
+        String execute(String input) {
+            return "prototype:" + input;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AdvisedTargetBeanConfiguration {
+        @Bean
+        AtomicInteger adviceCalls() {
+            return new AtomicInteger();
+        }
+
+        @Bean
+        AtomicBoolean rawBeanObservedBeforeProxying() {
+            return new AtomicBoolean();
+        }
+
+        @Bean
+        TargetBean targetBean() {
+            return new TargetBean();
+        }
+
+        @Bean
+        @DependsOn("skillMethodBeanPostProcessor")
+        static BeanPostProcessor lateTargetProxyPostProcessor(
+                AtomicInteger adviceCalls,
+                AtomicBoolean rawBeanObservedBeforeProxying) {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String beanName) {
+                    if (!"targetBean".equals(beanName)) {
+                        return bean;
+                    }
+                    rawBeanObservedBeforeProxying.set(!AopUtils.isAopProxy(bean));
+                    ProxyFactory factory = new ProxyFactory(bean);
+                    factory.setProxyTargetClass(true);
+                    factory.addAdvice((org.aopalliance.intercept.MethodInterceptor) invocation -> {
+                        adviceCalls.incrementAndGet();
+                        return invocation.proceed();
+                    });
+                    return factory.getProxy();
+                }
+            };
         }
     }
 }

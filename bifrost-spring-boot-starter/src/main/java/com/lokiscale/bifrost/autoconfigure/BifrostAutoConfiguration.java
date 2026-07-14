@@ -15,8 +15,10 @@ import com.lokiscale.bifrost.core.DefaultBifrostExceptionTransformer;
 import com.lokiscale.bifrost.core.DefaultPlanTaskLinker;
 import com.lokiscale.bifrost.core.ExecutionCoordinator;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
+import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
+import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
 import com.lokiscale.bifrost.runtime.attachment.DefaultMissionInputMaterializer;
@@ -94,6 +96,14 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
+    @ConditionalOnMissingBean(SkillImplementationTargetRegistry.class)
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public SkillImplementationTargetRegistry skillImplementationTargetRegistry()
+    {
+        return new InMemorySkillImplementationTargetRegistry();
+    }
+
+    @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public BifrostExceptionTransformer bifrostExceptionTransformer()
@@ -105,13 +115,13 @@ public class BifrostAutoConfiguration
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(
-            CapabilityRegistry capabilityRegistry,
+            SkillImplementationTargetRegistry skillImplementationTargetRegistry,
             ObjectProvider<ObjectMapper> objectMapperProvider,
             BifrostExceptionTransformer bifrostExceptionTransformer,
             SkillInputContractResolver skillInputContractResolver)
     {
         return SkillMethodBeanPostProcessor.create(
-                capabilityRegistry,
+                skillImplementationTargetRegistry,
                 objectMapperProvider.getIfAvailable(ObjectMapper::new),
                 bifrostExceptionTransformer,
                 skillInputContractResolver);
@@ -144,10 +154,15 @@ public class BifrostAutoConfiguration
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public YamlSkillCapabilityRegistrar yamlSkillCapabilityRegistrar(CapabilityRegistry capabilityRegistry,
+            SkillImplementationTargetRegistry skillImplementationTargetRegistry,
             YamlSkillCatalog yamlSkillCatalog,
             SkillInputContractResolver skillInputContractResolver)
     {
-        return new YamlSkillCapabilityRegistrar(capabilityRegistry, yamlSkillCatalog, skillInputContractResolver);
+        return new YamlSkillCapabilityRegistrar(
+                capabilityRegistry,
+                skillImplementationTargetRegistry,
+                yamlSkillCatalog,
+                skillInputContractResolver);
     }
 
     @Bean

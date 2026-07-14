@@ -15,6 +15,11 @@ public class InMemoryCapabilityRegistry implements CapabilityRegistry
         String normalizedName = requireNonBlank(capabilityName, "capabilityName");
         CapabilityMetadata nonNullMetadata = Objects.requireNonNull(metadata, "metadata must not be null");
 
+        if (nonNullMetadata.kind() != CapabilityKind.YAML_SKILL)
+        {
+            throw new IllegalArgumentException("CapabilityRegistry is the public YAML skill registry; Java methods must be registered through SkillImplementationTargetRegistry.");
+        }
+
         if (!normalizedName.equals(nonNullMetadata.name()))
         {
             throw new IllegalArgumentException("capabilityName must match metadata.name");

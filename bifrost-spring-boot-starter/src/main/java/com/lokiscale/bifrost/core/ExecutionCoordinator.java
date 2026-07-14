@@ -291,6 +291,11 @@ public class ExecutionCoordinator
         {
             throw new IllegalArgumentException("Unknown capability '" + skillName + "'");
         }
+        if (capability.kind() != CapabilityKind.YAML_SKILL || !skillName.equals(capability.name()))
+        {
+            throw new IllegalStateException("CapabilityRegistry returned inconsistent public YAML metadata for '"
+                    + skillName + "'");
+        }
         return capability;
     }
 

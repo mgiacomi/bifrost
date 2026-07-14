@@ -33,7 +33,7 @@ public class SampleController {
 
     @GetMapping(value = "/expenses", produces = MediaType.APPLICATION_JSON_VALUE)
     public Object getExpenses() {
-        return skillTemplate.invoke("getLatestExpenses", Map.of());
+        return skillTemplate.invoke("expenseLookup", Map.of());
     }
 
     @GetMapping(value = "/feedstock/parse-sample", produces = MediaType.APPLICATION_JSON_VALUE)

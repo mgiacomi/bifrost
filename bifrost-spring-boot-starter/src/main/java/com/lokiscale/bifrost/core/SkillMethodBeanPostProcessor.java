@@ -4,20 +4,27 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.util.json.schema.JsonSchemaGenerator;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.core.BridgeMethodResolver;
+import org.springframework.core.MethodIntrospector;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.io.Resource;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.util.StreamUtils;
+import org.springframework.util.ClassUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,94 +37,215 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-public class SkillMethodBeanPostProcessor implements BeanPostProcessor
+public class SkillMethodBeanPostProcessor implements BeanPostProcessor, BeanFactoryAware
 {
     private static final Logger log = LoggerFactory.getLogger(SkillMethodBeanPostProcessor.class);
 
-    private final CapabilityRegistry capabilityRegistry;
+    private final SkillImplementationTargetRegistry targetRegistry;
     private final ObjectMapper objectMapper;
     private final BifrostExceptionTransformer bifrostExceptionTransformer;
     private final SkillInputContractResolver inputContractResolver;
+    private final Set<String> processedBeanNames = ConcurrentHashMap.newKeySet();
+    private BeanFactory beanFactory;
 
-    public SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry)
+    public SkillMethodBeanPostProcessor(SkillImplementationTargetRegistry targetRegistry)
     {
-        this(capabilityRegistry, new ObjectMapper(), new DefaultBifrostExceptionTransformer(), new SkillInputContractResolver());
+        this(targetRegistry, new ObjectMapper(), new DefaultBifrostExceptionTransformer(), new SkillInputContractResolver());
     }
 
-    public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
+    public static SkillMethodBeanPostProcessor create(SkillImplementationTargetRegistry targetRegistry,
             BifrostExceptionTransformer bifrostExceptionTransformer)
     {
         return new SkillMethodBeanPostProcessor(
-                capabilityRegistry,
+                targetRegistry,
                 new ObjectMapper(),
                 bifrostExceptionTransformer,
                 new SkillInputContractResolver());
     }
 
-    public static SkillMethodBeanPostProcessor create(CapabilityRegistry capabilityRegistry,
+    public static SkillMethodBeanPostProcessor create(SkillImplementationTargetRegistry targetRegistry,
             ObjectMapper objectMapper,
             BifrostExceptionTransformer bifrostExceptionTransformer,
             SkillInputContractResolver inputContractResolver)
     {
         return new SkillMethodBeanPostProcessor(
-                capabilityRegistry,
+                targetRegistry,
                 objectMapper,
                 bifrostExceptionTransformer,
                 inputContractResolver);
     }
 
-    SkillMethodBeanPostProcessor(CapabilityRegistry capabilityRegistry,
+    SkillMethodBeanPostProcessor(SkillImplementationTargetRegistry targetRegistry,
             ObjectMapper objectMapper,
             BifrostExceptionTransformer bifrostExceptionTransformer,
             SkillInputContractResolver inputContractResolver)
     {
-        this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry, "capabilityRegistry must not be null");
+        this.targetRegistry = Objects.requireNonNull(targetRegistry, "targetRegistry must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.bifrostExceptionTransformer = Objects.requireNonNull(bifrostExceptionTransformer, "bifrostExceptionTransformer must not be null");
         this.inputContractResolver = Objects.requireNonNull(inputContractResolver, "inputContractResolver must not be null");
     }
 
     @Override
+    public void setBeanFactory(BeanFactory beanFactory) throws BeansException
+    {
+        this.beanFactory = Objects.requireNonNull(beanFactory, "beanFactory must not be null");
+    }
+
+    @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException
     {
-        ReflectionUtils.doWithMethods(bean.getClass(), method -> registerSkillMethod(bean, beanName, method), method -> method.isAnnotationPresent(SkillMethod.class));
+        synchronized (processedBeanNames)
+        {
+            if (processedBeanNames.contains(beanName))
+            {
+                return bean;
+            }
+
+            discoverAndRegisterTargets(bean, beanName);
+            processedBeanNames.add(beanName);
+        }
         return bean;
     }
 
-    private void registerSkillMethod(Object bean, String beanName, Method method)
+    private void discoverAndRegisterTargets(Object bean, String beanName)
     {
-        SkillMethod annotation = method.getAnnotation(SkillMethod.class);
-        String capabilityName = annotation.name().isBlank() ? method.getName() : annotation.name();
-        String capabilityDescription = annotation.description().isBlank() ? method.getName() : annotation.description();
-        String inputSchema = buildInputSchema(method);
+        Class<?> targetClass = AopUtils.getTargetClass(bean);
+        Map<Method, SkillMethod> discovered = MethodIntrospector.selectMethods(
+                targetClass,
+                (MethodIntrospector.MetadataLookup<SkillMethod>) method ->
+                        AnnotatedElementUtils.findMergedAnnotation(method, SkillMethod.class));
 
-        ToolDefinition toolDefinition = ToolDefinition.builder()
-                .name(capabilityName)
-                .description(capabilityDescription)
-                .inputSchema(inputSchema)
-                .build();
+        Map<Method, SkillMethod> canonicalMethods = new LinkedHashMap<>();
+        discovered.forEach((method, annotation) -> {
+            Method canonical = BridgeMethodResolver.findBridgedMethod(method);
+            if (!canonical.isBridge() && !canonical.isSynthetic())
+            {
+                canonicalMethods.putIfAbsent(canonical, annotation);
+            }
+        });
 
-        CapabilityInvoker capabilityInvoker = arguments -> invokeSkillMethod(bean, method, capabilityName, arguments);
+        canonicalMethods.keySet().stream()
+                .collect(Collectors.groupingBy(Method::getName, LinkedHashMap::new, Collectors.toList()))
+                .forEach((methodName, methods) -> {
+                    if (methods.size() > 1)
+                    {
+                        String targetId = beanName + "#" + methodName;
+                        throw new IllegalStateException("Invalid @SkillMethod targets on bean '" + beanName
+                                + "': methods named '" + methodName + "' produce the ambiguous target ID '"
+                                + targetId + "'. Annotated target method names must be unique within a Spring bean; rename one method.");
+                    }
+                });
 
-        CapabilityMetadata metadata = new CapabilityMetadata(
-                beanName + "#" + method.getName(),
-                capabilityName,
-                capabilityDescription,
-                annotation.modelPreference(),
-                SkillExecutionDescriptor.none(),
-                Set.of(),
-                capabilityInvoker,
-                CapabilityKind.JAVA_METHOD,
-                new CapabilityToolDescriptor(capabilityName, capabilityDescription, toolDefinition.inputSchema()),
-                inputContractResolver.resolveJavaCapability(toolDefinition.inputSchema()),
-                null);
-
-        capabilityRegistry.register(capabilityName, metadata);
+        canonicalMethods.forEach((method, annotation) ->
+                registerSkillMethod(beanName, method, resolveContractMethod(beanName, targetClass, method), annotation));
     }
 
-    private String buildInputSchema(Method method)
+    private void registerSkillMethod(String beanName, Method method, Method contractMethod, SkillMethod annotation)
+    {
+        String capabilityDescription = annotation.description().isBlank() ? method.getName() : annotation.description();
+        String inputSchema = buildInputSchema(method, contractMethod);
+        String targetId = beanName + "#" + method.getName();
+        CapabilityInvoker capabilityInvoker = arguments ->
+                invokeSkillMethod(beanName, method, contractMethod, targetId, arguments);
+
+        SkillImplementationTarget target = new SkillImplementationTarget(
+                targetId,
+                capabilityDescription,
+                annotation.modelPreference(),
+                capabilityInvoker,
+                inputSchema,
+                inputContractResolver.resolveJavaCapability(inputSchema));
+
+        targetRegistry.register(target);
+    }
+
+    private Method resolveContractMethod(String beanName, Class<?> targetClass, Method canonicalMethod)
+    {
+        List<Method> interfaceContracts = ClassUtils.getAllInterfacesForClassAsSet(targetClass).stream()
+                .flatMap(type -> java.util.Arrays.stream(type.getMethods()))
+                .filter(candidate -> AnnotatedElementUtils.findMergedAnnotation(candidate, SkillMethod.class) != null)
+                .filter(candidate -> mapsToCanonicalMethod(candidate, targetClass, canonicalMethod))
+                .distinct()
+                .sorted(java.util.Comparator.comparing(Method::toGenericString))
+                .toList();
+
+        if (canonicalMethod.isAnnotationPresent(SkillMethod.class)
+                && interfaceContracts.stream().noneMatch(this::hasToolParameterMetadata))
+        {
+            return canonicalMethod;
+        }
+
+        if (interfaceContracts.size() > 1)
+        {
+            Method firstContract = interfaceContracts.getFirst();
+            boolean compatible = interfaceContracts.stream()
+                    .skip(1)
+                    .allMatch(candidate -> contractsEquivalent(firstContract, candidate));
+            if (!compatible)
+            {
+                throw new IllegalStateException("Invalid @SkillMethod contract on bean '" + beanName
+                        + "' for method '" + canonicalMethod.getName()
+                        + "': annotated interfaces declare incompatible method or parameter metadata. "
+                        + "Consolidate the declarations into one public interface contract.");
+            }
+        }
+
+        return interfaceContracts.stream()
+                .filter(this::hasToolParameterMetadata)
+                .findFirst()
+                .orElseGet(() -> interfaceContracts.stream().findFirst().orElse(canonicalMethod));
+    }
+
+    private boolean contractsEquivalent(Method left, Method right)
+    {
+        if (!Objects.equals(
+                AnnotatedElementUtils.findMergedAnnotation(left, SkillMethod.class),
+                AnnotatedElementUtils.findMergedAnnotation(right, SkillMethod.class)))
+        {
+            return false;
+        }
+
+        Parameter[] leftParameters = left.getParameters();
+        Parameter[] rightParameters = right.getParameters();
+        if (leftParameters.length != rightParameters.length)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < leftParameters.length; index++)
+        {
+            if (!leftParameters[index].getName().equals(rightParameters[index].getName())
+                    || !Objects.equals(
+                            leftParameters[index].getAnnotation(ToolParam.class),
+                            rightParameters[index].getAnnotation(ToolParam.class)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean hasToolParameterMetadata(Method method)
+    {
+        return java.util.Arrays.stream(method.getParameters())
+                .anyMatch(parameter -> parameter.isAnnotationPresent(ToolParam.class));
+    }
+
+    private boolean mapsToCanonicalMethod(Method interfaceMethod, Class<?> targetClass, Method canonicalMethod)
+    {
+        Method implementationMethod = ReflectionUtils.findMethod(
+                targetClass,
+                interfaceMethod.getName(),
+                interfaceMethod.getParameterTypes());
+        return implementationMethod != null
+                && BridgeMethodResolver.findBridgedMethod(implementationMethod).equals(canonicalMethod);
+    }
+
+    private String buildInputSchema(Method method, Method contractMethod)
     {
         try
         {
@@ -125,11 +253,19 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor
             JsonNode propertiesNode = schema.path("properties");
             if (propertiesNode instanceof ObjectNode propertiesObject)
             {
-                for (Parameter parameter : method.getParameters())
+                Parameter[] parameters = method.getParameters();
+                Parameter[] contractParameters = contractMethod.getParameters();
+                for (int index = 0; index < parameters.length; index++)
                 {
-                    JsonNode parameterSchema = propertiesObject.get(parameter.getName());
+                    Parameter parameter = parameters[index];
+                    Parameter contractParameter = contractParameters[index];
+                    String schemaName = contractParameter.getName();
+                    JsonNode parameterSchema = propertiesObject.remove(parameter.getName());
                     if (parameterSchema != null)
                     {
+                        propertiesObject.set(schemaName, parameterSchema);
+                        applyContractParameterMetadata((ObjectNode) schema, parameterSchema,
+                                parameter.getName(), schemaName, contractParameter, parameter);
                         applyRuntimeInputSemantics(parameterSchema, objectMapper.constructType(parameter.getParameterizedType()));
                     }
                 }
@@ -139,6 +275,42 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor
         catch (JsonProcessingException ex)
         {
             throw new IllegalStateException("Failed to build method input schema for " + method, ex);
+        }
+    }
+
+    private void applyContractParameterMetadata(ObjectNode rootSchema,
+            JsonNode parameterSchema,
+            String implementationParameterName,
+            String parameterName,
+            Parameter contractParameter,
+            Parameter implementationParameter)
+    {
+        ToolParam toolParam = contractParameter.getAnnotation(ToolParam.class);
+        if (toolParam == null)
+        {
+            toolParam = implementationParameter.getAnnotation(ToolParam.class);
+        }
+        if (toolParam != null
+                && parameterSchema instanceof ObjectNode objectSchema
+                && !toolParam.description().isBlank())
+        {
+            objectSchema.put("description", toolParam.description());
+        }
+
+        ArrayNode required = rootSchema.withArray("required");
+        boolean generatedRequired = false;
+        for (int index = required.size() - 1; index >= 0; index--)
+        {
+            String requiredName = required.get(index).asText();
+            if (parameterName.equals(requiredName) || implementationParameterName.equals(requiredName))
+            {
+                generatedRequired = true;
+                required.remove(index);
+            }
+        }
+        if (toolParam == null ? generatedRequired : toolParam.required())
+        {
+            required.add(parameterName);
         }
     }
 
@@ -222,21 +394,31 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor
         return "Provide the value inline or as a ref:// URI.";
     }
 
-    private Object invokeSkillMethod(Object bean, Method method, String capabilityName, Map<String, Object> arguments)
+    private Object invokeSkillMethod(String beanName,
+            Method method,
+            Method contractMethod,
+            String targetId,
+            Map<String, Object> arguments)
     {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         ArrayList<InputStream> openedStreams = new ArrayList<>();
 
         try
         {
-            Object[] invocationArguments = bindArguments(method, safeArguments, openedStreams);
-            ReflectionUtils.makeAccessible(method);
-            Object result = ReflectionUtils.invokeMethod(method, bean, invocationArguments);
+            if (beanFactory == null)
+            {
+                throw new IllegalStateException("BeanFactory has not been set for skill implementation target '" + targetId + "'");
+            }
+            Object bean = beanFactory.getBean(beanName);
+            Method invocableMethod = selectRuntimeInvocableMethod(method, contractMethod, bean.getClass());
+            Object[] invocationArguments = bindArguments(method, contractMethod, safeArguments, openedStreams);
+            ReflectionUtils.makeAccessible(invocableMethod);
+            Object result = ReflectionUtils.invokeMethod(invocableMethod, bean, invocationArguments);
             return objectMapper.writeValueAsString(result);
         }
         catch (JsonProcessingException ex)
         {
-            throw new IllegalStateException("Failed to serialize capability result for " + capabilityName, ex);
+            throw new IllegalStateException("Failed to serialize skill implementation target result for " + targetId, ex);
         }
         catch (IllegalArgumentException ex)
         {
@@ -244,25 +426,69 @@ public class SkillMethodBeanPostProcessor implements BeanPostProcessor
         }
         catch (RuntimeException ex)
         {
-            log.warn("Capability '{}' failed during deterministic execution", capabilityName, ex);
+            log.warn("Skill implementation target '{}' failed during deterministic execution", targetId, ex);
             return bifrostExceptionTransformer.transform(ex);
         }
         finally
         {
-            closeStreams(capabilityName, openedStreams);
+            closeStreams(targetId, openedStreams);
         }
     }
 
-    private Object[] bindArguments(Method method, Map<String, Object> arguments, List<InputStream> openedStreams)
+    private Method selectRuntimeInvocableMethod(Method canonicalMethod, Method contractMethod, Class<?> runtimeClass)
+    {
+        try
+        {
+            return AopUtils.selectInvocableMethod(canonicalMethod, runtimeClass);
+        }
+        catch (IllegalStateException ex)
+        {
+            if (contractMethod.getDeclaringClass().isInterface()
+                    && contractMethod.getDeclaringClass().isAssignableFrom(runtimeClass))
+            {
+                return contractMethod;
+            }
+
+            List<Method> candidates = ClassUtils.getAllInterfacesForClassAsSet(runtimeClass).stream()
+                    .flatMap(type -> java.util.Arrays.stream(type.getMethods()))
+                    .filter(candidate -> mapsToCanonicalMethod(
+                            candidate,
+                            canonicalMethod.getDeclaringClass(),
+                            canonicalMethod))
+                    .sorted(java.util.Comparator.comparing(Method::toGenericString))
+                    .toList();
+            if (candidates.size() == 1)
+            {
+                return candidates.getFirst();
+            }
+            if (!candidates.isEmpty() && candidates.stream().allMatch(candidate ->
+                    java.util.Arrays.equals(candidate.getParameterTypes(), candidates.getFirst().getParameterTypes())))
+            {
+                return candidates.getFirst();
+            }
+            throw ex;
+        }
+    }
+
+    private Object[] bindArguments(Method method,
+            Method contractMethod,
+            Map<String, Object> arguments,
+            List<InputStream> openedStreams)
     {
         Parameter[] parameters = method.getParameters();
+        Parameter[] contractParameters = contractMethod.getParameters();
         Object[] bound = new Object[parameters.length];
 
         for (int index = 0; index < parameters.length; index++)
         {
             Parameter parameter = parameters[index];
-            Object rawValue = arguments.get(parameter.getName());
-            ToolParam toolParam = parameter.getAnnotation(ToolParam.class);
+            Parameter contractParameter = contractParameters[index];
+            Object rawValue = arguments.get(contractParameter.getName());
+            ToolParam toolParam = contractParameter.getAnnotation(ToolParam.class);
+            if (toolParam == null)
+            {
+                toolParam = parameter.getAnnotation(ToolParam.class);
+            }
             if (rawValue == null && toolParam != null && !toolParam.required())
             {
                 bound[index] = null;

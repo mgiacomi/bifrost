@@ -152,9 +152,69 @@ class YamlSkillCatalogTests {
 
                     assertThat(catalog.getSkill("root.visible.skill")).isNotNull();
                     assertThat(catalog.getSkill("root.visible.skill").allowedSkills())
-                            .containsExactly("allowed.visible.skill", "internal.only.target", "disallowed.visible.skill");
+                            .containsExactly("allowed.visible.skill", "targetBean#deterministicTarget", "disallowed.visible.skill");
                     assertThat(catalog.getSkill("allowed.visible.skill").rbacRoles())
                             .containsExactly("ROLE_ALLOWED");
+                });
+    }
+
+    @Test
+    void returnsDefensiveManifestCopiesFromPublicCatalog() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/allowed-child-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+                    YamlSkillDefinition definition = catalog.getSkill("allowed.visible.skill");
+
+                    definition.manifest().setName("mutated.name");
+                    definition.manifest().setRbacRoles(java.util.List.of("ROLE_MUTATED"));
+                    definition.manifest().getMapping().setTargetId("mutatedBean#method");
+
+                    assertThat(catalog.getSkill("allowed.visible.skill").manifest().getName())
+                            .isEqualTo("allowed.visible.skill");
+                    assertThat(catalog.getSkill("allowed.visible.skill").rbacRoles())
+                            .containsExactly("ROLE_ALLOWED");
+                    assertThat(catalog.getSkill("allowed.visible.skill").mappingTargetId())
+                            .isEqualTo("targetBean#deterministicTarget");
+                    assertThat(catalog.getSkill("mutated.name")).isNull();
+                });
+    }
+
+    @Test
+    void returnsDefensiveCopiesFromNestedManifestAccessors() {
+        contextRunner
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/valid/regex-linter-skill.yaml,"
+                                + "classpath:/skills/valid/input-schema-skill.yaml,"
+                                + "classpath:/skills/valid/output-schema-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    catalog.getSkill("linted.skill").linter().setType("mutated");
+                    catalog.getSkill("input.schema.skill").inputSchema().setType("string");
+                    catalog.getSkill("output.schema.skill").outputSchema().setType("string");
+
+                    assertThat(catalog.getSkill("linted.skill").linter().getType()).isEqualTo("regex");
+                    assertThat(catalog.getSkill("input.schema.skill").inputSchema().getType()).isEqualTo("object");
+                    assertThat(catalog.getSkill("output.schema.skill").outputSchema().getType()).isEqualTo("object");
+                });
+    }
+
+    @Test
+    void distinguishesLlmBackedAndMappedJavaImplementationTypes() {
+        contextRunner
+                .withUserConfiguration(TargetBeanConfiguration.class)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml,classpath:/skills/valid/mapped-method-skill.yaml")
+                .run(context -> {
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+
+                    assertThat(catalog.getSkill("thinking.default.skill").implementationType())
+                            .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.LLM_BACKED);
+                    assertThat(catalog.getSkill("mapped.method.skill").implementationType())
+                            .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
+                    assertThat(catalog.getSkill("mapped.method.skill").mappingTargetId())
+                            .isEqualTo("targetBean#deterministicTarget");
                 });
     }
 
@@ -424,6 +484,20 @@ class YamlSkillCatalogTests {
     }
 
     @Test
+    void allowsHashInEvidenceToolNameUntilPublicNameValidationIsImplemented() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/evidence-contract-hash-public-name-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(YamlSkillCatalog.class)
+                            .getSkill("evidence.hash.name.skill")
+                            .evidenceContract()
+                            .evidenceProducedByTool("review#skill"))
+                            .containsExactly("review_result");
+                });
+    }
+
+    @Test
     void failsStartupWhenOutputSchemaMaxRetriesIsPresentWithoutSchema() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/output-schema-max-retries-without-schema-skill.yaml")
@@ -681,7 +755,7 @@ class YamlSkillCatalogTests {
 
     static class TargetBean {
 
-        @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
+        @SkillMethod(description = "Deterministic target")
         String deterministicTarget(String input) {
             return "mapped:" + input;
         }

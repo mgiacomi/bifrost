@@ -168,7 +168,7 @@ output_schema_max_retries: 2
 Important execution settings:
 
 - `planning_mode`: enables the step-based HTN executor only when set to `true`. It is disabled by default.
-- `allowed_skills`: limits the tools visible to a planning skill. Use the registered YAML skill or Java capability name.
+- `allowed_skills`: limits the YAML skills visible to a planning skill. Use public YAML manifest names only; Java target IDs are internal mapping metadata.
 - `max_steps`: bounds planning-loop steps.
 - `prompt`: optional private instructions for an LLM-backed skill.
 - `thinking_level`: selects a configured thinking level for models that support it.
@@ -182,7 +182,7 @@ For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf
 
 ### Mapping a YAML skill to Java
 
-Use `mapping.target_id` to give a Java capability a YAML skill name, input contract, and access controls. A mapped skill delegates to Java rather than an LLM, so it cannot also define `prompt`.
+YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped skill delegates to Java rather than an LLM, so it cannot also define `prompt`.
 
 ```yaml
 name: expenseLookup
@@ -192,9 +192,9 @@ mapping:
   target_id: expenseService#getLatestExpenses
 ```
 
-### Java `@SkillMethod` skills
+### Java `@SkillMethod` implementation targets
 
-Use `@SkillMethod` when the implementation should run deterministic Java logic. It registers a capability for other skills; `SkillTemplate` invokes YAML skills, so add a mapped YAML manifest when this Java method must be exposed as a top-level Bifrost skill.
+Use `@SkillMethod` when the implementation should run deterministic Java logic. It registers an internal target, not a public capability or alias. Expose it through a mapped YAML manifest before application code can invoke it or another YAML skill can list it in `allowed_skills`; both surfaces accept YAML names only.
 
 ```java
 import com.lokiscale.bifrost.annotation.SkillMethod;
@@ -206,7 +206,7 @@ import java.util.Map;
 @Service
 public class ExpenseService {
 
-    @SkillMethod(name = "getLatestExpenses", description = "Returns a fake list of recent expenses.")
+    @SkillMethod(description = "Returns a fake list of recent expenses.")
     public List<Map<String, Object>> getLatestExpenses() {
         return List.of(
             Map.of("category", "Software", "amount", 120.00, "date", "2026-03-20")

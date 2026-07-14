@@ -1,6 +1,6 @@
 # Bifrost Sample
 
-A runnable Spring Boot application that demonstrates Bifrost skills end to end: YAML skill discovery, Java `@SkillMethod` capabilities, multi-provider model routing, HTN planning, vision/attachment inputs, and HTTP invocation via `SkillTemplate`.
+A runnable Spring Boot application that demonstrates Bifrost skills end to end: public YAML skill discovery, internal Java `@SkillMethod` targets, multi-provider model routing, HTN planning, vision/attachment inputs, and HTTP invocation via `SkillTemplate`.
 
 Use this module as a reference implementation when integrating `bifrost-spring-boot-starter` into your own app.
 
@@ -131,7 +131,7 @@ On-ramp patterns: mapped Java, single-shot LLM, shallow planning.
 - **Model:** `granite4-tiny` (required by schema; execution is pure Java)
 - **Behavior:** Returns a fixed list of fake expenses from `ExpenseService`.
 
-Demonstrates: exposing Spring service methods as Bifrost capabilities via `@SkillMethod` + YAML mapping.
+Demonstrates: exposing an internal Spring `@SkillMethod` target through a public YAML skill. The controller and `allowed_skills` use `expenseLookup`; `expenseService#getLatestExpenses` is mapping-only implementation metadata.
 
 #### 2. `invoiceParser` → LLM
 
@@ -200,13 +200,13 @@ Base URL: `http://localhost:8081`
 
 | Method | Path | Skill invoked | Notes |
 | --- | --- | --- | --- |
-| `GET` | `/expenses` | `getLatestExpenses` * | Invokes the Java capability name directly via `SkillTemplate` |
+| `GET` | `/expenses` | `expenseLookup` | Invokes the mapped YAML skill, which delegates to the internal expense target |
 | `GET` | `/feedstock/parse-sample` | `feedstockTicketParser` | Uses bundled sample image inside the Java skill |
 | `GET` | `/feedstock/parse-sample-by-skill` | `feedstockTicketParserBySkill` | Passes `classpath:/forms/feedstock-p1.jpg` as an attachment |
 | `GET` | `/invoice/parse?filePath=...` | `invoiceParser` | Reads invoice text from a local filesystem path |
 | `GET` | `/invoice/check-duplicate?filePath=...` | `duplicateInvoiceChecker` | Planning skill; needs Ollama model available |
 
-\* `/expenses` calls `skillTemplate.invoke("getLatestExpenses", ...)`. The YAML-facing name for the same Java method is `expenseLookup`. Prefer YAML skill names when composing agent workflows; the direct capability name works when the method is registered as a top-level capability.
+`/expenses` calls `skillTemplate.invoke("expenseLookup", ...)`. The Java method name and `expenseService#getLatestExpenses` target ID are not public aliases.
 
 ### Example calls
 
@@ -265,9 +265,9 @@ Date: 03/30/2026
 
 ## How invocation works (code path)
 
-1. Spring Boot starts `SampleApplication` and Bifrost auto-configuration loads YAML skills + `@SkillMethod` beans.
+1. Spring Boot starts `SampleApplication`; Bifrost publishes YAML skills and discovers `@SkillMethod` methods in a separate internal target registry.
 2. `SampleController` injects `SkillTemplate`.
-3. Controllers call `skillTemplate.invoke(skillName, inputs)` or the overload with a `Consumer<SkillExecutionView>` observer.
+3. Controllers call `skillTemplate.invoke(yamlSkillName, inputs)` or the overload with a `Consumer<SkillExecutionView>` observer. Raw Java method names and `beanName#methodName` target IDs are not invocation aliases.
 4. Bifrost resolves the skill, selects the named model provider, runs planning or direct execution, and returns text (plus optional journal).
 
 Minimal pattern used throughout the sample:
@@ -282,8 +282,8 @@ String result = skillTemplate.invoke("invoiceParser", Map.of("payload", invoiceT
 
 | Test class | Coverage |
 | --- | --- |
-| `SampleApplicationTests` | Context loads, Bifrost auto-config present, capabilities registered, pure-YAML feedstock skill shape |
-| `SampleControllerTest` | Controller delegates to `SkillTemplate` for feedstock (mapped + pure YAML) and duplicate-invoice paths |
+| `SampleApplicationTests` | Context loads, YAML-only public registry, internal expense target, pure-YAML feedstock skill shape |
+| `SampleControllerTest` | Controller delegates with public YAML names for expenses, feedstock, and duplicate-invoice paths |
 
 These tests mock or stub model calls where needed; they validate wiring, not live LLM quality.
 

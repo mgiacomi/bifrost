@@ -94,7 +94,7 @@ public class FeedstockFormExtractionService
         this.model = model;
     }
 
-    @SkillMethod(name = "extractSampleFeedstockTicket", description = "Extracts structured weigh-ticket fields from the sample feedstock image.")
+    @SkillMethod(description = "Extracts structured weigh-ticket fields from the sample feedstock image.")
     public JsonNode extractSampleFeedstockTicket()
     {
         if (apiKey == null || apiKey.isBlank())

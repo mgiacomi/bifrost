@@ -11,7 +11,9 @@ import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.ExecutionCoordinator;
+import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
+import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.runtime.input.SkillInputValidator;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
@@ -88,6 +90,7 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(BifrostSessionProperties.class);
                     assertThat(context).hasSingleBean(ExecutionTraceProperties.class);
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
+                    assertThat(context).hasSingleBean(SkillImplementationTargetRegistry.class);
                     assertThat(context).hasSingleBean(BifrostModelsProperties.class);
                     assertThat(context).hasSingleBean(YamlSkillCatalog.class);
                     assertThat(context).hasSingleBean(SkillVisibilityResolver.class);
@@ -222,15 +225,31 @@ class BifrostAutoConfigurationTests {
     }
 
     @Test
-    void registersYamlSkillAlongsideDiscoveredSkillMethodTargets() {
+    void publishesYamlSkillAndKeepsDiscoveredTargetInternal() {
         contextRunner
                 .withUserConfiguration(MappedSkillTargetConfiguration.class)
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
                 .run(context -> {
                     CapabilityRegistry capabilityRegistry = context.getBean(CapabilityRegistry.class);
+                    SkillImplementationTargetRegistry targetRegistry = context.getBean(SkillImplementationTargetRegistry.class);
 
-                    assertThat(capabilityRegistry.getCapability("deterministicTarget")).isNotNull();
+                    assertThat(capabilityRegistry.getCapability("deterministicTarget")).isNull();
                     assertThat(capabilityRegistry.getCapability("mapped.method.skill")).isNotNull();
+                    assertThat(targetRegistry.getTarget("targetBean#deterministicTarget")).isNotNull();
+                });
+    }
+
+    @Test
+    void backsOffWhenApplicationProvidesImplementationTargetRegistry() {
+        SkillImplementationTargetRegistry customRegistry = new InMemorySkillImplementationTargetRegistry();
+
+        contextRunner
+                .withBean(SkillImplementationTargetRegistry.class, () -> customRegistry)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SkillImplementationTargetRegistry.class);
+                    assertThat(context.getBean(SkillImplementationTargetRegistry.class)).isSameAs(customRegistry);
+                    assertThat(context).hasSingleBean(CapabilityRegistry.class);
                 });
     }
 
@@ -245,7 +264,7 @@ class BifrostAutoConfigurationTests {
 
     static class TargetBean {
 
-        @SkillMethod(name = "deterministicTarget", description = "Deterministic target")
+        @SkillMethod(description = "Deterministic target")
         String deterministicTarget(String input) {
             return "mapped:" + input;
         }

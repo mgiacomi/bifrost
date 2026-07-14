@@ -11,8 +11,6 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface SkillMethod
 {
-    String name() default "";
-
     String description();
 
     // ENG-005 keeps modelPreference as legacy Java-target metadata only.

@@ -44,7 +44,7 @@ Do not load every document by default. Start with the routing entry most relevan
 
 | Topic | Coverage | Notes |
 | --- | --- | --- |
-| Skill-tree mental model | Initial, source-verified | Root invocation, LLM-backed YAML skills, mapped YAML skills, deterministic Java leaves, visibility, and nesting |
+| Skill-tree mental model | Initial, source-verified | YAML-only public identity, separate Java target registry, mapping, root invocation, visibility, and nesting |
 | Evidence contracts | Initial, source-verified | AND semantics, semantic evidence types, multiple producers, enforcement, and nested isolation |
 | Source verification | Initial | How an LLM should use guide, tests, fixtures, samples, and production code together |
 | Skill-design review | Initial | Cross-cutting questions; not a manifest validator |

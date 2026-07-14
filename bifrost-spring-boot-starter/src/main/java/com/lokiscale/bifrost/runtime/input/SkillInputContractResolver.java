@@ -2,7 +2,7 @@ package com.lokiscale.bifrost.runtime.input;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lokiscale.bifrost.core.CapabilityMetadata;
+import com.lokiscale.bifrost.core.SkillImplementationTarget;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.springframework.lang.Nullable;
@@ -38,7 +38,7 @@ public class SkillInputContractResolver
                 fromJsonSchema(inputSchema));
     }
 
-    public SkillInputContract resolveYamlCapability(YamlSkillDefinition definition, @Nullable CapabilityMetadata mappedTarget)
+    public SkillInputContract resolveYamlCapability(YamlSkillDefinition definition, @Nullable SkillImplementationTarget mappedTarget)
     {
         Objects.requireNonNull(definition, "definition must not be null");
         if (definition.hasDeclaredInputSchema())

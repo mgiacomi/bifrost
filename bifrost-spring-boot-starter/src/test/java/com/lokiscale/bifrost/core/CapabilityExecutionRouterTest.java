@@ -279,7 +279,7 @@ class CapabilityExecutionRouterTest {
     }
 
     @Test
-    void javaCapabilityStillAcceptsDirectRefBackedObjectsOnRootInvocationPath() {
+    void mappedYamlCapabilityAcceptsDirectRefBackedObjectsOnRootInvocationPath() {
         RefResolver refResolver = mock(RefResolver.class);
         ExecutionStateService stateService = mock(ExecutionStateService.class);
         CapabilityExecutionRouter router = new CapabilityExecutionRouter(
@@ -290,14 +290,14 @@ class CapabilityExecutionRouterTest {
         BifrostSession session = new BifrostSession("session-1", 2);
         ByteArrayResource payload = new ByteArrayResource(new byte[]{1, 2, 3});
         CapabilityMetadata capability = new CapabilityMetadata(
-                "java:binaryTool",
+                "yaml:binaryTool",
                 "binaryTool",
                 "binary tool",
                 ModelPreference.LIGHT,
                 SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 arguments -> arguments.get("payload"),
-                CapabilityKind.JAVA_METHOD,
+                CapabilityKind.YAML_SKILL,
                 new CapabilityToolDescriptor("binaryTool", "binary tool", """
                         {
                           "type": "object",
@@ -326,7 +326,7 @@ class CapabilityExecutionRouterTest {
                           "additionalProperties": false
                         }
                         """),
-                null);
+                "binaryTargetBean#binaryTool");
 
         when(refResolver.resolveArguments(any(), eq(session))).thenAnswer(invocation -> invocation.getArgument(0));
 

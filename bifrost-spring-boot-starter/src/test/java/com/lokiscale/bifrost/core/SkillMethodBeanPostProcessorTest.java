@@ -13,6 +13,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.util.StreamUtils;
 
 import java.io.IOException;
@@ -29,33 +30,60 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 class SkillMethodBeanPostProcessorTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
 
     @Test
-    void registersAnnotatedMethodAsCapability() {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+    void registersAnnotatedMethodAsInternalTarget() {
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new RegistrationBean(), "registrationBean");
+        process(processor, new RegistrationBean(), "registrationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("testOperation");
+        SkillImplementationTarget metadata = registry.getTarget("registrationBean#mappedOperation");
         assertThat(metadata).isNotNull();
         assertThat(metadata.id()).isEqualTo("registrationBean#mappedOperation");
-        assertThat(metadata.name()).isEqualTo("testOperation");
         assertThat(metadata.description()).isEqualTo("Test desc");
         assertThat(metadata.modelPreference()).isEqualTo(ModelPreference.HEAVY);
-        assertThat(metadata.skillExecution().configured()).isFalse();
-        assertThat(registry.getCapability("nonSkillOperation")).isNull();
-        assertThat(registry.getAllCapabilities()).hasSize(1);
+        assertThat(registry.getTarget("registrationBean#nonSkillOperation")).isNull();
+        assertThat(registry.getAllTargets()).hasSize(1);
+    }
+
+    @Test
+    void registersDifferentlyNamedAnnotatedMethodsOnOneBean() {
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
+
+        process(processor, new MultipleMethodsBean(), "multipleMethodsBean");
+
+        assertThat(registry.getAllTargets())
+                .extracting(SkillImplementationTarget::id)
+                .containsExactlyInAnyOrder("multipleMethodsBean#first", "multipleMethodsBean#second");
+    }
+
+    @Test
+    void rejectsAnnotatedOverloadsBeforeRegisteringAnyTargetFromBean() {
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                process(processor, new OverloadedMethodsBean(), "overloadedMethodsBean"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("overloadedMethodsBean")
+                .hasMessageContaining("lookup")
+                .hasMessageContaining("overloadedMethodsBean#lookup")
+                .hasMessageContaining("must be unique")
+                .hasMessageContaining("rename one method");
+        assertThat(registry.getAllTargets()).isEmpty();
     }
 
     @Test
     void invokesCapabilityUsingEnvelopeMap() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new InvocationBean(), "invocationBean");
+        process(processor, new InvocationBean(), "invocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("combineValues");
+        SkillImplementationTarget metadata = registry.getTarget("invocationBean#combineValues");
         Method method = getDeclaredMethod(InvocationBean.class, "combineValues", String.class, Boolean.class);
         Map<String, Object> arguments = Map.of(
                 method.getParameters()[0].getName(), "alpha",
@@ -69,12 +97,12 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void handlesMissingOptionalParameterWithoutCrashing() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new OptionalInvocationBean(), "optionalInvocationBean");
+        process(processor, new OptionalInvocationBean(), "optionalInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("optionalValues");
+        SkillImplementationTarget metadata = registry.getTarget("optionalInvocationBean#optionalValues");
         Method method = getDeclaredMethod(OptionalInvocationBean.class, "optionalValues", String.class, String.class);
         Map<String, Object> arguments = Map.of(method.getParameters()[0].getName(), "base");
 
@@ -86,28 +114,28 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void returnsTransformedErrorWhenSkillMethodThrowsWrappedBusinessException() {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new ThrowingInvocationBean(), "throwingInvocationBean");
+        process(processor, new ThrowingInvocationBean(), "throwingInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("throwingOperation");
+        SkillImplementationTarget metadata = registry.getTarget("throwingInvocationBean#throwingOperation");
 
         assertThat(metadata.invoker().invoke(Map.of())).isEqualTo("ERROR: IllegalArgumentException. HINT: boom");
     }
 
     @Test
     void logsStackTraceButOmitsItFromReturnedPayload(CapturedOutput output) {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new ThrowingInvocationBean(), "throwingInvocationBean");
+        process(processor, new ThrowingInvocationBean(), "throwingInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("throwingOperation");
+        SkillImplementationTarget metadata = registry.getTarget("throwingInvocationBean#throwingOperation");
         Object rawResult = metadata.invoker().invoke(Map.of());
 
         assertThat(rawResult).isEqualTo("ERROR: IllegalArgumentException. HINT: boom");
-        assertThat(output.getAll()).contains("Capability 'throwingOperation' failed during deterministic execution");
+        assertThat(output.getAll()).contains("Skill implementation target 'throwingInvocationBean#throwingOperation' failed during deterministic execution");
         assertThat(output.getAll()).contains("java.lang.IllegalStateException: wrapper");
         assertThat(output.getAll()).contains("Caused by: java.lang.IllegalArgumentException: boom");
         assertThat(rawResult.toString()).doesNotContain("at com.lokiscale");
@@ -116,12 +144,12 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void readsResourceBackedRefsIntoStringParameters() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new RefStringInvocationBean(), "refStringInvocationBean");
+        process(processor, new RefStringInvocationBean(), "refStringInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("readRefAsString");
+        SkillImplementationTarget metadata = registry.getTarget("refStringInvocationBean#readRefAsString");
         Method method = getDeclaredMethod(RefStringInvocationBean.class, "readRefAsString", String.class);
         Object rawResult = metadata.invoker().invoke(Map.of(
                 method.getParameters()[0].getName(),
@@ -132,12 +160,12 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void readsResourceBackedRefsIntoByteArrayParameters() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new RefBytesInvocationBean(), "refBytesInvocationBean");
+        process(processor, new RefBytesInvocationBean(), "refBytesInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("readRefAsBytes");
+        SkillImplementationTarget metadata = registry.getTarget("refBytesInvocationBean#readRefAsBytes");
         Method method = getDeclaredMethod(RefBytesInvocationBean.class, "readRefAsBytes", byte[].class);
         Object rawResult = metadata.invoker().invoke(Map.of(
                 method.getParameters()[0].getName(),
@@ -148,14 +176,14 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void passesResourceBackedRefsThroughResourceAndInputStreamParameters() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new RefResourceInvocationBean(), "refResourceInvocationBean");
-        processor.postProcessAfterInitialization(new RefStreamInvocationBean(), "refStreamInvocationBean");
+        process(processor, new RefResourceInvocationBean(), "refResourceInvocationBean");
+        process(processor, new RefStreamInvocationBean(), "refStreamInvocationBean");
 
-        CapabilityMetadata resourceMetadata = registry.getCapability("readRefAsResource");
-        CapabilityMetadata streamMetadata = registry.getCapability("readRefAsStream");
+        SkillImplementationTarget resourceMetadata = registry.getTarget("refResourceInvocationBean#readRefAsResource");
+        SkillImplementationTarget streamMetadata = registry.getTarget("refStreamInvocationBean#readRefAsStream");
         Method resourceMethod = getDeclaredMethod(RefResourceInvocationBean.class, "readRefAsResource", Resource.class);
         Method streamMethod = getDeclaredMethod(RefStreamInvocationBean.class, "readRefAsStream", InputStream.class);
 
@@ -172,32 +200,32 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void publishesRefFriendlyInputSchemasForRefCapableParameters() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new RefBytesInvocationBean(), "refBytesInvocationBean");
-        processor.postProcessAfterInitialization(new RefResourceInvocationBean(), "refResourceInvocationBean");
-        processor.postProcessAfterInitialization(new RefStreamInvocationBean(), "refStreamInvocationBean");
-        processor.postProcessAfterInitialization(new NestedRecordInvocationBean(), "nestedRecordInvocationBean");
+        process(processor, new RefBytesInvocationBean(), "refBytesInvocationBean");
+        process(processor, new RefResourceInvocationBean(), "refResourceInvocationBean");
+        process(processor, new RefStreamInvocationBean(), "refStreamInvocationBean");
+        process(processor, new NestedRecordInvocationBean(), "nestedRecordInvocationBean");
 
-        assertThat(readPayloadPropertyType(registry.getCapability("readRefAsBytes"))).isEqualTo("string");
-        assertThat(readPayloadPropertyType(registry.getCapability("readRefAsResource"))).isEqualTo("string");
-        assertThat(readPayloadPropertyType(registry.getCapability("readRefAsStream"))).isEqualTo("string");
-        assertThat(readNestedAttachmentItemType(registry.getCapability("readNestedRecord"))).isEqualTo("string");
-        assertThat(readPayloadPropertyRefMarker(registry.getCapability("readRefAsBytes"))).isTrue();
-        assertThat(readPayloadPropertyRefMarker(registry.getCapability("readRefAsResource"))).isTrue();
-        assertThat(readPayloadPropertyRefMarker(registry.getCapability("readRefAsStream"))).isTrue();
-        assertThat(readNestedAttachmentItemRefMarker(registry.getCapability("readNestedRecord"))).isTrue();
+        assertThat(readPayloadPropertyType(registry.getTarget("refBytesInvocationBean#readRefAsBytes"))).isEqualTo("string");
+        assertThat(readPayloadPropertyType(registry.getTarget("refResourceInvocationBean#readRefAsResource"))).isEqualTo("string");
+        assertThat(readPayloadPropertyType(registry.getTarget("refStreamInvocationBean#readRefAsStream"))).isEqualTo("string");
+        assertThat(readNestedAttachmentItemType(registry.getTarget("nestedRecordInvocationBean#readNestedRecord"))).isEqualTo("string");
+        assertThat(readPayloadPropertyRefMarker(registry.getTarget("refBytesInvocationBean#readRefAsBytes"))).isTrue();
+        assertThat(readPayloadPropertyRefMarker(registry.getTarget("refResourceInvocationBean#readRefAsResource"))).isTrue();
+        assertThat(readPayloadPropertyRefMarker(registry.getTarget("refStreamInvocationBean#readRefAsStream"))).isTrue();
+        assertThat(readNestedAttachmentItemRefMarker(registry.getTarget("nestedRecordInvocationBean#readNestedRecord"))).isTrue();
     }
 
     @Test
     void materializesNestedResourceLeavesInsideTypedRecordParameters() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new NestedRecordInvocationBean(), "nestedRecordInvocationBean");
+        process(processor, new NestedRecordInvocationBean(), "nestedRecordInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("readNestedRecord");
+        SkillImplementationTarget metadata = registry.getTarget("nestedRecordInvocationBean#readNestedRecord");
         Method method = getDeclaredMethod(NestedRecordInvocationBean.class, "readNestedRecord", NestedPayload.class);
         Object rawResult = metadata.invoker().invoke(Map.of(
                 method.getParameters()[0].getName(),
@@ -213,12 +241,12 @@ class SkillMethodBeanPostProcessorTest {
 
     @Test
     void materializesResourceLeavesInsideTypedCollectionParameters() throws JsonProcessingException {
-        InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
-        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        InMemorySkillImplementationTargetRegistry registry = new InMemorySkillImplementationTargetRegistry();
+        SkillMethodBeanPostProcessor processor = processor(registry);
 
-        processor.postProcessAfterInitialization(new TypedCollectionInvocationBean(), "typedCollectionInvocationBean");
+        process(processor, new TypedCollectionInvocationBean(), "typedCollectionInvocationBean");
 
-        CapabilityMetadata metadata = registry.getCapability("readTypedCollection");
+        SkillImplementationTarget metadata = registry.getTarget("typedCollectionInvocationBean#readTypedCollection");
         Method method = getDeclaredMethod(TypedCollectionInvocationBean.class, "readTypedCollection", List.class);
         Object rawResult = metadata.invoker().invoke(Map.of(
                 method.getParameters()[0].getName(),
@@ -291,6 +319,17 @@ class SkillMethodBeanPostProcessorTest {
                 resolver.validateStructuralCompatibility(omitted, explicitTrue, "input_schema"));
     }
 
+    private SkillMethodBeanPostProcessor processor(InMemorySkillImplementationTargetRegistry registry) {
+        SkillMethodBeanPostProcessor processor = new SkillMethodBeanPostProcessor(registry);
+        processor.setBeanFactory(beanFactory);
+        return processor;
+    }
+
+    private void process(SkillMethodBeanPostProcessor processor, Object bean, String beanName) {
+        beanFactory.addBean(beanName, bean);
+        processor.postProcessAfterInitialization(bean, beanName);
+    }
+
     private static Method getDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes) {
         try {
             return type.getDeclaredMethod(name, parameterTypes);
@@ -302,7 +341,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class RegistrationBean {
 
-        @SkillMethod(name = "testOperation", description = "Test desc", modelPreference = ModelPreference.HEAVY)
+        @SkillMethod(description = "Test desc", modelPreference = ModelPreference.HEAVY)
         String mappedOperation() {
             return "ok";
         }
@@ -313,15 +352,34 @@ class SkillMethodBeanPostProcessorTest {
 
     static class InvocationBean {
 
-        @SkillMethod(name = "combineValues", description = "Combine values")
+        @SkillMethod(description = "Combine values")
         String combineValues(String left, Boolean right) {
             return left + ":" + right;
         }
     }
 
+    static class MultipleMethodsBean {
+        @SkillMethod(description = "First")
+        String first() { return "first"; }
+
+        @SkillMethod(description = "Second")
+        String second() { return "second"; }
+    }
+
+    static class OverloadedMethodsBean {
+        @SkillMethod(description = "Lookup text")
+        String lookup(String value) { return value; }
+
+        @SkillMethod(description = "Lookup number")
+        String lookup(long value) { return Long.toString(value); }
+
+        @SkillMethod(description = "Unique")
+        String unique() { return "unique"; }
+    }
+
     static class OptionalInvocationBean {
 
-        @SkillMethod(name = "optionalValues", description = "Optional values")
+        @SkillMethod(description = "Optional values")
         String optionalValues(String required, @ToolParam(required = false) String optional) {
             return required + ":" + (optional == null ? "default" : optional);
         }
@@ -329,7 +387,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class ThrowingInvocationBean {
 
-        @SkillMethod(name = "throwingOperation", description = "Throwing operation")
+        @SkillMethod(description = "Throwing operation")
         String throwingOperation() {
             throw new IllegalStateException("wrapper", new IllegalArgumentException("boom"));
         }
@@ -337,7 +395,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class RefStringInvocationBean {
 
-        @SkillMethod(name = "readRefAsString", description = "Read ref as string")
+        @SkillMethod(description = "Read ref as string")
         String readRefAsString(String payload) {
             return payload;
         }
@@ -345,7 +403,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class RefBytesInvocationBean {
 
-        @SkillMethod(name = "readRefAsBytes", description = "Read ref as bytes")
+        @SkillMethod(description = "Read ref as bytes")
         String readRefAsBytes(byte[] payload) {
             StringBuilder builder = new StringBuilder();
             for (byte value : payload) {
@@ -357,7 +415,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class RefResourceInvocationBean {
 
-        @SkillMethod(name = "readRefAsResource", description = "Read ref as resource")
+        @SkillMethod(description = "Read ref as resource")
         String readRefAsResource(Resource payload) {
             try {
                 return StreamUtils.copyToString(payload.getInputStream(), StandardCharsets.UTF_8);
@@ -370,7 +428,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class RefStreamInvocationBean {
 
-        @SkillMethod(name = "readRefAsStream", description = "Read ref as stream")
+        @SkillMethod(description = "Read ref as stream")
         String readRefAsStream(InputStream payload) {
             try {
                 return StreamUtils.copyToString(payload, StandardCharsets.UTF_8);
@@ -383,7 +441,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class NestedRecordInvocationBean {
 
-        @SkillMethod(name = "readNestedRecord", description = "Read nested record")
+        @SkillMethod(description = "Read nested record")
         String readNestedRecord(NestedPayload payload) {
             return payload.document().title() + "|" + payload.document().attachments().stream()
                     .map(bytes -> {
@@ -400,7 +458,7 @@ class SkillMethodBeanPostProcessorTest {
 
     static class TypedCollectionInvocationBean {
 
-        @SkillMethod(name = "readTypedCollection", description = "Read typed collection")
+        @SkillMethod(description = "Read typed collection")
         String readTypedCollection(List<String> payload) {
             return String.join("|", payload);
         }
@@ -412,16 +470,16 @@ class SkillMethodBeanPostProcessorTest {
     record NestedDocument(String title, List<byte[]> attachments) {
     }
 
-    private String readPayloadPropertyType(CapabilityMetadata metadata) throws JsonProcessingException {
-        return objectMapper.readTree(metadata.tool().inputSchema())
+    private String readPayloadPropertyType(SkillImplementationTarget metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.inputSchema())
                 .path("properties")
                 .path("payload")
                 .path("type")
                 .asText();
     }
 
-    private String readNestedAttachmentItemType(CapabilityMetadata metadata) throws JsonProcessingException {
-        return objectMapper.readTree(metadata.tool().inputSchema())
+    private String readNestedAttachmentItemType(SkillImplementationTarget metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.inputSchema())
                 .path("properties")
                 .path("payload")
                 .path("properties")
@@ -433,16 +491,16 @@ class SkillMethodBeanPostProcessorTest {
                 .asText();
     }
 
-    private boolean readPayloadPropertyRefMarker(CapabilityMetadata metadata) throws JsonProcessingException {
-        return objectMapper.readTree(metadata.tool().inputSchema())
+    private boolean readPayloadPropertyRefMarker(SkillImplementationTarget metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.inputSchema())
                 .path("properties")
                 .path("payload")
                 .path("x-bifrost-runtime-ref-capable")
                 .asBoolean(false);
     }
 
-    private boolean readNestedAttachmentItemRefMarker(CapabilityMetadata metadata) throws JsonProcessingException {
-        return objectMapper.readTree(metadata.tool().inputSchema())
+    private boolean readNestedAttachmentItemRefMarker(SkillImplementationTarget metadata) throws JsonProcessingException {
+        return objectMapper.readTree(metadata.inputSchema())
                 .path("properties")
                 .path("payload")
                 .path("properties")

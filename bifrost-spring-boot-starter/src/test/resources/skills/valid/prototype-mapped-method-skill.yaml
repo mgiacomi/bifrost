@@ -1,0 +1,5 @@
+name: prototype.mapped.skill
+description: Mapped YAML skill backed by a prototype target
+model: gpt-5
+mapping:
+  target_id: prototypeTargetBean#execute
