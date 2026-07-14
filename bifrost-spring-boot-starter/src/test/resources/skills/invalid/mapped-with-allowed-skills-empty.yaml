@@ -1,4 +1,4 @@
-name: mapped.with.allowed.empty
+name: mappedWithAllowedEmpty
 description: Invalid mapped allowed skills declaration.
 allowed_skills: []
 mapping:

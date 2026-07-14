@@ -62,8 +62,8 @@ class ExecutionCoordinatorLinterIntegrationTest {
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("linted.skill");
-        manifest.setDescription("linted.skill");
+        manifest.setName("lintedSkill");
+        manifest.setDescription("lintedSkill");
         manifest.setModel("gpt-5");
         manifest.setAllowedSkills(List.of());
         manifest.setPlanningMode(false);
@@ -81,13 +81,13 @@ class ExecutionCoordinatorLinterIntegrationTest {
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         CapabilityMetadata metadata = new CapabilityMetadata(
                 "yaml:linted",
-                "linted.skill",
-                "linted.skill",
+                "lintedSkill",
+                "lintedSkill",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "unused",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("linted.skill", "linted.skill"),
+                CapabilityToolDescriptor.generic("lintedSkill", "lintedSkill"),
                 null);
         registry.register(metadata.name(), metadata);
 
@@ -98,7 +98,7 @@ class ExecutionCoordinatorLinterIntegrationTest {
         ExecutionCoordinator coordinator = coordinator(catalog, registry, ignored -> chatClient, stateService);
         BifrostSession session = new BifrostSession("session-1", 3);
 
-        String response = coordinator.execute("linted.skill", "Produce YAML", session, null);
+        String response = coordinator.execute("lintedSkill", "Produce YAML", session, null);
 
         assertThat(response).isEqualTo("OK: corrected");
         assertThat(chatClient.callCount).isEqualTo(2);

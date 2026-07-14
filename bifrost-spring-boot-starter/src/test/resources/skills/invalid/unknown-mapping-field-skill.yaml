@@ -1,4 +1,4 @@
-name: unknown.mapping.field.skill
+name: unknownMappingFieldSkill
 description: YAML skill with an unexpected mapping field.
 mapping:
   target_id: targetBean#deterministicTarget

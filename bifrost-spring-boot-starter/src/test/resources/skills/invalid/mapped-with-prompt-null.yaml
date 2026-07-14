@@ -1,4 +1,4 @@
-name: mapped.with.prompt.null
+name: mappedWithPromptNull
 description: Invalid mapped prompt declaration.
 prompt: null
 mapping:

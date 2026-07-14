@@ -52,7 +52,7 @@ class ToolCallbackFactoryTest {
                 List.of(capability()),
                 null).getFirst();
 
-        assertThat(callback.getToolDefinition().name()).isEqualTo("allowed.visible.skill");
+        assertThat(callback.getToolDefinition().name()).isEqualTo("allowedVisibleSkill");
         assertThat(callback.getToolDefinition().description()).isEqualTo("child");
         assertThat(callback.getToolDefinition().inputSchema()).contains("\"type\" : \"object\"");
     }
@@ -66,7 +66,7 @@ class ToolCallbackFactoryTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
         CapabilityMetadata capability = capability();
         assertThat(capability.skillExecution().configured()).isFalse();
-        assertThat(capability.name()).isEqualTo("allowed.visible.skill");
+        assertThat(capability.name()).isEqualTo("allowedVisibleSkill");
         assertThat(capability.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
         ExecutionFrame toolFrame = new ExecutionFrame(
                 "tool-frame-1",
@@ -78,11 +78,11 @@ class ToolCallbackFactoryTest {
                 Instant.parse("2026-03-15T12:00:00Z"));
         ExecutionPlan linkedPlan = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 com.lokiscale.bifrost.core.PlanStatus.VALID,
                 "task-1",
-                List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.IN_PROGRESS, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, "Starting")));
+                List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.IN_PROGRESS, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, "Starting")));
 
         when(planningService.markToolStarted(eq(session), eq(capability), any())).thenReturn(Optional.of(linkedPlan));
         when(stateService.openFrame(eq(session), eq(TraceFrameType.TOOL_INVOCATION), eq(capability.name()), any())).thenReturn(toolFrame);
@@ -184,24 +184,24 @@ class ToolCallbackFactoryTest {
     private static CapabilityMetadata capability() {
         return new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.none(),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
     }
 
     private static com.lokiscale.bifrost.skill.YamlSkillDefinition definitionWithEvidenceContract() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
         contract.setClaims(java.util.Map.of("vendorName", java.util.List.of("parsed_invoice")));
-        contract.setToolEvidence(java.util.Map.of("allowed.visible.skill", java.util.List.of("parsed_invoice")));
+        contract.setToolEvidence(java.util.Map.of("allowedVisibleSkill", java.util.List.of("parsed_invoice")));
         manifest.setEvidenceContract(contract);
         return new com.lokiscale.bifrost.skill.YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),

@@ -45,6 +45,8 @@ public class YamlSkillCatalog implements InitializingBean
     private static final int OUTPUT_SCHEMA_WARNING_DEPTH = 4;
     private static final int OUTPUT_SCHEMA_WARNING_PROPERTIES = 12;
     private static final int OUTPUT_SCHEMA_WARNING_REQUIRED = 8;
+    private static final String PUBLIC_SKILL_NAME_REGEX = "^[A-Za-z_][A-Za-z0-9_]{0,63}$";
+    private static final Pattern PUBLIC_SKILL_NAME_PATTERN = Pattern.compile(PUBLIC_SKILL_NAME_REGEX);
     private final BifrostModelsProperties modelsProperties;
     private final BifrostSkillProperties skillProperties;
     private final ResourcePatternResolver resourcePatternResolver;
@@ -249,6 +251,7 @@ public class YamlSkillCatalog implements InitializingBean
                 diagnosticSkillNames.put(resource, skillName);
             }
             validateRequiredField(resource, "name", skillName);
+            validatePublicSkillName(resource, skillName);
             validateRequiredField(resource, "description", description);
 
             boolean mappingDeclared = root.has("mapping");
@@ -333,6 +336,17 @@ public class YamlSkillCatalog implements InitializingBean
         if (!StringUtils.hasText(value))
         {
             throw invalidSkill(resource, fieldName, "required field is missing or blank");
+        }
+    }
+
+    private void validatePublicSkillName(Resource resource, String skillName)
+    {
+        if (!PUBLIC_SKILL_NAME_PATTERN.matcher(skillName).matches())
+        {
+            throw invalidNamedSkill(resource, skillName, "name",
+                    "invalid public skill name '" + skillName + "'. Names must match " + PUBLIC_SKILL_NAME_REGEX
+                            + " (1-64 characters; start with a letter or underscore; then use only letters, digits, or underscores). "
+                            + "Example: mappedMethodSkill.");
         }
     }
 

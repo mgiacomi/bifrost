@@ -18,7 +18,7 @@ class BifrostSessionPlanStateTest {
                 null,
                 OperationType.SKILL,
                 TraceFrameType.SKILL_EXECUTION,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Map.of("objective", "hello"),
                 Instant.parse("2026-03-15T12:00:00Z")));
 
@@ -40,7 +40,7 @@ class BifrostSessionPlanStateTest {
     private static ExecutionPlan plan(String planId, PlanTaskStatus first, PlanTaskStatus second) {
         return new ExecutionPlan(
                 planId,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(
                         new PlanTask("task-1", "Plan", first, null),

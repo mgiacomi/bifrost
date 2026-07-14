@@ -60,7 +60,7 @@ class NdjsonExecutionTraceReaderTest {
                     "frame-1",
                     null,
                     null,
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "main",
                     java.util.Map.of(
                             "payloadId", "payload-1",
@@ -78,7 +78,7 @@ class NdjsonExecutionTraceReaderTest {
                     "frame-1",
                     null,
                     null,
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "main",
                     java.util.Map.of("payloadId", "payload-1", "chunkIndex", 2, "chunkCount", 3, "contentType", "text/plain"),
                     OBJECT_MAPPER.getNodeFactory().textNode("gamma"));
@@ -92,7 +92,7 @@ class NdjsonExecutionTraceReaderTest {
                     "frame-1",
                     null,
                     null,
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "main",
                     java.util.Map.of("payloadId", "payload-1", "chunkIndex", 0, "chunkCount", 3, "contentType", "text/plain"),
                     OBJECT_MAPPER.getNodeFactory().textNode("alpha"));
@@ -106,7 +106,7 @@ class NdjsonExecutionTraceReaderTest {
                     "frame-1",
                     null,
                     null,
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "main",
                     java.util.Map.of("payloadId", "payload-1", "chunkIndex", 1, "chunkCount", 3, "contentType", "text/plain"),
                     OBJECT_MAPPER.getNodeFactory().textNode("beta"));
@@ -146,7 +146,7 @@ class NdjsonExecutionTraceReaderTest {
                     "frame-1",
                     null,
                     null,
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "main",
                     java.util.Map.of(
                             "payloadId", "payload-1",
@@ -183,7 +183,7 @@ class NdjsonExecutionTraceReaderTest {
                     "frame-1",
                     null,
                     null,
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "main",
                     java.util.Map.of(),
                     OBJECT_MAPPER.getNodeFactory().textNode("ok"));
@@ -219,7 +219,7 @@ class NdjsonExecutionTraceReaderTest {
                         "frame-" + index,
                         null,
                         null,
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         "main",
                         java.util.Map.of("index", index),
                         OBJECT_MAPPER.getNodeFactory().textNode("payload-" + index));

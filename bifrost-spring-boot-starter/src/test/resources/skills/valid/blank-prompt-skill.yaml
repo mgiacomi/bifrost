@@ -1,4 +1,4 @@
-name: blank.prompt.skill
+name: blankPromptSkill
 description: Short public summary
 model: gpt-5
 prompt: "   "

@@ -282,7 +282,7 @@ class BifrostSessionRunnerTest {
     private static ExecutionPlan plan(String planId) {
         return new ExecutionPlan(
                 planId,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of());
     }

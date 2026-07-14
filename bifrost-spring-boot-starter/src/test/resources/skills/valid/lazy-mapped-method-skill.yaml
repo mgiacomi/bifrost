@@ -1,4 +1,4 @@
-name: lazy.mapped.skill
+name: lazyMappedSkill
 description: Mapped YAML skill backed by a lazy singleton target
 mapping:
   target_id: lazyTargetBean#execute

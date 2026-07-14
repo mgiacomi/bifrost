@@ -45,6 +45,7 @@ Do not load every document by default. Start with the routing entry most relevan
 | Topic | Coverage | Notes |
 | --- | --- | --- |
 | Skill-tree mental model | Initial, source-verified | YAML-only public identity, separate Java target registry, mapping, root invocation, visibility, and nesting |
+| Public YAML skill identity | Source-verified | Exact `name` format, case sensitivity, no-rewrite policy, propagation, and separation from `mapping.target_id` |
 | Evidence contracts | Initial, source-verified | AND semantics, semantic evidence types, multiple producers, enforcement, and nested isolation |
 | Source verification | Initial | How an LLM should use guide, tests, fixtures, samples, and production code together |
 | Skill-design review | Initial | Cross-cutting questions; not a manifest validator |

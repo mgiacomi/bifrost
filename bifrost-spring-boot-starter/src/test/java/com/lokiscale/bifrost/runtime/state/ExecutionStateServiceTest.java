@@ -41,7 +41,7 @@ class ExecutionStateServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 3);
         ExecutionPlan plan = plan("plan-1");
         LinterOutcome outcome = new LinterOutcome(
-                "linted.skill",
+                "lintedSkill",
                 "regex",
                 2,
                 1,
@@ -57,11 +57,11 @@ class ExecutionStateServiceTest {
                 OutputSchemaOutcomeStatus.RETRYING,
                 List.of(new OutputSchemaValidationIssue("$.vendorName", "missing required field 'vendorName'", "vendorName")));
 
-        ExecutionFrame frame = stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello"));
+        ExecutionFrame frame = stateService.openMissionFrame(session, "rootVisibleSkill", Map.of("objective", "hello"));
         stateService.storePlan(session, plan);
         stateService.logPlanCreated(session, plan);
-        stateService.logToolCall(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
-        stateService.logToolResult(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("result", "done"), null));
+        stateService.logToolCall(session, TaskExecutionEvent.linked("allowedVisibleSkill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
+        stateService.logToolResult(session, TaskExecutionEvent.linked("allowedVisibleSkill", "task-1", Map.of("result", "done"), null));
         stateService.recordLinterOutcome(session, outcome);
         stateService.recordOutputSchemaOutcome(session, outputSchemaOutcome);
         stateService.logError(session, Map.of("message", "boom"));
@@ -128,7 +128,7 @@ class ExecutionStateServiceTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-frames", 3);
 
-        ExecutionFrame parentFrame = stateService.openMissionFrame(session, "root.visible.skill", Map.of());
+        ExecutionFrame parentFrame = stateService.openMissionFrame(session, "rootVisibleSkill", Map.of());
         ExecutionFrame childFrame = stateService.openMissionFrame(session, "child.visible.skill", Map.of());
 
         assertThatThrownBy(() -> stateService.closeMissionFrame(session, parentFrame))
@@ -143,14 +143,14 @@ class ExecutionStateServiceTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-trace", 3);
 
-        ExecutionFrame rootFrame = stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello"));
-        ExecutionFrame frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "root.visible.skill#model", Map.of("provider", "openai"));
+        ExecutionFrame rootFrame = stateService.openMissionFrame(session, "rootVisibleSkill", Map.of("objective", "hello"));
+        ExecutionFrame frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "rootVisibleSkill#model", Map.of("provider", "openai"));
         stateService.recordModelRequestPrepared(
                 session,
                 frame,
-                new ModelTraceContext("openai", "openai/gpt-5", "root.visible.skill", "unit"),
+                new ModelTraceContext("openai", "openai/gpt-5", "rootVisibleSkill", "unit"),
                 Map.of("user", "hello"));
-        stateService.logToolCall(session, TaskExecutionEvent.linked("allowed.visible.skill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
+        stateService.logToolCall(session, TaskExecutionEvent.linked("allowedVisibleSkill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
         stateService.closeFrame(session, frame, Map.of("status", "completed"));
         stateService.closeMissionFrame(session, rootFrame);
 
@@ -181,7 +181,7 @@ class ExecutionStateServiceTest {
         assertThat(frameOpened.parentFrameId()).isNull();
         assertThat(frameOpened.frameType()).isEqualTo(TraceFrameType.ROOT_MISSION);
         assertThat(modelRequest.frameId()).isEqualTo(frame.frameId());
-        assertThat(modelRequest.route()).isEqualTo("root.visible.skill#model");
+        assertThat(modelRequest.route()).isEqualTo("rootVisibleSkill#model");
         assertThat(toolRequested.frameId()).isEqualTo(frame.frameId());
         assertThat(toolRequested.recordType()).isEqualTo(TraceRecordType.TOOL_CALL_REQUESTED);
         assertThat(toolStarted.frameId()).isEqualTo(frame.frameId());
@@ -194,9 +194,9 @@ class ExecutionStateServiceTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-evidence", 3);
 
-        ExecutionFrame rootFrame = stateService.openMissionFrame(session, "root.visible.skill", Map.of());
+        ExecutionFrame rootFrame = stateService.openMissionFrame(session, "rootVisibleSkill", Map.of());
         stateService.recordProducedEvidence(session, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
-        stateService.recordEvidenceValidation(session, false, Map.of("skillName", "root.visible.skill"), Map.of("claims", List.of("isDuplicate")));
+        stateService.recordEvidenceValidation(session, false, Map.of("skillName", "rootVisibleSkill"), Map.of("claims", List.of("isDuplicate")));
         stateService.closeMissionFrame(session, rootFrame);
 
         assertThat(session.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
@@ -280,7 +280,7 @@ class ExecutionStateServiceTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK, new com.lokiscale.bifrost.runtime.usage.NoOpSessionUsageService(), failingRecorder);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-open-failure", 3);
 
-        assertThatThrownBy(() -> stateService.openMissionFrame(session, "root.visible.skill", Map.of("objective", "hello")))
+        assertThatThrownBy(() -> stateService.openMissionFrame(session, "rootVisibleSkill", Map.of("objective", "hello")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("boom");
 
@@ -290,7 +290,7 @@ class ExecutionStateServiceTest {
     private static ExecutionPlan plan(String planId) {
         return new ExecutionPlan(
                 planId,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, null)));
     }

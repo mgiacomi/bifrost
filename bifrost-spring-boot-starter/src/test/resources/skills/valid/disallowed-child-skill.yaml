@@ -1,4 +1,4 @@
-name: disallowed.visible.skill
+name: disallowedVisibleSkill
 description: Disallowed child YAML skill.
 rbac_roles:
   - ROLE_BLOCKED

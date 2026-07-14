@@ -1,4 +1,4 @@
-name: output.schema.complex.skill
+name: outputSchemaComplexSkill
 description: Complex structured JSON.
 model: gpt-5
 output_schema:

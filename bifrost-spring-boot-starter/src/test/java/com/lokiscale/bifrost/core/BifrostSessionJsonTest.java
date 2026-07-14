@@ -29,7 +29,7 @@ class BifrostSessionJsonTest {
                 FIXED_CLOCK);
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 java.util.List.of());
 

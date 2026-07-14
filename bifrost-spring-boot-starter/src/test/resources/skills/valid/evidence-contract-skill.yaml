@@ -1,4 +1,4 @@
-name: evidence.contract.skill
+name: evidenceContractSkill
 description: Skill with an evidence contract
 model: gpt-5
 output_schema:

@@ -121,6 +121,10 @@ public class InvoiceWorkflow {
 
 An LLM-backed YAML skill omits `mapping`, declares a configured `model`, and may use model execution settings. `prompt` supplies private instructions in addition to the public `description`.
 
+The YAML `name` is the skill's single public identity and must match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: use 1-64 characters, start with an ASCII letter or underscore, and then use only ASCII letters, digits, or underscores. Names are case-sensitive and Bifrost does not trim, sanitize, normalize, truncate, or alias them. Descriptive lowerCamelCase names such as `duplicateInvoiceChecker` and `expenseLookup` are the recommended authoring style, though underscores and uppercase starts are also valid. Use the exact YAML name in `SkillTemplate`, `allowed_skills`, and `evidence_contract.tool_evidence` keys.
+
+This public-name rule does not apply to `mapping.target_id`. That field is internal mapping metadata and intentionally uses separate `beanName#methodName` syntax.
+
 ```yaml
 name: duplicateInvoiceChecker
 description: >

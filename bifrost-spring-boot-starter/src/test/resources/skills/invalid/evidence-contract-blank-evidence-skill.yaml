@@ -1,4 +1,4 @@
-name: evidence.contract.blank.evidence.skill
+name: evidenceContractBlankEvidenceSkill
 description: Invalid evidence contract blank evidence id
 model: gpt-5
 output_schema:

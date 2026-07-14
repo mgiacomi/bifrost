@@ -1,4 +1,4 @@
-name: unknown.mapped.target.skill
+name: unknownMappedTargetSkill
 description: YAML skill mapped to a target that does not exist.
 mapping:
   target_id: missingBean#missingTarget

@@ -38,14 +38,14 @@ class SkillVisibilityResolverTest {
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
         List<CapabilityMetadata> visible = resolver.visibleSkillsFor(
-                "root.visible.skill",
+                "rootVisibleSkill",
                 com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2),
                 UsernamePasswordAuthenticationToken.authenticated(
                         "user",
                         "pw",
                         AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
 
-        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowed.visible.skill");
+        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowedVisibleSkill");
     }
 
     @Test
@@ -60,14 +60,14 @@ class SkillVisibilityResolverTest {
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
         List<CapabilityMetadata> visible = resolver.visibleSkillsFor(
-                "root.visible.skill",
+                "rootVisibleSkill",
                 com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2),
                 UsernamePasswordAuthenticationToken.authenticated(
                         "user",
                         "pw",
                         AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
 
-        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowed.visible.skill");
+        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowedVisibleSkill");
     }
 
     @Test
@@ -81,7 +81,7 @@ class SkillVisibilityResolverTest {
         DefaultSkillVisibilityResolver resolver = new DefaultSkillVisibilityResolver(catalog, registry, new DefaultAccessGuard());
 
         List<CapabilityMetadata> visible = resolver.visibleSkillsFor(
-                "root.visible.skill",
+                "rootVisibleSkill",
                 com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2),
                 null);
 
@@ -103,9 +103,9 @@ class SkillVisibilityResolverTest {
                 "pw",
                 AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
 
-        List<CapabilityMetadata> visible = resolver.visibleSkillsFor("root.visible.skill", session, null);
+        List<CapabilityMetadata> visible = resolver.visibleSkillsFor("rootVisibleSkill", session, null);
 
-        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowed.visible.skill");
+        assertThat(visible).extracting(CapabilityMetadata::name).containsExactly("allowedVisibleSkill");
     }
 
     private static InMemorySkillImplementationTargetRegistry targetRegistry() {

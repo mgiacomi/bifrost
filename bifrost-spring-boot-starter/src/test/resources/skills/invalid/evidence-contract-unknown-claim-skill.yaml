@@ -1,4 +1,4 @@
-name: evidence.contract.unknown.claim.skill
+name: evidenceContractUnknownClaimSkill
 description: Invalid evidence contract unknown claim
 model: gpt-5
 output_schema:

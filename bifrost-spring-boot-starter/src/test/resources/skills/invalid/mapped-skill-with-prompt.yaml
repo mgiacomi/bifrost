@@ -1,4 +1,4 @@
-name: mapped.prompt.skill
+name: mappedPromptSkill
 description: Mapped skill with an invalid prompt.
 prompt: This should be rejected because mapped skills delegate execution.
 mapping:

@@ -62,10 +62,10 @@ class MissionExecutionEngineTest {
             BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 2);
             ExecutionPlan plan = new ExecutionPlan(
                     "plan-1",
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     Instant.parse("2026-03-15T12:00:00Z"),
                     List.of(
-                            new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
+                            new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null),
                             new PlanTask("task-2", "Blocked", PlanTaskStatus.BLOCKED, null)));
             MissionChatClient chatClient = new MissionChatClient("mission complete");
             ToolCallback callback = mock(ToolCallback.class);
@@ -225,7 +225,7 @@ class MissionExecutionEngineTest {
             MissionChatClient chatClient = new MissionChatClient("mission complete");
             ExecutionPlan plan = new ExecutionPlan(
                     "plan-attachment",
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     Instant.parse("2026-03-15T12:00:00Z"),
                     List.of(new PlanTask("task-1", "Inspect ticket", PlanTaskStatus.PENDING, null)));
             when(planningService.initializePlan(eq(session), eq("Extract ticket"), any(), any(YamlSkillDefinition.class), eq(chatClient), any()))
@@ -286,7 +286,7 @@ class MissionExecutionEngineTest {
                     false,
                     null))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("root.visible.skill")
+                    .hasMessageContaining("rootVisibleSkill")
                     .hasMessageContaining("openai/gpt-5")
                     .hasMessageContaining("IMAGE/image/jpeg")
                     .hasMessageContaining("supports the declared attachment media");
@@ -319,7 +319,7 @@ class MissionExecutionEngineTest {
                     null))
                     .isInstanceOf(BifrostMissionTimeoutException.class)
                     .hasMessageContaining("session-timeout")
-                    .hasMessageContaining("root.visible.skill")
+                    .hasMessageContaining("rootVisibleSkill")
                     .hasMessageContaining("PT0.025S");
             awaitInterrupted(interrupted);
             awaitFramesCleared(session);
@@ -362,7 +362,7 @@ class MissionExecutionEngineTest {
                     null))
                     .isInstanceOf(BifrostMissionTimeoutException.class)
                     .hasMessageContaining("session-timeout")
-                    .hasMessageContaining("root.visible.skill")
+                    .hasMessageContaining("rootVisibleSkill")
                     .hasMessageContaining("PT0.025S");
             awaitInterrupted(interrupted);
             assertThat(session.getExecutionPlan()).isEmpty();
@@ -427,16 +427,16 @@ class MissionExecutionEngineTest {
 
     private static YamlSkillDefinition definition() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         return new YamlSkillDefinition(new org.springframework.core.io.ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
     }
 
     private static YamlSkillDefinition definitionWithPrompt() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPrompt("Act as a careful parser.");
         return new YamlSkillDefinition(new org.springframework.core.io.ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);
@@ -444,8 +444,8 @@ class MissionExecutionEngineTest {
 
     private static YamlSkillDefinition attachmentDefinition() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setInputSchema(attachmentInputSchema());
         return new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest, EXECUTION_CONFIGURATION);

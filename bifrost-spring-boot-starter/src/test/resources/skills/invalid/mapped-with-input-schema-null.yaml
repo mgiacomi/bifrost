@@ -1,4 +1,4 @@
-name: mapped.with.input.null
+name: mappedWithInputNull
 description: Invalid mapped input schema declaration.
 input_schema: null
 mapping:

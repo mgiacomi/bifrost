@@ -1,4 +1,4 @@
-name: prototype.mapped.skill
+name: prototypeMappedSkill
 description: Mapped YAML skill backed by a prototype target
 mapping:
   target_id: prototypeTargetBean#execute

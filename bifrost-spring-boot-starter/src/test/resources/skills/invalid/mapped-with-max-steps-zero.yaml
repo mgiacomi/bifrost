@@ -1,4 +1,4 @@
-name: mapped.with.steps.zero
+name: mappedWithStepsZero
 description: Invalid mapped max steps declaration.
 max_steps: 0
 mapping:

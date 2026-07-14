@@ -62,6 +62,6 @@ class SessionQuotaTest {
     }
 
     private static LinterOutcome outcome(LinterOutcomeStatus status, int retryCount, int attempt) {
-        return new LinterOutcome("linted.skill", "regex", attempt, retryCount, 4, status, "Return YAML");
+        return new LinterOutcome("lintedSkill", "regex", attempt, retryCount, 4, status, "Return YAML");
     }
 }

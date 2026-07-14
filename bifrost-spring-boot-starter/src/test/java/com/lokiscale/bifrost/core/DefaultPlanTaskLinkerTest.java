@@ -17,13 +17,13 @@ class DefaultPlanTaskLinkerTest {
     void linksExactlyOneReadyMatchingTask() {
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(
-                        toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill"),
+                        toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill"),
                         new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null)));
 
-        Optional<String> linkedTaskId = linker.linkTask(plan, capability("allowed.visible.skill"), Map.of("value", "hello"));
+        Optional<String> linkedTaskId = linker.linkTask(plan, capability("allowedVisibleSkill"), Map.of("value", "hello"));
 
         assertThat(linkedTaskId).contains("task-1");
     }
@@ -32,13 +32,13 @@ class DefaultPlanTaskLinkerTest {
     void refusesToLinkWhenMultipleReadyTasksMatchTheSameCapability() {
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(
-                        toolTask("task-1", "Use allowed.visible.skill for source A", "allowed.visible.skill"),
-                        toolTask("task-2", "Use allowed.visible.skill for source B", "allowed.visible.skill")));
+                        toolTask("task-1", "Use allowedVisibleSkill for source A", "allowedVisibleSkill"),
+                        toolTask("task-2", "Use allowedVisibleSkill for source B", "allowedVisibleSkill")));
 
-        Optional<String> linkedTaskId = linker.linkTask(plan, capability("allowed.visible.skill"), Map.of("value", "hello"));
+        Optional<String> linkedTaskId = linker.linkTask(plan, capability("allowedVisibleSkill"), Map.of("value", "hello"));
 
         assertThat(linkedTaskId).isEmpty();
     }

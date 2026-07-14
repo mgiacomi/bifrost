@@ -140,10 +140,10 @@ class BifrostAutoConfigurationTests {
                     assertThat(context.getBeansOfType(ChatModel.class)).isEmpty();
 
                     CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class)
-                            .getCapability("model.free.mapped.skill");
+                            .getCapability("modelFreeMappedSkill");
                     assertThat(metadata.skillExecution().configured()).isFalse();
                     assertThat(context.getBean(SkillTemplate.class)
-                            .invoke("model.free.mapped.skill", Map.of("input", "alpha")))
+                            .invoke("modelFreeMappedSkill", Map.of("input", "alpha")))
                             .isEqualTo("\"mapped:alpha\"");
                 });
     }
@@ -242,7 +242,7 @@ class BifrostAutoConfigurationTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> {
                     CapabilityRegistry capabilityRegistry = context.getBean(CapabilityRegistry.class);
-                    CapabilityMetadata metadata = capabilityRegistry.getCapability("thinking.default.skill");
+                    CapabilityMetadata metadata = capabilityRegistry.getCapability("thinkingDefaultSkill");
 
                     assertThat(metadata).isNotNull();
                     assertThat(metadata.skillExecution().configured()).isTrue();
@@ -263,7 +263,7 @@ class BifrostAutoConfigurationTests {
                     SkillImplementationTargetRegistry targetRegistry = context.getBean(SkillImplementationTargetRegistry.class);
 
                     assertThat(capabilityRegistry.getCapability("deterministicTarget")).isNull();
-                    assertThat(capabilityRegistry.getCapability("mapped.method.skill")).isNotNull();
+                    assertThat(capabilityRegistry.getCapability("mappedMethodSkill")).isNotNull();
                     assertThat(targetRegistry.getTarget("targetBean#deterministicTarget")).isNotNull();
                 });
     }

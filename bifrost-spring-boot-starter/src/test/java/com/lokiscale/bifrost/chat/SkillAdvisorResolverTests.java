@@ -104,7 +104,7 @@ class SkillAdvisorResolverTests {
 
     private YamlSkillDefinition definition(boolean withLinter, boolean withOutputSchema, boolean withEvidenceContract) {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName(withLinter ? "linted.skill" : "plain.skill");
+        manifest.setName(withLinter ? "lintedSkill" : "plain.skill");
         manifest.setDescription(manifest.getName());
         manifest.setModel("gpt-5");
         if (withOutputSchema) {

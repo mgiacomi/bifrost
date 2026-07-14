@@ -59,7 +59,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
@@ -67,23 +67,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of("ROLE_ROOT"),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -93,9 +93,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-root-rbac",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", true))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", true))),
                 "unused",
                 "{\"value\":\"hello\"}");
 
@@ -110,9 +110,9 @@ class ExecutionCoordinatorTest {
 
         BifrostSession session = new BifrostSession("session-1", 3);
 
-        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+        assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Say hello", session, null))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("root.visible.skill");
+                .hasMessageContaining("rootVisibleSkill");
         assertThat(session.getExecutionPlan()).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
         assertThat(chatClient.systemMessagesSeen).isEmpty();
@@ -126,7 +126,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
@@ -134,23 +134,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of("ROLE_ROOT"),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -160,9 +160,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-root-rbac",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", true))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", true))),
                 "unused",
                 "{\"value\":\"hello\"}");
 
@@ -181,9 +181,9 @@ class ExecutionCoordinatorTest {
                 "pw",
                 AuthorityUtils.createAuthorityList("ROLE_ROOT")));
 
-        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+        assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Say hello", session, null))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("root.visible.skill");
+                .hasMessageContaining("rootVisibleSkill");
         assertThat(session.getAuthentication()).isEmpty();
         assertThat(session.getExecutionPlan()).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
@@ -198,7 +198,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
@@ -206,23 +206,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -232,9 +232,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-1",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", false))),
                 "mission complete",
                 "{\"value\":\"ref://artifacts/input.txt\"}");
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
@@ -253,7 +253,7 @@ class ExecutionCoordinatorTest {
 
         BifrostSession session = new BifrostSession("session-1", 3);
         String response = coordinator.execute(
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "Say hello",
                 session,
                 UsernamePasswordAuthenticationToken.authenticated(
@@ -262,7 +262,7 @@ class ExecutionCoordinatorTest {
                         AuthorityUtils.createAuthorityList("ROLE_ALLOWED")));
 
         assertThat(response).isEqualTo("mission complete");
-        assertThat(factory.lastDefinition).isEqualTo(catalog.getSkill("root.visible.skill"));
+        assertThat(factory.lastDefinition).isEqualTo(catalog.getSkill("rootVisibleSkill"));
         assertThat(factory.lastDefinition.executionConfiguration()).isEqualTo(executionConfiguration);
         assertThat(session.getExecutionPlan()).isPresent();
         assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
@@ -275,10 +275,10 @@ class ExecutionCoordinatorTest {
                         JournalEntryType.TOOL_CALL,
                         JournalEntryType.PLAN_UPDATED,
                         JournalEntryType.TOOL_RESULT);
-        assertThat(chatClient.toolNamesSeen).containsExactly("allowed.visible.skill");
-        assertThat(chatClient.toolNamesByCall).containsExactly(List.of(), List.of("allowed.visible.skill"));
+        assertThat(chatClient.toolNamesSeen).containsExactly("allowedVisibleSkill");
+        assertThat(chatClient.toolNamesByCall).containsExactly(List.of(), List.of("allowedVisibleSkill"));
         assertThat(chatClient.systemMessagesSeen).hasSize(2);
-        assertThat(chatClient.systemMessagesSeen.get(1)).contains("plan-1", "VALID", "task-1", "Use allowed.visible.skill");
+        assertThat(chatClient.systemMessagesSeen.get(1)).contains("plan-1", "VALID", "task-1", "Use allowedVisibleSkill");
         assertThat(chatClient.lastToolResult).isEqualTo("\"child:resolved-content\"");
         assertThat(session.getJournalSnapshot().stream()
                 .filter(entry -> entry.type() == JournalEntryType.TOOL_CALL)
@@ -298,7 +298,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         manifest.setPlanningMode(false);
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
@@ -307,23 +307,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -333,9 +333,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "unused-plan",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", true))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", true))),
                 "mission complete",
                 "{\"value\":\"hello\"}",
                 false);
@@ -351,14 +351,14 @@ class ExecutionCoordinatorTest {
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
-        String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", session, null);
 
         assertThat(response).isEqualTo("mission complete");
         assertThat(session.getExecutionPlan()).isEmpty();
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .containsExactly(JournalEntryType.UNPLANNED_TOOL_EXECUTION, JournalEntryType.TOOL_RESULT);
         assertThat(chatClient.systemMessagesSeen).containsExactly("Execute the mission using only the visible YAML tools when needed.");
-        assertThat(chatClient.toolNamesByCall).containsExactly(List.of("allowed.visible.skill"));
+        assertThat(chatClient.toolNamesByCall).containsExactly(List.of("allowedVisibleSkill"));
     }
 
     @Test
@@ -368,7 +368,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
         manifest.setPlanningMode(true);
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
@@ -376,13 +376,13 @@ class ExecutionCoordinatorTest {
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -410,7 +410,7 @@ class ExecutionCoordinatorTest {
                 stateService,
                 new DefaultAccessGuard());
 
-        String response = coordinator.execute("root.visible.skill", "Say hello", new BifrostSession("session-1", 3), null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", new BifrostSession("session-1", 3), null);
 
         assertThat(response).isEqualTo("step loop complete");
         assertThat(factory.stepExecutionRequested).isTrue();
@@ -423,20 +423,20 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -464,7 +464,7 @@ class ExecutionCoordinatorTest {
                 stateService,
                 new DefaultAccessGuard());
 
-        String response = coordinator.execute("root.visible.skill", "Say hello", new BifrostSession("session-1", 3), null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", new BifrostSession("session-1", 3), null);
 
         assertThat(response).isEqualTo("one shot complete");
         assertThat(factory.stepExecutionRequested).isFalse();
@@ -477,20 +477,20 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -516,7 +516,7 @@ class ExecutionCoordinatorTest {
         ExecutionFrame parentFrame = stateService.openMissionFrame(session, "parent.visible.skill", Map.of("objective", "parent"));
         stateService.recordProducedEvidence(session, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
 
-        String response = coordinator.execute("root.visible.skill", "child objective", session, null);
+        String response = coordinator.execute("rootVisibleSkill", "child objective", session, null);
 
         assertThat(response).isEqualTo("nested complete");
         assertThat(session.getProducedEvidenceTypes()).isEmpty();
@@ -530,7 +530,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
         manifest.setPlanningMode(true);
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
@@ -538,13 +538,13 @@ class ExecutionCoordinatorTest {
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -567,7 +567,7 @@ class ExecutionCoordinatorTest {
                 fixedStateService(),
                 new DefaultAccessGuard());
 
-        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", new BifrostSession("session-1", 3), null))
+        assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Say hello", new BifrostSession("session-1", 3), null))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("createForStepExecution");
     }
@@ -581,17 +581,17 @@ class ExecutionCoordinatorTest {
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of()),
+                manifest("rootVisibleSkill", List.of()),
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -609,7 +609,7 @@ class ExecutionCoordinatorTest {
                 failingMissionExecutionEngine);
         BifrostSession session = new BifrostSession("session-top-level-failure", 3);
 
-        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+        assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Say hello", session, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("boom");
 
@@ -636,17 +636,17 @@ class ExecutionCoordinatorTest {
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of()),
+                manifest("rootVisibleSkill", List.of()),
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -660,7 +660,7 @@ class ExecutionCoordinatorTest {
                 null);
 
         BifrostSession session = new BifrostSession("session-1", 3, null, TracePersistencePolicy.ALWAYS);
-        String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", session, null);
 
         assertThat(response).isEqualTo("mission complete");
         TraceRecord rootFrameClosed = readTraceRecords(session).stream()
@@ -681,17 +681,17 @@ class ExecutionCoordinatorTest {
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                attachmentManifest("root.visible.skill"),
+                attachmentManifest("rootVisibleSkill"),
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -706,7 +706,7 @@ class ExecutionCoordinatorTest {
         BifrostSession session = new BifrostSession("session-attachment-redaction", 3);
 
         assertThatThrownBy(() -> coordinator.execute(
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "Parse image",
                 Map.of("image", "data:image/jpeg;base64,SECRET_IMAGE_BYTES"),
                 session,
@@ -735,17 +735,17 @@ class ExecutionCoordinatorTest {
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
-                manifest("root.visible.skill", List.of()),
+                manifest("rootVisibleSkill", List.of()),
                 executionConfiguration));
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
         registry.register(rootMetadata.name(), rootMetadata);
@@ -778,7 +778,7 @@ class ExecutionCoordinatorTest {
         BifrostSession session = new BifrostSession("session-1", 3);
 
         Throwable thrown = catchThrowable(() ->
-                coordinator.execute("root.visible.skill", "Say hello", session, null));
+                coordinator.execute("rootVisibleSkill", "Say hello", session, null));
 
         assertThat(thrown)
                 .isInstanceOf(IllegalStateException.class)
@@ -804,7 +804,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         manifest.setPlanningMode(false);
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
@@ -813,23 +813,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -839,9 +839,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "unused-plan",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", false))),
                 "mission complete",
                 "{\"value\":\"hello\"}",
                 false);
@@ -862,7 +862,7 @@ class ExecutionCoordinatorTest {
                 Instant.parse("2026-03-14T12:00:00Z"),
                 List.of(new PlanTask("old-task", "Old work", PlanTaskStatus.IN_PROGRESS, "stale note"))));
 
-        String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", session, null);
 
         assertThat(response).isEqualTo("mission complete");
         assertThat(session.getExecutionPlan()).isEmpty();
@@ -877,7 +877,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
@@ -885,17 +885,17 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
@@ -903,7 +903,7 @@ class ExecutionCoordinatorTest {
                     throw new IllegalStateException("tool exploded");
                 },
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -913,9 +913,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-2",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", false))),
                 "unused",
                 "{\"value\":\"ref://artifacts/input.txt\"}");
         RecordingSkillChatClientFactory factory = new RecordingSkillChatClientFactory(chatClient);
@@ -934,7 +934,7 @@ class ExecutionCoordinatorTest {
 
         BifrostSession session = new BifrostSession("session-1", 3);
 
-        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+        assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Say hello", session, null))
                 .isInstanceOf(ToolExecutionException.class)
                 .hasMessageContaining("tool exploded");
         assertThat(session.getExecutionPlan()).isPresent();
@@ -957,7 +957,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.ANTHROPIC,
                 "anthropic/claude-sonnet-4",
                 "medium");
-        YamlSkillManifest rootManifest = plannedManifest("root.visible.skill", List.of("child.llm.skill"));
+        YamlSkillManifest rootManifest = plannedManifest("rootVisibleSkill", List.of("child.llm.skill"));
         YamlSkillManifest childManifest = plannedManifest("child.llm.skill", List.of("mars.analyzer"));
         rootManifest.setPrompt("PARENT_PROMPT_SENTINEL");
         childManifest.setPrompt("CHILD_PROMPT_SENTINEL");
@@ -969,13 +969,13 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(rootExecutionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child-llm",
@@ -1008,7 +1008,7 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient rootChatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-root",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
                         List.of(toolTask("task-1", "Use child.llm.skill", "child.llm.skill", false))),
                 "root mission complete",
@@ -1026,7 +1026,7 @@ class ExecutionCoordinatorTest {
                         rootExecutionConfiguration.frameworkModel(), rootChatClient,
                         childExecutionConfiguration.frameworkModel(), childChatClient));
         SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
-                "root.visible.skill".equals(currentSkillName)
+                "rootVisibleSkill".equals(currentSkillName)
                         ? List.of(childMetadata)
                         : "child.llm.skill".equals(currentSkillName) ? List.of(marsAnalyzerMetadata) : List.of();
         RefResolver refResolver = (value, session) -> value instanceof String text && text.startsWith("ref://")
@@ -1051,11 +1051,11 @@ class ExecutionCoordinatorTest {
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 4);
-        String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", session, null);
 
         assertThat(response).isEqualTo("root mission complete");
         assertThat(factory.seenDefinitions).containsExactly(
-                catalog.getSkill("root.visible.skill"),
+                catalog.getSkill("rootVisibleSkill"),
                 catalog.getSkill("child.llm.skill"));
         assertThat(factory.seenDefinitions).extracting(YamlSkillDefinition::executionConfiguration)
                 .containsExactly(rootExecutionConfiguration, childExecutionConfiguration);
@@ -1092,7 +1092,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
@@ -1100,23 +1100,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of("ROLE_ALLOWED"),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -1126,9 +1126,9 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-rbac",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(toolTask("task-1", "Use allowed.visible.skill", "allowed.visible.skill", false))),
+                        List.of(toolTask("task-1", "Use allowedVisibleSkill", "allowedVisibleSkill", false))),
                 "unused",
                 "{\"value\":\"hello\"}");
 
@@ -1143,7 +1143,7 @@ class ExecutionCoordinatorTest {
 
         BifrostSession session = new BifrostSession("session-1", 3);
 
-        assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Say hello", session, null))
+        assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Say hello", session, null))
                 .isInstanceOf(ToolExecutionException.class)
                 .hasMessageContaining("Access denied");
         assertThat(session.getExecutionPlan()).isPresent();
@@ -1164,7 +1164,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5-mini",
                 "low");
-        YamlSkillManifest rootManifest = plannedManifest("root.visible.skill", List.of("child.llm.skill"));
+        YamlSkillManifest rootManifest = plannedManifest("rootVisibleSkill", List.of("child.llm.skill"));
         YamlSkillManifest childManifest = plannedManifest("child.llm.skill", List.of("mars.analyzer"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(
                 new YamlSkillDefinition(new ByteArrayResource(new byte[0]), rootManifest,
@@ -1174,13 +1174,13 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(rootExecutionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child-llm",
@@ -1213,7 +1213,7 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient rootChatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-root",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
                         List.of(toolTask("task-1", "Use child.llm.skill", "child.llm.skill", false))),
                 "root mission complete",
@@ -1231,7 +1231,7 @@ class ExecutionCoordinatorTest {
                         rootExecutionConfiguration.frameworkModel(), rootChatClient,
                         childExecutionConfiguration.frameworkModel(), childChatClient));
         SkillVisibilityResolver visibilityResolver = (currentSkillName, sessionState, authentication) ->
-                "root.visible.skill".equals(currentSkillName)
+                "rootVisibleSkill".equals(currentSkillName)
                         ? List.of(childMetadata)
                         : "child.llm.skill".equals(currentSkillName) ? List.of(marsAnalyzerMetadata) : List.of();
 
@@ -1262,7 +1262,7 @@ class ExecutionCoordinatorTest {
 
         BifrostSession session = new BifrostSession("session-1", 4);
         String response = coordinator.execute(
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "Say hello",
                 session,
                 UsernamePasswordAuthenticationToken.authenticated(
@@ -1285,7 +1285,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = manifest("root.visible.skill", List.of());
+        YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
         manifest.setPlanningMode(false);
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
@@ -1294,13 +1294,13 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -1328,10 +1328,10 @@ class ExecutionCoordinatorTest {
 
             BifrostSession session = new BifrostSession("session-timeout", 3);
 
-            assertThatThrownBy(() -> coordinator.execute("root.visible.skill", "Wait forever", session, null))
+            assertThatThrownBy(() -> coordinator.execute("rootVisibleSkill", "Wait forever", session, null))
                     .isInstanceOf(BifrostMissionTimeoutException.class)
                     .hasMessageContaining("session-timeout")
-                    .hasMessageContaining("root.visible.skill");
+                    .hasMessageContaining("rootVisibleSkill");
             assertThat(session.getFramesSnapshot()).isEmpty();
             assertThat(session.getExecutionPlan()).isEmpty();
         }
@@ -1347,13 +1347,13 @@ class ExecutionCoordinatorTest {
         String methodSchema = "{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}}}";
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                new CapabilityToolDescriptor("allowed.visible.skill", "child", methodSchema),
+                new CapabilityToolDescriptor("allowedVisibleSkill", "child", methodSchema),
                 "targetBean#deterministicTarget");
 
         ExecutionStateService stateService = fixedStateService();
@@ -1361,7 +1361,7 @@ class ExecutionCoordinatorTest {
         ToolCallback callback = toolCallbackFactory((value, session) -> value, null, stateService, planningService)
                 .createToolCallbacks(
                         new BifrostSession("session-1", 2),
-                        new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("root.visible.skill", List.of()), executionConfiguration),
+                        new YamlSkillDefinition(new ByteArrayResource(new byte[0]), manifest("rootVisibleSkill", List.of()), executionConfiguration),
                         List.of(childMetadata),
                         null)
                 .getFirst();
@@ -1376,7 +1376,7 @@ class ExecutionCoordinatorTest {
                 AiProvider.OPENAI,
                 "openai/gpt-5",
                 "medium");
-        YamlSkillManifest manifest = plannedManifest("root.visible.skill", List.of("allowed.visible.skill"));
+        YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
@@ -1384,23 +1384,23 @@ class ExecutionCoordinatorTest {
 
         CapabilityMetadata rootMetadata = new CapabilityMetadata(
                 "yaml:root",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "root",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "root",
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("root.visible.skill", "root"),
+                CapabilityToolDescriptor.generic("rootVisibleSkill", "root"),
                 null);
         CapabilityMetadata childMetadata = new CapabilityMetadata(
                 "yaml:child",
-                "allowed.visible.skill",
+                "allowedVisibleSkill",
                 "child",
                 SkillExecutionDescriptor.from(executionConfiguration),
                 java.util.Set.of(),
                 arguments -> "child:" + arguments.get("value"),
                 CapabilityKind.YAML_SKILL,
-                CapabilityToolDescriptor.generic("allowed.visible.skill", "child"),
+                CapabilityToolDescriptor.generic("allowedVisibleSkill", "child"),
                 "targetBean#deterministicTarget");
 
         InMemoryCapabilityRegistry registry = new InMemoryCapabilityRegistry();
@@ -1410,11 +1410,11 @@ class ExecutionCoordinatorTest {
         FakeCoordinatorChatClient chatClient = new FakeCoordinatorChatClient(
                 new ExecutionPlan(
                         "plan-3",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
                         List.of(
-                                toolTask("task-1", "Use allowed.visible.skill for source A", "allowed.visible.skill", false),
-                                toolTask("task-2", "Use allowed.visible.skill for source B", "allowed.visible.skill", false))),
+                                toolTask("task-1", "Use allowedVisibleSkill for source A", "allowedVisibleSkill", false),
+                                toolTask("task-2", "Use allowedVisibleSkill for source B", "allowedVisibleSkill", false))),
                 "mission complete",
                 "{\"value\":\"hello\"}");
 
@@ -1428,7 +1428,7 @@ class ExecutionCoordinatorTest {
                 true);
 
         BifrostSession session = new BifrostSession("session-1", 3);
-        String response = coordinator.execute("root.visible.skill", "Say hello", session, null);
+        String response = coordinator.execute("rootVisibleSkill", "Say hello", session, null);
 
         assertThat(response).isEqualTo("mission complete");
         assertThat(session.getExecutionPlan()).isPresent();

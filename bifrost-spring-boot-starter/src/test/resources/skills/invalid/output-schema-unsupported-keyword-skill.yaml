@@ -1,4 +1,4 @@
-name: output.schema.unsupported.keyword
+name: outputSchemaUnsupportedKeyword
 description: Invalid schema keyword.
 model: gpt-5
 output_schema:

@@ -1,4 +1,4 @@
-name: mapped.with.steps.text
+name: mappedWithStepsText
 description: Invalid mapped max steps declaration with an unbindable value.
 max_steps: nope
 mapping:

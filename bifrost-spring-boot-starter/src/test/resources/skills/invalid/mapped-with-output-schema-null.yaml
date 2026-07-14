@@ -1,4 +1,4 @@
-name: mapped.with.output.null
+name: mappedWithOutputNull
 description: Invalid mapped output schema declaration.
 output_schema: null
 mapping:

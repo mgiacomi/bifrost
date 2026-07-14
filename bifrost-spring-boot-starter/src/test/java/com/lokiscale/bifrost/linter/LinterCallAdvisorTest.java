@@ -145,18 +145,18 @@ class LinterCallAdvisorTest {
         BifrostSessionRunner runner = new BifrostSessionRunner(3);
 
         runner.callWithNewSession(session -> {
-            var frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "linted.skill#model", Map.of());
+            var frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "lintedSkill#model", Map.of());
 
             advisor.adviseCall(request("Write YAML"), chain);
 
             List<TraceRecord> records = readRecords(session);
             assertThat(records.stream()
                     .filter(record -> record.recordType() == TraceRecordType.ADVISOR_REQUEST_MUTATION_RECORDED)
-                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "linted.skill#model".equals(record.route())))
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "lintedSkill#model".equals(record.route())))
                     .isTrue();
             assertThat(records.stream()
                     .filter(record -> record.recordType() == TraceRecordType.ADVISOR_RESPONSE_MUTATION_RECORDED)
-                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "linted.skill#model".equals(record.route())))
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "lintedSkill#model".equals(record.route())))
                     .isTrue();
 
             stateService.closeFrame(session, frame, Map.of("status", "completed"));
@@ -190,7 +190,7 @@ class LinterCallAdvisorTest {
 
     private static LinterCallAdvisor advisor(int maxRetries, LinterOutcomeRecorder outcomeRecorder) {
         return new LinterCallAdvisor(
-                "linted.skill",
+                "lintedSkill",
                 "regex",
                 Pattern.compile("^OK:.*$"),
                 "Return fenced YAML only.",

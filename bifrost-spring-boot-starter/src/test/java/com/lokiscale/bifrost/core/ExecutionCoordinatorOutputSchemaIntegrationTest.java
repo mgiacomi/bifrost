@@ -67,7 +67,7 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
         ExecutionCoordinator coordinator = coordinator(definition, chatClient, stateService);
         BifrostSession session = new BifrostSession("session-1", 3);
 
-        String response = coordinator.execute("output.schema.skill", "Extract invoice", session, null);
+        String response = coordinator.execute("outputSchemaSkill", "Extract invoice", session, null);
 
         assertThat(response).isEqualTo("{\"vendorName\":\"Acme\",\"totalAmount\":42.5}");
         assertThat(chatClient.callCount).isEqualTo(2);
@@ -97,7 +97,7 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
         ExecutionCoordinator coordinator = coordinator(definition, chatClient, stateService);
         BifrostSession session = new BifrostSession("session-2", 3);
 
-        String response = coordinator.execute("output.schema.skill", "Extract invoice", session, null);
+        String response = coordinator.execute("outputSchemaSkill", "Extract invoice", session, null);
 
         assertThat(response).isEqualTo("{\"vendorName\":\"Acme\",\"totalAmount\":42.5,\"status\":\"OK\"}");
         assertThat(chatClient.callCount).isEqualTo(3);
@@ -121,7 +121,7 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
                 List.of(rawJson));
         ExecutionCoordinator coordinator = coordinator(definition, chatClient, stateService);
 
-        String response = coordinator.execute("output.schema.skill", "Extract invoice", new BifrostSession("session-3", 3), null);
+        String response = coordinator.execute("outputSchemaSkill", "Extract invoice", new BifrostSession("session-3", 3), null);
 
         assertThat(response).isEqualTo(rawJson);
     }
@@ -179,8 +179,8 @@ class ExecutionCoordinatorOutputSchemaIntegrationTest {
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("output.schema.skill");
-        manifest.setDescription("output.schema.skill");
+        manifest.setName("outputSchemaSkill");
+        manifest.setDescription("outputSchemaSkill");
         manifest.setModel("gpt-5");
         manifest.setAllowedSkills(List.of());
         manifest.setPlanningMode(false);

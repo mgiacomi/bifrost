@@ -119,7 +119,7 @@ class PlanningServiceTest {
 
         assertThat(planningService.initializePlan(session, "hello", null, rootDefinition(), new SimpleChatClient(plan, "done"), List.of()))
                 .contains(plan);
-        assertThat(usageService.lastSkillName).isEqualTo("root.visible.skill");
+        assertThat(usageService.lastSkillName).isEqualTo("rootVisibleSkill");
         assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(1);
         assertThat(usageService.snapshot(session).usageUnits()).isGreaterThan(0);
     }
@@ -153,7 +153,7 @@ class PlanningServiceTest {
 
         ExecutionPlan legacyPlan = new ExecutionPlan(
                 "plan-legacy",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Summarize", PlanTaskStatus.PENDING,
                         null, "Summarize results", List.of(), List.of("summary"), true, null)));
@@ -197,7 +197,7 @@ class PlanningServiceTest {
         TraceRecord modelFrame = records.stream()
                 .filter(record -> record.recordType() == TraceRecordType.FRAME_OPENED
                         && record.frameType() == TraceFrameType.MODEL_CALL
-                        && "root.visible.skill#planning-model".equals(record.route()))
+                        && "rootVisibleSkill#planning-model".equals(record.route()))
                 .findFirst()
                 .orElseThrow();
 
@@ -221,14 +221,14 @@ class PlanningServiceTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 3);
-        CapabilityMetadata capability = capability("allowed.visible.skill");
+        CapabilityMetadata capability = capability("allowedVisibleSkill");
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(
-                        new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
+                        new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null),
                         new PlanTask("task-2", "Summarize", PlanTaskStatus.PENDING, null))));
 
         ExecutionPlan started = planningService.markToolStarted(session, capability, Map.of("value", "hello")).orElseThrow();
@@ -243,9 +243,9 @@ class PlanningServiceTest {
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-2",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:01:00Z"),
-                List.of(new PlanTask("task-3", "Use tool", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+                List.of(new PlanTask("task-3", "Use tool", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
         ExecutionPlan blocked = planningService.markToolStarted(session, capability, Map.of()).orElseThrow();
         assertThat(planningService.markToolFailed(session, blocked.activeTaskId(), capability.name(), new IllegalStateException("boom")))
                 .isPresent()
@@ -269,13 +269,13 @@ class PlanningServiceTest {
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-explicit",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(
-                        new PlanTask("task-1", "Use tool once", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null),
-                        new PlanTask("task-2", "Use tool twice", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool again", List.of(), List.of(), false, null))));
+                        new PlanTask("task-1", "Use tool once", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null),
+                        new PlanTask("task-2", "Use tool twice", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool again", List.of(), List.of(), false, null))));
 
-        ExecutionPlan started = planningService.markTaskStarted(session, "task-2", "allowed.visible.skill", Map.of("value", "hello"))
+        ExecutionPlan started = planningService.markTaskStarted(session, "task-2", "allowedVisibleSkill", Map.of("value", "hello"))
                 .orElseThrow();
 
         assertThat(started.activeTaskId()).isEqualTo("task-2");
@@ -291,15 +291,15 @@ class PlanningServiceTest {
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-explicit",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.PENDING,
-                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+                        "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
 
         assertThatThrownBy(() -> planningService.markTaskStarted(session, "task-1", "different.visible.skill", Map.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("task-1")
-                .hasMessageContaining("allowed.visible.skill")
+                .hasMessageContaining("allowedVisibleSkill")
                 .hasMessageContaining("different.visible.skill");
     }
 
@@ -311,15 +311,15 @@ class PlanningServiceTest {
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-explicit",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.IN_PROGRESS,
-                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+                        "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
 
         assertThatThrownBy(() -> planningService.markToolCompleted(session, "task-1", "different.visible.skill", "done", EvidenceContract.empty()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("task-1")
-                .hasMessageContaining("allowed.visible.skill")
+                .hasMessageContaining("allowedVisibleSkill")
                 .hasMessageContaining("different.visible.skill");
     }
 
@@ -331,10 +331,10 @@ class PlanningServiceTest {
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-explicit",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.IN_PROGRESS,
-                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+                        "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
 
         assertThatThrownBy(() -> planningService.markToolFailed(
                 session,
@@ -343,7 +343,7 @@ class PlanningServiceTest {
                 new IllegalStateException("boom")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("task-1")
-                .hasMessageContaining("allowed.visible.skill")
+                .hasMessageContaining("allowedVisibleSkill")
                 .hasMessageContaining("different.visible.skill");
     }
 
@@ -355,11 +355,11 @@ class PlanningServiceTest {
 
         stateService.storePlan(session, new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
-                List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null))));
+                List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
 
-        assertThat(planningService.markToolCompleted(session, "missing-task", "allowed.visible.skill", "done", EvidenceContract.empty())).isEmpty();
+        assertThat(planningService.markToolCompleted(session, "missing-task", "allowedVisibleSkill", "done", EvidenceContract.empty())).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
     }
 
@@ -889,7 +889,7 @@ class PlanningServiceTest {
     }
 
     private static YamlSkillDefinition rootDefinition() {
-        return rootDefinition("root.visible.skill");
+        return rootDefinition("rootVisibleSkill");
     }
 
     private static YamlSkillDefinition rootDefinition(String name) {
@@ -905,7 +905,7 @@ class PlanningServiceTest {
 
     private static YamlSkillDefinition rootDefinitionWithPrompt(String prompt) {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
         manifest.setDescription("Short planner-facing summary");
         manifest.setModel("gpt-5");
         manifest.setPrompt(prompt);
@@ -924,17 +924,17 @@ class PlanningServiceTest {
     private static ExecutionPlan plan(String id, PlanTaskStatus status) {
         return new ExecutionPlan(
                 id,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool", status,
-                        "allowed.visible.skill", "Use tool", List.of(), List.of(), false, null)));
+                        "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null)));
     }
 
     private static String planJson(String id, PlanTaskStatus status) {
         return """
                 {
                   "planId": "%s",
-                  "capabilityName": "root.visible.skill",
+                  "capabilityName": "rootVisibleSkill",
                   "createdAt": "2026-03-15T12:00:00Z",
                   "status": "VALID",
                   "tasks": [
@@ -942,7 +942,7 @@ class PlanningServiceTest {
                       "taskId": "task-1",
                       "title": "Use tool",
                       "status": "%s",
-                      "capabilityName": "allowed.visible.skill",
+                      "capabilityName": "allowedVisibleSkill",
                       "intent": "Use tool",
                       "dependsOn": [],
                       "expectedOutputs": [],

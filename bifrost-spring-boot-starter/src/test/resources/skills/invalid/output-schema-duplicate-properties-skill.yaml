@@ -1,4 +1,4 @@
-name: output.schema.duplicate.properties
+name: outputSchemaDuplicateProperties
 description: Duplicate properties by case should fail.
 model: gpt-5
 output_schema:

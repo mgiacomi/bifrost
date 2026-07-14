@@ -572,7 +572,7 @@ class StepLoopMissionExecutionEngineTest {
                     engine,
                     session,
                     definition(),
-                    "Execute YAML skill 'root.visible.skill' using the provided mission input object.",
+                    "Execute YAML skill 'rootVisibleSkill' using the provided mission input object.",
                     Map.of("invoiceId", "INV-7"),
                     chatClient,
                     List.of(tool("invoiceParser", "{\"vendor\":\"Acme\"}")));
@@ -753,7 +753,7 @@ class StepLoopMissionExecutionEngineTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,
@@ -785,7 +785,7 @@ class StepLoopMissionExecutionEngineTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-missing-dependency",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,
@@ -819,7 +819,7 @@ class StepLoopMissionExecutionEngineTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-duplicate-task-id",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,
@@ -886,7 +886,7 @@ class StepLoopMissionExecutionEngineTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,
@@ -940,7 +940,7 @@ class StepLoopMissionExecutionEngineTest {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         ExecutionPlan plan = new ExecutionPlan(
                 "plan-unbound-task",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,
@@ -972,8 +972,8 @@ class StepLoopMissionExecutionEngineTest {
         PlanningService planningService = new InitializingPlanningService(stateService, plan);
         SequenceChatClient chatClient = new SequenceChatClient();
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         manifest.setMaxSteps(0);
@@ -1048,7 +1048,7 @@ class StepLoopMissionExecutionEngineTest {
     }
 
     private static YamlSkillDefinition definition() {
-        return definition("root.visible.skill");
+        return definition("rootVisibleSkill");
     }
 
     private static YamlSkillDefinition definition(String name) {
@@ -1062,8 +1062,8 @@ class StepLoopMissionExecutionEngineTest {
 
     private static YamlSkillDefinition definitionWithPrompt() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         manifest.setPrompt("STEP_PROMPT_SENTINEL");
@@ -1072,8 +1072,8 @@ class StepLoopMissionExecutionEngineTest {
 
     private static YamlSkillDefinition attachmentDefinition() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         manifest.setInputSchema(attachmentInputSchema());
@@ -1111,8 +1111,8 @@ class StepLoopMissionExecutionEngineTest {
 
     private static YamlSkillDefinition definitionWithOutputSchema() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         manifest.setOutputSchemaMaxRetries(1);
@@ -1129,8 +1129,8 @@ class StepLoopMissionExecutionEngineTest {
 
     private static YamlSkillDefinition definitionWithOutputSchemaAndEvidenceContract() {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         manifest.setOutputSchemaMaxRetries(1);
@@ -1167,8 +1167,8 @@ class StepLoopMissionExecutionEngineTest {
 
     private static YamlSkillDefinition definitionWithRegexLinter(int maxRetries) {
         YamlSkillManifest manifest = new YamlSkillManifest();
-        manifest.setName("root.visible.skill");
-        manifest.setDescription("root.visible.skill");
+        manifest.setName("rootVisibleSkill");
+        manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         manifest.setPlanningMode(true);
         YamlSkillManifest.LinterManifest linter = new YamlSkillManifest.LinterManifest();
@@ -1185,7 +1185,7 @@ class StepLoopMissionExecutionEngineTest {
     private static ExecutionPlan singleTaskPlan() {
         return new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,
@@ -1196,7 +1196,7 @@ class StepLoopMissionExecutionEngineTest {
     private static ExecutionPlan twoTaskPlan() {
         return new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 PlanStatus.VALID,
                 null,

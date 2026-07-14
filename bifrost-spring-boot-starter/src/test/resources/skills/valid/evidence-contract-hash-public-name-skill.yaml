@@ -1,5 +1,5 @@
-name: evidence.hash.name.skill
-description: Evidence producer using a currently legal hash-containing public skill name
+name: evidenceHashNameSkill
+description: Evidence producer using an exact validated public skill name
 model: gpt-5
 output_schema:
   type: object
@@ -11,4 +11,4 @@ evidence_contract:
   claims:
     result: [review_result]
   tool_evidence:
-    review#skill: [review_result]
+    reviewSkill: [review_result]

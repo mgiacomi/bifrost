@@ -1,4 +1,4 @@
-name: output.schema.object.enum
+name: outputSchemaObjectEnum
 description: Invalid enum usage on object schema.
 model: gpt-5
 output_schema:

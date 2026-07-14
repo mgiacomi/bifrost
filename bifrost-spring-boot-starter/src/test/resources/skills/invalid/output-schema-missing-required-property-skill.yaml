@@ -1,4 +1,4 @@
-name: output.schema.missing.required
+name: outputSchemaMissingRequired
 description: Missing required property should fail.
 model: gpt-5
 output_schema:

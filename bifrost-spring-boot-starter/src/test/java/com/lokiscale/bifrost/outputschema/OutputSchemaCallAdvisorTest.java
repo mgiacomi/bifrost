@@ -106,7 +106,7 @@ class OutputSchemaCallAdvisorTest {
     @Test
     void includesFormatHintsInPromptGuidance() {
         OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 schemaWithDateFormat(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),
@@ -127,7 +127,7 @@ class OutputSchemaCallAdvisorTest {
     @Test
     void acceptsNullableSchemaFieldsAndMentionsNullabilityInPromptGuidance() {
         OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 nullableSchema(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),
@@ -164,7 +164,7 @@ class OutputSchemaCallAdvisorTest {
                 .isInstanceOf(BifrostOutputSchemaValidationException.class)
                 .satisfies(ex -> {
                     BifrostOutputSchemaValidationException failure = (BifrostOutputSchemaValidationException) ex;
-                    assertThat(failure.getSkillName()).isEqualTo("output.schema.skill");
+                    assertThat(failure.getSkillName()).isEqualTo("outputSchemaSkill");
                     assertThat(failure.getRawOutput()).isEqualTo("still bad");
                     assertThat(failure.getAttemptCount()).isEqualTo(2);
                     assertThat(failure.getMaxRetries()).isEqualTo(1);
@@ -177,7 +177,7 @@ class OutputSchemaCallAdvisorTest {
     void recordsObservableOutcomeOnBoundSession() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 schema(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),
@@ -205,7 +205,7 @@ class OutputSchemaCallAdvisorTest {
     void truncatesRecordedOutcomeIssuesToBoundedList() {
         List<OutputSchemaOutcome> recordedOutcomes = new ArrayList<>();
         OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 wideSchema(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),
@@ -234,8 +234,8 @@ class OutputSchemaCallAdvisorTest {
                 .isInstanceOf(BifrostOutputSchemaValidationException.class);
 
         assertThat(output.getOut())
-                .contains("Output schema validation retry for skill 'output.schema.skill'")
-                .contains("Output schema validation exhausted for skill 'output.schema.skill'")
+                .contains("Output schema validation retry for skill 'outputSchemaSkill'")
+                .contains("Output schema validation exhausted for skill 'outputSchemaSkill'")
                 .contains("failureMode=INVALID_JSON");
     }
 
@@ -243,7 +243,7 @@ class OutputSchemaCallAdvisorTest {
     void recordsAdvisorMutationsOnTheActiveFrame() throws Exception {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 schema(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),
@@ -253,18 +253,18 @@ class OutputSchemaCallAdvisorTest {
         BifrostSessionRunner runner = new BifrostSessionRunner(3);
 
         runner.callWithNewSession(session -> {
-            var frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "output.schema.skill#model", Map.of());
+            var frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "outputSchemaSkill#model", Map.of());
 
             advisor.adviseCall(request("Extract invoice"), chain);
 
             List<TraceRecord> records = readRecords(session);
             assertThat(records.stream()
                     .filter(record -> record.recordType() == TraceRecordType.ADVISOR_REQUEST_MUTATION_RECORDED)
-                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "output.schema.skill#model".equals(record.route())))
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "outputSchemaSkill#model".equals(record.route())))
                     .isTrue();
             assertThat(records.stream()
                     .filter(record -> record.recordType() == TraceRecordType.ADVISOR_RESPONSE_MUTATION_RECORDED)
-                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "output.schema.skill#model".equals(record.route())))
+                    .allMatch(record -> frame.frameId().equals(record.frameId()) && "outputSchemaSkill#model".equals(record.route())))
                     .isTrue();
 
             stateService.closeFrame(session, frame, Map.of("status", "completed"));
@@ -275,7 +275,7 @@ class OutputSchemaCallAdvisorTest {
     @Test
     void rethrowsManagedSessionRecorderFailures() {
         OutputSchemaCallAdvisor advisor = new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 schema(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),
@@ -293,7 +293,7 @@ class OutputSchemaCallAdvisorTest {
 
     private static OutputSchemaCallAdvisor advisor(int maxRetries) {
         return new OutputSchemaCallAdvisor(
-                "output.schema.skill",
+                "outputSchemaSkill",
                 schema(),
                 new OutputSchemaValidator(),
                 new OutputSchemaPromptAugmentor(),

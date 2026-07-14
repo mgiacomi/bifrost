@@ -1,4 +1,4 @@
-name: evidence.contract.duplicate.claim.case.skill
+name: evidenceContractDuplicateClaimCaseSkill
 description: Invalid evidence contract with duplicate claim keys after normalization
 model: gpt-5
 output_schema:

@@ -1,4 +1,4 @@
-name: model.free.mapped.skill
+name: modelFreeMappedSkill
 description: Mapped skill that requires no framework model.
 mapping:
   target_id: targetBean#deterministicTarget

@@ -112,7 +112,7 @@ class ExecutionTraceContractTest {
                 .orElseThrow();
 
         assertThat(planCreated.frameType()).isEqualTo(TraceFrameType.PLANNING);
-        assertThat(planCreated.route()).isEqualTo("root.visible.skill#planning");
+        assertThat(planCreated.route()).isEqualTo("rootVisibleSkill#planning");
     }
 
     @Test
@@ -180,20 +180,20 @@ class ExecutionTraceContractTest {
         assertThat(missionRecord.metadata()).containsEntry("provider", AiProvider.OPENAI.name());
         assertThat(planningRecord.metadata()).containsEntry("providerModel", "openai/gpt-5");
         assertThat(missionRecord.metadata()).containsEntry("providerModel", "openai/gpt-5");
-        assertThat(planningRecord.metadata()).containsEntry("skillName", "root.visible.skill");
-        assertThat(missionRecord.metadata()).containsEntry("skillName", "root.visible.skill");
+        assertThat(planningRecord.metadata()).containsEntry("skillName", "rootVisibleSkill");
+        assertThat(missionRecord.metadata()).containsEntry("skillName", "rootVisibleSkill");
     }
 
     private static ExecutionPlan plan(String planId) {
         return new ExecutionPlan(
                 planId,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of());
     }
 
     private static YamlSkillDefinition rootDefinition() {
-        return definition("root.visible.skill");
+        return definition("rootVisibleSkill");
     }
 
     private static YamlSkillDefinition duplicateInvoiceDefinition() {

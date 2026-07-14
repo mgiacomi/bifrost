@@ -73,7 +73,7 @@ class ExecutionCoordinatorIntegrationTest {
             Files.writeString(refFile, "hello from ref", StandardCharsets.UTF_8);
 
             String content = coordinator.execute(
-                    "root.visible.skill",
+                    "rootVisibleSkill",
                     "hello world",
                     session,
                     UsernamePasswordAuthenticationToken.authenticated(
@@ -86,7 +86,7 @@ class ExecutionCoordinatorIntegrationTest {
             assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::status)
                     .containsExactly(PlanTaskStatus.COMPLETED);
             assertThat(session.getExecutionPlan().orElseThrow().tasks()).extracting(PlanTask::capabilityName)
-                    .containsExactly("allowed.visible.skill");
+                    .containsExactly("allowedVisibleSkill");
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                     .contains(JournalEntryType.PLAN_CREATED, JournalEntryType.PLAN_UPDATED, JournalEntryType.TOOL_CALL, JournalEntryType.TOOL_RESULT);
             assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
@@ -96,7 +96,7 @@ class ExecutionCoordinatorIntegrationTest {
                             JournalEntryType.TOOL_CALL,
                             JournalEntryType.TOOL_RESULT);
             assertThat(factory.chatClient.systemMessagesSeen).hasSize(3);
-            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("READY TASKS", "allowed.visible.skill", "task-1");
+            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("READY TASKS", "allowedVisibleSkill", "task-1");
             com.fasterxml.jackson.databind.JsonNode loggedArguments = session.getJournalSnapshot().stream()
                     .filter(entry -> entry.type() == JournalEntryType.TOOL_CALL)
                     .findFirst()
@@ -110,7 +110,7 @@ class ExecutionCoordinatorIntegrationTest {
                     .map(entry -> entry.payload().toString())
                     .collect(java.util.stream.Collectors.joining("\n"));
             assertThat(publicJournal)
-                    .contains("allowed.visible.skill")
+                    .contains("allowedVisibleSkill")
                     .doesNotContain("targetBean#deterministicTarget", "internal.only.target", "deterministicTarget");
             assertThat(session.getFramesSnapshot()).isEmpty();
         });
@@ -144,10 +144,10 @@ class ExecutionCoordinatorIntegrationTest {
             ExecutionCoordinator coordinator = context.getBean(ExecutionCoordinator.class);
             BifrostSession session = new BifrostSession("session-timeout", 3);
 
-            assertThatThrownBy(() -> coordinator.execute("planning.disabled.skill", "hello world", session, null))
+            assertThatThrownBy(() -> coordinator.execute("planningDisabledSkill", "hello world", session, null))
                     .isInstanceOf(BifrostMissionTimeoutException.class)
                     .hasMessageContaining("session-timeout")
-                    .hasMessageContaining("planning.disabled.skill");
+                    .hasMessageContaining("planningDisabledSkill");
             assertThat(session.getFramesSnapshot()).isEmpty();
         });
     }
@@ -180,13 +180,13 @@ class ExecutionCoordinatorIntegrationTest {
             ExecutionCoordinator coordinator = context.getBean(ExecutionCoordinator.class);
             BifrostSession session = new BifrostSession("session-overflow", 3);
 
-            assertThatThrownBy(() -> coordinator.execute("root.recursive.skill", "hello world", session, null))
+            assertThatThrownBy(() -> coordinator.execute("rootRecursiveSkill", "hello world", session, null))
                     .isInstanceOf(BifrostStackOverflowException.class)
                     .hasMessageContaining("session-overflow")
-                    .hasMessageContaining("child.recursive.skill");
+                    .hasMessageContaining("childRecursiveSkill");
             assertThat(session.getFramesSnapshot()).isEmpty();
             assertThat(session.getExecutionPlan()).isPresent();
-            assertThat(session.getExecutionPlan().orElseThrow().capabilityName()).isEqualTo("root.recursive.skill");
+            assertThat(session.getExecutionPlan().orElseThrow().capabilityName()).isEqualTo("rootRecursiveSkill");
         });
     }
 
@@ -225,7 +225,7 @@ class ExecutionCoordinatorIntegrationTest {
             Files.write(refFile, new byte[]{0x00, (byte) 0xFF, 0x41});
 
             String content = coordinator.execute(
-                    "root.binary.skill",
+                    "rootBinarySkill",
                     "process binary payload",
                     session,
                     UsernamePasswordAuthenticationToken.authenticated(
@@ -246,7 +246,7 @@ class ExecutionCoordinatorIntegrationTest {
                             JournalEntryType.TOOL_CALL,
                             JournalEntryType.TOOL_RESULT);
             assertThat(factory.chatClient.systemMessagesSeen).hasSize(3);
-            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("READY TASKS", "binary.visible.skill", "task-1");
+            assertThat(factory.chatClient.systemMessagesSeen.get(1)).contains("READY TASKS", "binaryVisibleSkill", "task-1");
             com.fasterxml.jackson.databind.JsonNode loggedArguments = session.getJournalSnapshot().stream()
                     .filter(entry -> entry.type() == JournalEntryType.TOOL_CALL)
                     .findFirst()
@@ -333,10 +333,10 @@ class ExecutionCoordinatorIntegrationTest {
         private final StepLoopIntegrationChatClient chatClient = new StepLoopIntegrationChatClient(
                 new ExecutionPlan(
                         "plan-1",
-                        "root.visible.skill",
+                        "rootVisibleSkill",
                         Instant.parse("2026-03-15T12:00:00Z"),
-                        List.of(new PlanTask("task-1", "Use allowed.visible.skill", PlanTaskStatus.PENDING,
-                                "allowed.visible.skill", "Use allowed.visible.skill", List.of(), List.of(), false, null))),
+                        List.of(new PlanTask("task-1", "Use allowedVisibleSkill", PlanTaskStatus.PENDING,
+                                "allowedVisibleSkill", "Use allowedVisibleSkill", List.of(), List.of(), false, null))),
                 Map.of(getDeclaredMethod(TargetBean.class, "deterministicTarget", String.class).getParameters()[0].getName(),
                         "ref://artifacts/message.txt"),
                 "integration complete");
@@ -358,10 +358,10 @@ class ExecutionCoordinatorIntegrationTest {
         private final StepLoopIntegrationChatClient chatClient = new StepLoopIntegrationChatClient(
                 new ExecutionPlan(
                         "plan-binary",
-                        "root.binary.skill",
+                        "rootBinarySkill",
                         Instant.parse("2026-03-15T12:05:00Z"),
-                        List.of(new PlanTask("task-1", "Use binary.visible.skill", PlanTaskStatus.PENDING,
-                                "binary.visible.skill", "Use binary.visible.skill", List.of(), List.of(), false, null))),
+                        List.of(new PlanTask("task-1", "Use binaryVisibleSkill", PlanTaskStatus.PENDING,
+                                "binaryVisibleSkill", "Use binaryVisibleSkill", List.of(), List.of(), false, null))),
                 Map.of(getDeclaredMethod(TargetBean.class, "binaryTarget", byte[].class).getParameters()[0].getName(),
                         "ref://artifacts/payload.bin"),
                 "binary integration complete");
@@ -396,26 +396,26 @@ class ExecutionCoordinatorIntegrationTest {
 
         @Override
         public org.springframework.ai.chat.client.ChatClient create(com.lokiscale.bifrost.skill.YamlSkillDefinition definition) {
-            if ("root.recursive.skill".equals(definition.manifest().getName())) {
+            if ("rootRecursiveSkill".equals(definition.manifest().getName())) {
                 return new StepLoopIntegrationChatClient(
                         new ExecutionPlan(
                                 "plan-root",
-                                "root.recursive.skill",
+                                "rootRecursiveSkill",
                                 Instant.parse("2026-03-15T12:00:00Z"),
                                 List.of(
-                                        new PlanTask("task-1", "Use child.recursive.skill", PlanTaskStatus.PENDING,
-                                                "child.recursive.skill", "Use child.recursive.skill", List.of(), List.of(), false, null))),
+                                        new PlanTask("task-1", "Use childRecursiveSkill", PlanTaskStatus.PENDING,
+                                                "childRecursiveSkill", "Use childRecursiveSkill", List.of(), List.of(), false, null))),
                         Map.of("topic", "mars"),
                         "root mission complete");
             }
             return new StepLoopIntegrationChatClient(
                     new ExecutionPlan(
                             "plan-child",
-                            "child.recursive.skill",
+                            "childRecursiveSkill",
                             Instant.parse("2026-03-15T12:01:00Z"),
                             List.of(
-                                    new PlanTask("task-1", "Use root.recursive.skill", PlanTaskStatus.PENDING,
-                                            "root.recursive.skill", "Use root.recursive.skill", List.of(), List.of(), false, null))),
+                                    new PlanTask("task-1", "Use rootRecursiveSkill", PlanTaskStatus.PENDING,
+                                            "rootRecursiveSkill", "Use rootRecursiveSkill", List.of(), List.of(), false, null))),
                     Map.of("topic", "mars"),
                     "child mission complete");
         }

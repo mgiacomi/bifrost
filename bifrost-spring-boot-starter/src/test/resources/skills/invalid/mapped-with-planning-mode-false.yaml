@@ -1,4 +1,4 @@
-name: mapped.with.planning.false
+name: mappedWithPlanningFalse
 description: Invalid mapped planning declaration.
 planning_mode: false
 mapping:

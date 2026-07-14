@@ -1,4 +1,4 @@
-name: mapped.with.evidence.null
+name: mappedWithEvidenceNull
 description: Invalid mapped evidence declaration.
 evidence_contract: null
 mapping:

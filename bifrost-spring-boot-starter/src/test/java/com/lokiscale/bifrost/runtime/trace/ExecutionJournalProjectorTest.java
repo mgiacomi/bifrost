@@ -32,7 +32,7 @@ class ExecutionJournalProjectorTest {
                 "frame-1",
                 null,
                 null,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "main",
                 Map.of("capabilityName", "deploy.service", "linkedTaskId", "task-1"),
                 OBJECT_MAPPER.valueToTree(Map.of(
@@ -51,7 +51,7 @@ class ExecutionJournalProjectorTest {
                 "frame-1",
                 null,
                 null,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 "main",
                 Map.of("exceptionType", "java.lang.IllegalStateException"),
                 OBJECT_MAPPER.valueToTree(Map.of("message", "boom", "apiKey", "top-secret")));

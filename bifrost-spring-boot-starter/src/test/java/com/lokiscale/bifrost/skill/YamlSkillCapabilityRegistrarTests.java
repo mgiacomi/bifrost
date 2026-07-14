@@ -113,12 +113,18 @@ class YamlSkillCapabilityRegistrarTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
                 .run(context -> {
                     CapabilityRegistry capabilityRegistry = context.getBean(CapabilityRegistry.class);
-                    CapabilityMetadata metadata = capabilityRegistry.getCapability("mapped.method.skill");
+                    CapabilityMetadata metadata = capabilityRegistry.getCapability("mappedMethodSkill");
+                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("mappedMethodSkill");
                     String parameterName = getDeclaredMethod(TargetBean.class, "deterministicTarget", String.class)
                             .getParameters()[0]
                             .getName();
 
                     assertThat(metadata).isNotNull();
+                    assertThat(definition).isNotNull();
+                    assertThat(definition.manifest().getName()).isEqualTo("mappedMethodSkill");
+                    assertThat(metadata.name()).isEqualTo("mappedMethodSkill");
+                    assertThat(metadata.tool().name()).isEqualTo("mappedMethodSkill");
+                    assertThat(capabilityRegistry.getCapability("mapped" + ".method.skill")).isNull();
                     assertThat(metadata.skillExecution().configured()).isFalse();
                     assertThat(metadata.skillExecution().frameworkModel()).isNull();
                     assertThat(metadata.skillExecution().provider()).isNull();
@@ -162,8 +168,8 @@ class YamlSkillCapabilityRegistrarTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/shared-target-*.yaml")
                 .run(context -> {
                     CapabilityRegistry registry = context.getBean(CapabilityRegistry.class);
-                    CapabilityMetadata first = registry.getCapability("shared.target.one");
-                    CapabilityMetadata second = registry.getCapability("shared.target.two");
+                    CapabilityMetadata first = registry.getCapability("sharedTargetOne");
+                    CapabilityMetadata second = registry.getCapability("sharedTargetTwo");
 
                     assertThat(first.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
                     assertThat(second.mappedTargetId()).isEqualTo("targetBean#deterministicTarget");
@@ -208,7 +214,7 @@ class YamlSkillCapabilityRegistrarTests {
                 .withUserConfiguration(AdvisedTargetBeanConfiguration.class)
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
                 .run(context -> {
-                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("mapped.method.skill");
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("mappedMethodSkill");
                     String parameterName = getDeclaredMethod(TargetBean.class, "deterministicTarget", String.class)
                             .getParameters()[0].getName();
 
@@ -231,11 +237,11 @@ class YamlSkillCapabilityRegistrarTests {
 
                     assertThat(targets.getTarget("lazyTargetBean#execute")).isNotNull();
                     assertThat(targets.getTarget("prototypeTargetBean#execute")).isNotNull();
-                    assertThat(registry.getCapability("lazy.mapped.skill").invoker().invoke(Map.of("input", "one")))
+                    assertThat(registry.getCapability("lazyMappedSkill").invoker().invoke(Map.of("input", "one")))
                             .isEqualTo("\"lazy:one\"");
-                    assertThat(registry.getCapability("prototype.mapped.skill").invoker().invoke(Map.of("input", "two")))
+                    assertThat(registry.getCapability("prototypeMappedSkill").invoker().invoke(Map.of("input", "two")))
                             .isEqualTo("\"prototype:two\"");
-                    assertThat(registry.getCapability("prototype.mapped.skill").invoker().invoke(Map.of("input", "three")))
+                    assertThat(registry.getCapability("prototypeMappedSkill").invoker().invoke(Map.of("input", "three")))
                             .isEqualTo("\"prototype:three\"");
                 });
     }
@@ -246,7 +252,7 @@ class YamlSkillCapabilityRegistrarTests {
                 .withUserConfiguration(TargetBeanConfiguration.class)
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
                 .run(context -> {
-                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("mapped.method.skill");
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("mappedMethodSkill");
 
                     assertThat(metadata.inputContract().schema().required()).containsExactly("input");
                     assertThat(metadata.inputContract().schema().properties()).containsKey("input");
@@ -258,7 +264,7 @@ class YamlSkillCapabilityRegistrarTests {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/input-schema-skill.yaml")
                 .run(context -> {
-                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("input.schema.skill");
+                    CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class).getCapability("inputSchemaSkill");
 
                     assertThat(metadata.inputContract().kind())
                             .isEqualTo(com.lokiscale.bifrost.runtime.input.SkillInputContract.SkillInputContractKind.YAML_EXPLICIT);
@@ -276,9 +282,9 @@ class YamlSkillCapabilityRegistrarTests {
                 .run(context -> {
                     CapabilityRegistry capabilityRegistry = context.getBean(CapabilityRegistry.class);
 
-                    assertThat(capabilityRegistry.getCapability("allowed.visible.skill").rbacRoles())
+                    assertThat(capabilityRegistry.getCapability("allowedVisibleSkill").rbacRoles())
                             .containsExactly("ROLE_ALLOWED");
-                    assertThat(capabilityRegistry.getCapability("disallowed.visible.skill").rbacRoles())
+                    assertThat(capabilityRegistry.getCapability("disallowedVisibleSkill").rbacRoles())
                             .containsExactly("ROLE_BLOCKED");
                 });
     }
@@ -290,7 +296,7 @@ class YamlSkillCapabilityRegistrarTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
                 .run(context -> {
                     CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class)
-                            .getCapability("mapped.method.skill");
+                            .getCapability("mappedMethodSkill");
                     String parameterName = getDeclaredMethod(ThrowingTargetBean.class, "deterministicTarget", String.class)
                             .getParameters()[0]
                             .getName();
@@ -307,11 +313,11 @@ class YamlSkillCapabilityRegistrarTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/mapped-method-skill.yaml")
                 .run(context -> {
                     CapabilityMetadata metadata = context.getBean(CapabilityRegistry.class)
-                            .getCapability("mapped.method.skill");
+                            .getCapability("mappedMethodSkill");
 
                     assertThatThrownBy(() -> metadata.invoker().invoke(Map.of("input", "alpha")))
                             .isInstanceOf(IllegalStateException.class)
-                            .hasMessageContaining("mapped.method.skill")
+                            .hasMessageContaining("mappedMethodSkill")
                             .hasMessageNotContaining("targetBean#deterministicTarget")
                             .satisfies(error -> assertThat(error.getCause())
                                     .hasMessageContaining("targetBean#deterministicTarget"));
@@ -324,7 +330,7 @@ class YamlSkillCapabilityRegistrarTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/unknown-mapped-target-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("unknown.mapped.target.skill")
+                        .hasMessageContaining("unknownMappedTargetSkill")
                         .hasMessageContaining("unknown-mapped-target-skill.yaml")
                         .hasMessageContaining("field 'mapping.target_id'")
                         .hasMessageContaining("unknown implementation target 'missingBean#missingTarget'")

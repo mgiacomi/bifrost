@@ -47,6 +47,94 @@ class YamlSkillCatalogTests {
             });
 
     @Test
+    void acceptsProviderPortablePublicSkillNames() {
+        List<String> expectedNames = List.of(
+                "A",
+                "_",
+                "expenseLookup",
+                "expense_lookup",
+                "_internalStyleAllowed",
+                "Skill2",
+                "CaseName",
+                "caseName",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/public-name/valid/*.yaml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
+                    assertThat(catalog.getSkills())
+                            .extracting(definition -> definition.manifest().getName())
+                            .containsExactlyInAnyOrderElementsOf(expectedNames);
+                    expectedNames.forEach(name -> assertThat(catalog.getSkill(name))
+                            .isNotNull()
+                            .extracting(definition -> definition.manifest().getName())
+                            .isEqualTo(name));
+                    assertThat(catalog.getSkill("expenselookup")).isNull();
+                });
+    }
+
+    @TestFactory
+    List<DynamicTest> rejectsNonPortablePublicSkillNames() {
+        record Case(String filename, String value) {}
+        return List.of(
+                new Case("leading-digit.yaml", "2expenseLookup"),
+                new Case("dot.yaml", "mapped" + ".method.skill"),
+                new Case("dash.yaml", "expense-lookup"),
+                new Case("space.yaml", "expense lookup"),
+                new Case("leading-space.yaml", " expenseLookup"),
+                new Case("trailing-space.yaml", "expenseLookup "),
+                new Case("hash.yaml", "expenseService#getLatestExpenses"),
+                new Case("slash.yaml", "expense/lookup"),
+                new Case("colon.yaml", "expense:lookup"),
+                new Case("unicode.yaml", "expénsèLookup"),
+                new Case("too-long.yaml", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .stream()
+                .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
+                        .withPropertyValues("bifrost.skills.locations=classpath:/skills/public-name/invalid/" + testCase.filename())
+                        .run(context -> assertThat(context.getStartupFailure())
+                                .isNotNull()
+                                .hasMessageContaining(testCase.filename())
+                                .hasMessageContaining("field 'name'")
+                                .hasMessageContaining("'" + testCase.value() + "'")
+                                .hasMessageContaining("^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+                                .hasMessageContaining("1-64 characters")
+                                .hasMessageContaining("start with a letter or underscore")
+                                .hasMessageContaining("only letters, digits, or underscores")
+                                .hasMessageContaining("mappedMethodSkill"))))
+                .toList();
+    }
+
+    @TestFactory
+    List<DynamicTest> keepsMissingAndBlankNamesOnRequiredFieldPath() {
+        return List.of("missing.yaml", "blank.yaml")
+                .stream()
+                .map(filename -> DynamicTest.dynamicTest(filename, () -> contextRunner
+                        .withPropertyValues("bifrost.skills.locations=classpath:/skills/public-name/invalid/" + filename)
+                        .run(context -> assertThat(context.getStartupFailure())
+                                .isNotNull()
+                                .hasMessageContaining(filename)
+                                .hasMessageContaining("field 'name'")
+                                .hasMessageContaining("required field is missing or blank")
+                                .hasMessageNotContaining("invalid public skill name"))))
+                .toList();
+    }
+
+    @Test
+    void validatesPublicNameBeforeMappedManifestFields() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/public-name/invalid/mapped-invalid-name.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("mapped-invalid-name.yaml")
+                        .hasMessageContaining("field 'name'")
+                        .hasMessageContaining("mapped" + ".method.skill")
+                        .hasMessageContaining("^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+                        .hasMessageNotContaining("field 'mapping.target_id'"));
+    }
+
+    @Test
     void discoversMappedSkillWhenModelCatalogIsEmpty() {
         modelFreeContextRunner
                 .withUserConfiguration(TargetBeanConfiguration.class)
@@ -54,7 +142,7 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class)
-                            .getSkill("model.free.mapped.skill");
+                            .getSkill("modelFreeMappedSkill");
                     assertThat(definition).isNotNull();
                     assertThat(definition.implementationType())
                             .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
@@ -68,7 +156,7 @@ class YamlSkillCatalogTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/llm-missing-model.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("llm.missing.model")
+                        .hasMessageContaining("llmMissingModel")
                         .hasMessageContaining("llm-missing-model.yaml")
                         .hasMessageContaining("field 'model'")
                         .hasMessageContaining("required field is missing or blank")
@@ -79,12 +167,12 @@ class YamlSkillCatalogTests {
     List<DynamicTest> rejectsDeclaredMappingWithoutNonBlankTarget() {
         record Case(String filename, String skillName) {}
         return List.of(
-                new Case("mapped-null-mapping.yaml", "mapped.null.mapping"),
-                new Case("mapped-empty-mapping.yaml", "mapped.empty.mapping"),
-                new Case("mapped-non-object-mapping.yaml", "mapped.non.object.mapping"),
-                new Case("mapped-non-string-target.yaml", "mapped.non.string.target"),
-                new Case("mapped-null-target.yaml", "mapped.null.target"),
-                new Case("mapped-blank-target.yaml", "mapped.blank.target"))
+                new Case("mapped-null-mapping.yaml", "mappedNullMapping"),
+                new Case("mapped-empty-mapping.yaml", "mappedEmptyMapping"),
+                new Case("mapped-non-object-mapping.yaml", "mappedNonObjectMapping"),
+                new Case("mapped-non-string-target.yaml", "mappedNonStringTarget"),
+                new Case("mapped-null-target.yaml", "mappedNullTarget"),
+                new Case("mapped-blank-target.yaml", "mappedBlankTarget"))
                 .stream()
                 .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
                         .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/" + testCase.filename())
@@ -102,19 +190,19 @@ class YamlSkillCatalogTests {
     List<DynamicTest> rejectsInapplicableMappedFieldByDeclarationPresence() {
         record Case(String filename, String skillName, String field, String explanation, String remedy) {}
         return List.of(
-                new Case("mapped-with-model-null.yaml", "mapped.with.model.null", "model", "no model executes", "remove the field"),
-                new Case("mapped-with-thinking-level-blank.yaml", "mapped.with.thinking.blank", "thinking_level", "no model executes", "remove the field"),
-                new Case("mapped-with-prompt-null.yaml", "mapped.with.prompt.null", "prompt", "no model executes", "remove the field"),
-                new Case("mapped-with-input-schema-null.yaml", "mapped.with.input.null", "input_schema", "reflected input contract", "create a Java adapter target"),
-                new Case("mapped-with-output-schema-null.yaml", "mapped.with.output.null", "output_schema", "owns the returned value", "create a Java adapter target"),
-                new Case("mapped-with-planning-mode-false.yaml", "mapped.with.planning.false", "planning_mode", "no model executes", "remove the field"),
-                new Case("mapped-with-planning-mode-object.yaml", "mapped.with.planning.object", "planning_mode", "no model executes", "remove the field"),
-                new Case("mapped-with-max-steps-zero.yaml", "mapped.with.steps.zero", "max_steps", "no model executes", "remove the field"),
-                new Case("mapped-with-max-steps-text.yaml", "mapped.with.steps.text", "max_steps", "no model executes", "remove the field"),
-                new Case("mapped-with-allowed-skills-empty.yaml", "mapped.with.allowed.empty", "allowed_skills", "LLM parent", "declare the mapped child"),
-                new Case("mapped-with-linter-null.yaml", "mapped.with.linter.null", "linter", "model-output validation", "remove the field"),
-                new Case("mapped-with-output-schema-retries-zero.yaml", "mapped.with.retries.zero", "output_schema_max_retries", "model-output validation", "remove the field"),
-                new Case("mapped-with-evidence-contract-null.yaml", "mapped.with.evidence.null", "evidence_contract", "invoking LLM parent", "declare tool evidence"))
+                new Case("mapped-with-model-null.yaml", "mappedWithModelNull", "model", "no model executes", "remove the field"),
+                new Case("mapped-with-thinking-level-blank.yaml", "mappedWithThinkingBlank", "thinking_level", "no model executes", "remove the field"),
+                new Case("mapped-with-prompt-null.yaml", "mappedWithPromptNull", "prompt", "no model executes", "remove the field"),
+                new Case("mapped-with-input-schema-null.yaml", "mappedWithInputNull", "input_schema", "reflected input contract", "create a Java adapter target"),
+                new Case("mapped-with-output-schema-null.yaml", "mappedWithOutputNull", "output_schema", "owns the returned value", "create a Java adapter target"),
+                new Case("mapped-with-planning-mode-false.yaml", "mappedWithPlanningFalse", "planning_mode", "no model executes", "remove the field"),
+                new Case("mapped-with-planning-mode-object.yaml", "mappedWithPlanningObject", "planning_mode", "no model executes", "remove the field"),
+                new Case("mapped-with-max-steps-zero.yaml", "mappedWithStepsZero", "max_steps", "no model executes", "remove the field"),
+                new Case("mapped-with-max-steps-text.yaml", "mappedWithStepsText", "max_steps", "no model executes", "remove the field"),
+                new Case("mapped-with-allowed-skills-empty.yaml", "mappedWithAllowedEmpty", "allowed_skills", "LLM parent", "declare the mapped child"),
+                new Case("mapped-with-linter-null.yaml", "mappedWithLinterNull", "linter", "model-output validation", "remove the field"),
+                new Case("mapped-with-output-schema-retries-zero.yaml", "mappedWithRetriesZero", "output_schema_max_retries", "model-output validation", "remove the field"),
+                new Case("mapped-with-evidence-contract-null.yaml", "mappedWithEvidenceNull", "evidence_contract", "invoking LLM parent", "declare tool evidence"))
                 .stream()
                 .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
                         .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/" + testCase.filename())
@@ -134,7 +222,7 @@ class YamlSkillCatalogTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/mapped-with-multiple-inapplicable-fields.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("mapped.with.multiple.invalid")
+                        .hasMessageContaining("mappedWithMultipleInvalid")
                         .hasMessageContaining("mapped-with-multiple-inapplicable-fields.yaml")
                         .hasMessageContaining("field 'model'")
                         .hasMessageContaining("no model executes")
@@ -166,8 +254,8 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("thinking.default.skill")).isNotNull();
-                    assertThat(catalog.getSkill("thinking.default.skill").executionConfiguration())
+                    assertThat(catalog.getSkill("thinkingDefaultSkill")).isNotNull();
+                    assertThat(catalog.getSkill("thinkingDefaultSkill").executionConfiguration())
                             .extracting(
                                     EffectiveSkillExecutionConfiguration::frameworkModel,
                                     EffectiveSkillExecutionConfiguration::provider,
@@ -184,9 +272,9 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("non.thinking.skill")).isNotNull();
-                    assertThat(catalog.getSkill("non.thinking.skill").executionConfiguration().providerModel()).isEqualTo("llama3.2");
-                    assertThat(catalog.getSkill("non.thinking.skill").executionConfiguration().thinkingLevel()).isNull();
+                    assertThat(catalog.getSkill("nonThinkingSkill")).isNotNull();
+                    assertThat(catalog.getSkill("nonThinkingSkill").executionConfiguration().providerModel()).isEqualTo("llama3.2");
+                    assertThat(catalog.getSkill("nonThinkingSkill").executionConfiguration().thinkingLevel()).isNull();
                 });
     }
 
@@ -210,7 +298,7 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     assertThat(context.getStartupFailure())
                             .isNotNull()
-                            .hasMessageContaining("invalid.unsupported.thinking.skill")
+                            .hasMessageContaining("invalidUnsupportedThinkingSkill")
                             .hasMessageContaining("unsupported-thinking-skill.yaml")
                             .hasMessageContaining("field 'thinking_level'")
                             .hasMessageContaining("unsupported thinking_level 'high'");
@@ -223,7 +311,7 @@ class YamlSkillCatalogTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/negative-linter-max-retries-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("invalid.negative.linter.max.retries.skill")
+                        .hasMessageContaining("invalidNegativeLinterMaxRetriesSkill")
                         .hasMessageContaining("negative-linter-max-retries-skill.yaml")
                         .hasMessageContaining("field 'linter.max_retries'"));
     }
@@ -237,7 +325,7 @@ class YamlSkillCatalogTests {
                             .isNotNull()
                             .hasMessageContaining("second-skill.yaml")
                             .hasMessageContaining("field 'name'")
-                            .hasMessageContaining("duplicate skill name 'duplicate.skill'");
+                            .hasMessageContaining("duplicate skill name 'duplicateSkill'");
                 });
     }
 
@@ -251,7 +339,7 @@ class YamlSkillCatalogTests {
                     assertThat(catalog.getSkills()).hasSize(2);
                     assertThat(catalog.getSkills())
                             .extracting(definition -> definition.manifest().getName())
-                            .containsExactly("pattern.two.skill", "pattern.one.skill");
+                            .containsExactly("patternTwoSkill", "patternOneSkill");
                 });
     }
 
@@ -284,10 +372,10 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("root.visible.skill")).isNotNull();
-                    assertThat(catalog.getSkill("root.visible.skill").allowedSkills())
-                            .containsExactly("allowed.visible.skill", "targetBean#deterministicTarget", "disallowed.visible.skill");
-                    assertThat(catalog.getSkill("allowed.visible.skill").rbacRoles())
+                    assertThat(catalog.getSkill("rootVisibleSkill")).isNotNull();
+                    assertThat(catalog.getSkill("rootVisibleSkill").allowedSkills())
+                            .containsExactly("allowedVisibleSkill", "targetBean#deterministicTarget", "disallowedVisibleSkill");
+                    assertThat(catalog.getSkill("allowedVisibleSkill").rbacRoles())
                             .containsExactly("ROLE_ALLOWED");
                 });
     }
@@ -299,17 +387,17 @@ class YamlSkillCatalogTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/allowed-child-skill.yaml")
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
-                    YamlSkillDefinition definition = catalog.getSkill("allowed.visible.skill");
+                    YamlSkillDefinition definition = catalog.getSkill("allowedVisibleSkill");
 
                     definition.manifest().setName("mutated.name");
                     definition.manifest().setRbacRoles(java.util.List.of("ROLE_MUTATED"));
                     definition.manifest().getMapping().setTargetId("mutatedBean#method");
 
-                    assertThat(catalog.getSkill("allowed.visible.skill").manifest().getName())
-                            .isEqualTo("allowed.visible.skill");
-                    assertThat(catalog.getSkill("allowed.visible.skill").rbacRoles())
+                    assertThat(catalog.getSkill("allowedVisibleSkill").manifest().getName())
+                            .isEqualTo("allowedVisibleSkill");
+                    assertThat(catalog.getSkill("allowedVisibleSkill").rbacRoles())
                             .containsExactly("ROLE_ALLOWED");
-                    assertThat(catalog.getSkill("allowed.visible.skill").mappingTargetId())
+                    assertThat(catalog.getSkill("allowedVisibleSkill").mappingTargetId())
                             .isEqualTo("targetBean#deterministicTarget");
                     assertThat(catalog.getSkill("mutated.name")).isNull();
                 });
@@ -325,13 +413,13 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    catalog.getSkill("linted.skill").linter().setType("mutated");
-                    catalog.getSkill("input.schema.skill").inputSchema().setType("string");
-                    catalog.getSkill("output.schema.skill").outputSchema().setType("string");
+                    catalog.getSkill("lintedSkill").linter().setType("mutated");
+                    catalog.getSkill("inputSchemaSkill").inputSchema().setType("string");
+                    catalog.getSkill("outputSchemaSkill").outputSchema().setType("string");
 
-                    assertThat(catalog.getSkill("linted.skill").linter().getType()).isEqualTo("regex");
-                    assertThat(catalog.getSkill("input.schema.skill").inputSchema().getType()).isEqualTo("object");
-                    assertThat(catalog.getSkill("output.schema.skill").outputSchema().getType()).isEqualTo("object");
+                    assertThat(catalog.getSkill("lintedSkill").linter().getType()).isEqualTo("regex");
+                    assertThat(catalog.getSkill("inputSchemaSkill").inputSchema().getType()).isEqualTo("object");
+                    assertThat(catalog.getSkill("outputSchemaSkill").outputSchema().getType()).isEqualTo("object");
                 });
     }
 
@@ -343,13 +431,13 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("thinking.default.skill").implementationType())
+                    assertThat(catalog.getSkill("thinkingDefaultSkill").implementationType())
                             .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.LLM_BACKED);
-                    assertThat(catalog.getSkill("mapped.method.skill").implementationType())
+                    assertThat(catalog.getSkill("mappedMethodSkill").implementationType())
                             .isEqualTo(com.lokiscale.bifrost.core.PublicSkillImplementationType.MAPPED_JAVA);
-                    assertThat(catalog.getSkill("mapped.method.skill").mappingTargetId())
+                    assertThat(catalog.getSkill("mappedMethodSkill").mappingTargetId())
                             .isEqualTo("targetBean#deterministicTarget");
-                    assertThat(catalog.getSkill("mapped.method.skill").executionConfiguration()).isNull();
+                    assertThat(catalog.getSkill("mappedMethodSkill").executionConfiguration()).isNull();
                 });
     }
 
@@ -360,10 +448,10 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("prompt.skill").prompt())
+                    assertThat(catalog.getSkill("promptSkill").prompt())
                             .contains("LONG_PROMPT_SENTINEL")
                             .contains("Follow the private skill instructions.");
-                    assertThat(catalog.getSkill("blank.prompt.skill").prompt()).isNull();
+                    assertThat(catalog.getSkill("blankPromptSkill").prompt()).isNull();
                 });
     }
 
@@ -397,9 +485,9 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("thinking.default.skill").allowedSkills()).isEmpty();
-                    assertThat(catalog.getSkill("thinking.default.skill").rbacRoles()).isEmpty();
-                    assertThat(catalog.getSkill("thinking.default.skill").manifest().getPlanningMode()).isNull();
+                    assertThat(catalog.getSkill("thinkingDefaultSkill").allowedSkills()).isEmpty();
+                    assertThat(catalog.getSkill("thinkingDefaultSkill").rbacRoles()).isEmpty();
+                    assertThat(catalog.getSkill("thinkingDefaultSkill").manifest().getPlanningMode()).isNull();
                 });
     }
 
@@ -410,10 +498,10 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("planning.disabled.skill")).isNotNull();
-                    assertThat(catalog.getSkill("planning.disabled.skill").manifest().getPlanningMode()).isFalse();
-                    assertThat(catalog.getSkill("planning.disabled.skill").planningModeEnabled(true)).isFalse();
-                    assertThat(catalog.getSkill("planning.disabled.skill").planningModeEnabled(false)).isFalse();
+                    assertThat(catalog.getSkill("planningDisabledSkill")).isNotNull();
+                    assertThat(catalog.getSkill("planningDisabledSkill").manifest().getPlanningMode()).isFalse();
+                    assertThat(catalog.getSkill("planningDisabledSkill").planningModeEnabled(true)).isFalse();
+                    assertThat(catalog.getSkill("planningDisabledSkill").planningModeEnabled(false)).isFalse();
                 });
     }
 
@@ -424,13 +512,13 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("linted.skill")).isNotNull();
-                    assertThat(catalog.getSkill("linted.skill").linter()).isNotNull();
-                    assertThat(catalog.getSkill("linted.skill").linter().getType()).isEqualTo("regex");
-                    assertThat(catalog.getSkill("linted.skill").linter().getMaxRetries()).isEqualTo(2);
-                    assertThat(catalog.getSkill("linted.skill").linter().getRegex()).isNotNull();
-                    assertThat(catalog.getSkill("linted.skill").linter().getRegex().getPattern()).isEqualTo("^```yaml[\\s\\S]*```$");
-                    assertThat(catalog.getSkill("linted.skill").linter().getRegex().getMessage()).isEqualTo("Return fenced YAML only.");
+                    assertThat(catalog.getSkill("lintedSkill")).isNotNull();
+                    assertThat(catalog.getSkill("lintedSkill").linter()).isNotNull();
+                    assertThat(catalog.getSkill("lintedSkill").linter().getType()).isEqualTo("regex");
+                    assertThat(catalog.getSkill("lintedSkill").linter().getMaxRetries()).isEqualTo(2);
+                    assertThat(catalog.getSkill("lintedSkill").linter().getRegex()).isNotNull();
+                    assertThat(catalog.getSkill("lintedSkill").linter().getRegex().getPattern()).isEqualTo("^```yaml[\\s\\S]*```$");
+                    assertThat(catalog.getSkill("lintedSkill").linter().getRegex().getMessage()).isEqualTo("Return fenced YAML only.");
                 });
     }
 
@@ -441,8 +529,8 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("thinking.default.skill")).isNotNull();
-                    assertThat(catalog.getSkill("thinking.default.skill").linter()).isNull();
+                    assertThat(catalog.getSkill("thinkingDefaultSkill")).isNotNull();
+                    assertThat(catalog.getSkill("thinkingDefaultSkill").linter()).isNull();
                 });
     }
 
@@ -453,8 +541,8 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("output.schema.skill")).isNotNull();
-                    assertThat(catalog.getSkill("output.schema.skill").manifest().getOutputSchemaMaxRetries()).isEqualTo(2);
+                    assertThat(catalog.getSkill("outputSchemaSkill")).isNotNull();
+                    assertThat(catalog.getSkill("outputSchemaSkill").manifest().getOutputSchemaMaxRetries()).isEqualTo(2);
                 });
     }
 
@@ -463,7 +551,7 @@ class YamlSkillCatalogTests {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/input-schema-skill.yaml")
                 .run(context -> {
-                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("input.schema.skill");
+                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("inputSchemaSkill");
 
                     assertThat(definition).isNotNull();
                     assertThat(definition.inputSchema()).isNotNull();
@@ -477,7 +565,7 @@ class YamlSkillCatalogTests {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/attachment-input-skill.yaml")
                 .run(context -> {
-                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("attachment.input.skill");
+                    YamlSkillDefinition definition = context.getBean(YamlSkillCatalog.class).getSkill("attachmentInputSkill");
 
                     assertThat(definition).isNotNull();
                     assertThat(definition.inputSchema().getProperties().get("image").getType()).isEqualTo("attachment");
@@ -567,10 +655,10 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("evidence.contract.skill")).isNotNull();
-                    assertThat(catalog.getSkill("evidence.contract.skill").evidenceContract().evidenceForClaim("isDuplicate"))
+                    assertThat(catalog.getSkill("evidenceContractSkill")).isNotNull();
+                    assertThat(catalog.getSkill("evidenceContractSkill").evidenceContract().evidenceForClaim("isDuplicate"))
                             .containsExactlyInAnyOrder("parsed_invoice", "expense_match_search");
-                    assertThat(catalog.getSkill("evidence.contract.skill").evidenceContract().evidenceProducedByTool("expenseLookup"))
+                    assertThat(catalog.getSkill("evidenceContractSkill").evidenceContract().evidenceProducedByTool("expenseLookup"))
                             .containsExactly("expense_match_search");
                 });
     }
@@ -620,15 +708,15 @@ class YamlSkillCatalogTests {
     }
 
     @Test
-    void allowsHashInEvidenceToolNameUntilPublicNameValidationIsImplemented() {
+    void usesExactValidatedPublicNameForEvidenceToolProducer() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/evidence-contract-hash-public-name-skill.yaml")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getBean(YamlSkillCatalog.class)
-                            .getSkill("evidence.hash.name.skill")
+                            .getSkill("evidenceHashNameSkill")
                             .evidenceContract()
-                            .evidenceProducedByTool("review#skill"))
+                            .evidenceProducedByTool("reviewSkill"))
                             .containsExactly("review_result");
                 });
     }
@@ -706,7 +794,7 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
-                    assertThat(catalog.getSkill("output.schema.skill").manifest().getOutputSchema().getAdditionalProperties())
+                    assertThat(catalog.getSkill("outputSchemaSkill").manifest().getOutputSchema().getAdditionalProperties())
                             .isFalse();
                 });
     }
@@ -717,7 +805,7 @@ class YamlSkillCatalogTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/output-schema-complex-skill.yaml")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context.getBean(YamlSkillCatalog.class).getSkill("output.schema.complex.skill")).isNotNull();
+                    assertThat(context.getBean(YamlSkillCatalog.class).getSkill("outputSchemaComplexSkill")).isNotNull();
                     assertThat(output.getOut())
                             .contains("output_schema")
                             .contains("recommended");
@@ -874,7 +962,7 @@ class YamlSkillCatalogTests {
                 .run(context -> {
                     assertThat(context.getStartupFailure())
                             .isNotNull()
-                            .hasMessageContaining("unknown.mapping.field.skill")
+                            .hasMessageContaining("unknownMappingFieldSkill")
                             .hasMessageContaining("unknown-mapping-field-skill.yaml")
                             .hasMessageContaining("field 'mapping.target_ids'")
                             .hasMessageContaining("unknown field")

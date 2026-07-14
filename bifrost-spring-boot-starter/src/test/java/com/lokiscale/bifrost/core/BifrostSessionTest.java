@@ -148,7 +148,7 @@ class BifrostSessionTest {
         BifrostSession session = new BifrostSession("session-1", 2);
         ExecutionPlan created = new ExecutionPlan(
                 "plan-1",
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null)));
         ExecutionPlan updated = created.updateTask("task-1",
@@ -183,7 +183,7 @@ class BifrostSessionTest {
     void storesLastLinterOutcomeAndJournalsItSeparately() {
         BifrostSession session = new BifrostSession("session-1", 2);
         LinterOutcome outcome = new LinterOutcome(
-                "linted.skill",
+                "lintedSkill",
                 "regex",
                 2,
                 1,
@@ -245,7 +245,7 @@ class BifrostSessionTest {
     private static ExecutionPlan plan(String planId) {
         return new ExecutionPlan(
                 planId,
-                "root.visible.skill",
+                "rootVisibleSkill",
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Plan", PlanTaskStatus.PENDING, null)));
     }

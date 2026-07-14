@@ -1,4 +1,4 @@
-name: shared.target.one
+name: sharedTargetOne
 description: First public wrapper for a shared implementation target.
 rbac_roles:
   - ROLE_ONE

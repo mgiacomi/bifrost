@@ -1,4 +1,4 @@
-name: output.schema.skill
+name: outputSchemaSkill
 description: Returns structured JSON.
 model: gpt-5
 output_schema:

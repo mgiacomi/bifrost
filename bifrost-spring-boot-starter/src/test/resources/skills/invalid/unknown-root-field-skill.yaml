@@ -1,4 +1,4 @@
-name: unknown.root.field.skill
+name: unknownRootFieldSkill
 description: YAML skill with an unexpected top-level field.
 model: gpt-5
 lintr:

@@ -1,4 +1,4 @@
-name: invalid.blank.regex.pattern.skill
+name: invalidBlankRegexPatternSkill
 description: Invalid skill with blank regex pattern.
 model: gpt-5
 linter:
