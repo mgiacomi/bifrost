@@ -71,14 +71,34 @@ These documents use:
 
 Each document should distinguish enforced behavior from design guidance and known limitations. Do not present a recommendation as a runtime requirement.
 
+## LLM-First Authoring Standard
+
+The primary consumer of this knowledge base is an LLM collaborating with a developer, not a person reading the documentation from beginning to end. Optimize for correct retrieval, interpretation, and task execution. Human readability remains useful, but it is not the organizing goal.
+
+- Lead with applicability, author-facing semantics, constraints, and required decisions. Add background only when it changes how the guidance should be applied.
+- Preserve progressive disclosure. Keep routing in this README accurate, keep topic documents focused, and link to adjacent topics instead of repeating them.
+- Make ordinary guidance self-contained enough for an LLM to act without source inspection. Use source anchors to verify or deepen the guidance, not as a substitute for explaining it.
+- Use consistent framework terminology and explicit normative language. Clearly separate enforced behavior, recommended design defaults, optional choices, and known limitations.
+- Prefer compact, structured representations such as decision tables, checklists, exact field names, and minimal examples when they reduce ambiguity. Do not add structure that merely restates the same content.
+- Omit conversational introductions, rhetorical transitions, motivational prose, repeated summaries, and historical narrative that does not affect the current checkout.
+- Keep examples minimal and evidence-backed. State when an example is partial, illustrative, invalid, or omits surrounding configuration.
+- State unknowns, incomplete coverage, and conflicts explicitly so an LLM does not turn missing information into a claim.
+- Prefer stable repository-relative references and named implementation anchors over volatile line-number citations.
+- Optimize for signal and precision, not token reduction alone. Do not remove qualifications, edge cases, or distinctions needed to apply the guidance correctly.
+
+Before accepting a change, verify that an LLM loading only the routed documents can determine:
+
+1. When the guidance applies.
+2. What is required, prohibited, recommended, and optional.
+3. What evidence supports material behavioral claims.
+4. What remains unknown, incomplete, or conflicting.
+5. Which document to load next if the task crosses the current topic's boundary.
+
 ## Development Rules for This Knowledge Base
 
-- Keep ordinary guidance self-contained; source inspection should deepen or verify it, not make it comprehensible.
-- Prefer repository-relative links and stable class or method names over line-number links.
-- Prefer focused behavioral tests over inferring intent from implementation mechanics.
+- Follow the LLM-first authoring standard above for every new or changed topic.
 - Reuse tested fixtures and sample manifests instead of duplicating large examples when practical.
-- Mark unresolved discrepancies explicitly.
 - Add a topic only after its current semantics have been researched and can be stated without speculation.
-- Update the coverage table whenever a topic is added or its confidence changes.
+- Update the routing and coverage tables whenever a topic is added, its task boundary changes, or its confidence changes.
 
 At the first production release, the repository tag should version this knowledge base with the corresponding source and tests.

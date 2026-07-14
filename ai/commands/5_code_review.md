@@ -39,6 +39,8 @@ If starting fresh or need more context:
    - List all files that should be modified
    - Note all success criteria (automated and manual)
    - Identify key functionality to verify
+   - Read the plan's `Skill-Authoring Documentation Impact` section. If it is missing, perform the impact assessment independently rather than assuming no impact
+   - If the plan or actual diff has skill-authoring impact, read `ai/skill-authoring/README.md`, the relevant routed topic documents, and `ai/skill-authoring/source-verification.md`
 
 4. **Spawn parallel research tasks** to discover implementation:
 
@@ -90,6 +92,17 @@ For each phase in the plan:
    - Are there missing validations?
    - Could the implementation break existing functionality?
 
+5. **Validate skill-authoring documentation impact independently**:
+   - Review the actual diff for changes a Bifrost skill author needs to know about; do not rely only on the plan's conclusion or changed file paths
+   - Consider manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, and testing guidance
+   - If there is no impact, record the concrete rationale in the validation report
+   - If there is impact, verify the relevant `ai/skill-authoring/` documents were updated in the same change and accurately distinguish enforced behavior, recommendations, and known limitations
+   - Verify each material documentation claim against focused tests, fixtures, samples, or production source using the evidence order in `ai/skill-authoring/README.md`
+   - Apply the README's `LLM-First Authoring Standard`: verify routed documents let an LLM determine applicability, normative force, supporting evidence, uncertainty, and where to route next without narrative filler or unnecessary duplication
+   - Verify the README coverage table was updated when a topic was added or its coverage/confidence changed
+   - Treat missing, stale, unsupported, conflicting, or non-actionable authoring guidance as a code review finding; do not accept a generic "documentation updated" checkbox as evidence
+   - Do not report the implementation as fully complete while a required skill-authoring documentation update or unresolved documentation conflict remains
+
 ### Step 3: Generate Validation Report
 
 Create comprehensive validation summary:
@@ -121,6 +134,15 @@ Create comprehensive validation summary:
 #### Potential Issues:
 - Missing index on foreign key could impact performance
 - No rollback handling in migration
+
+### Skill-Authoring Documentation Impact
+- Assessment: Affected / No impact
+- Rationale: [Author-facing behavior examined and conclusion]
+- Documents reviewed or updated: [paths, or None]
+- Evidence checked: [focused tests, fixtures, samples, and/or production source]
+- Coverage table status: [Current / Update required / Not applicable]
+- LLM-first usability: [Pass / Needs changes, with routing, signal, terminology, self-containment, or ambiguity findings]
+- Findings: [None, or specific missing/stale/unsupported/conflicting guidance]
 
 ### Manual Testing Required:
 1. UI functionality:
@@ -156,7 +178,10 @@ Always verify:
 - [ ] Code follows existing patterns
 - [ ] No regressions introduced
 - [ ] Error handling is robust
-- [ ] Documentation updated if needed
+- [ ] Skill-authoring documentation impact was assessed independently against the actual diff
+- [ ] Affected `ai/skill-authoring/` guidance is current and supported by repository evidence
+- [ ] Changed skill-authoring guidance satisfies the README's `LLM-First Authoring Standard`
+- [ ] The skill-authoring README coverage table is current when topic coverage or confidence changed
 - [ ] Manual test steps are clear
 
 Remember: Good validation catches issues before they reach production. Be constructive but thorough in identifying gaps or improvements.

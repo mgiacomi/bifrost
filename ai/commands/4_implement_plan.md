@@ -12,6 +12,8 @@ When given a plan path:
 - Read the plan completely and check for any existing checkmarks (- [x])
 - Read the original ticket and all files mentioned in the plan
 - If a testing plan exists for this work (for example, `ai/thoughts/plans/*-testing.md`), read it completely and follow it during implementation
+- Read the plan's `Skill-Authoring Documentation Impact` section. If it is missing (for example, in an older plan), perform the assessment described below before implementation
+- When skill-authoring impact is `Affected`, read `ai/skill-authoring/README.md`, the relevant routed topic documents, and `ai/skill-authoring/source-verification.md` before editing the knowledge base
 - **Read files fully when practical** - avoid partial reads unless a file is very large; if you must read in chunks, capture sufficient surrounding context
 - Think deeply about how the pieces fit together
 - Create a todo list to track your progress
@@ -42,11 +44,29 @@ If you encounter a mismatch:
   How should I proceed?
   ```
 
+## Keep the Skill-Authoring Knowledge Base Current
+
+The plan's documentation assessment is a starting point, not a permanent conclusion. Reassess it against the behavior actually implemented and the final diff.
+
+A change has skill-authoring impact when it changes anything a Bifrost skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance. Do not infer impact solely from file paths, and do not update the knowledge base for a purely internal refactor that leaves author-facing behavior unchanged.
+
+When impact is present:
+- Update the relevant `ai/skill-authoring/` documents in the same phase as the behavior change; do not defer them to an unspecified follow-up
+- Support guidance using the evidence order in `ai/skill-authoring/README.md`: knowledge base, focused tests, fixtures, samples, then production source for exact behavior and edge cases
+- Distinguish enforced behavior from recommendations and known limitations
+- Follow the README's `LLM-First Authoring Standard`: preserve progressive disclosure and routing, keep topic guidance self-contained and precise, and remove filler or duplication that does not improve retrieval, interpretation, or task execution
+- Update `ai/skill-authoring/README.md` coverage when a topic is added or its coverage/confidence changes
+- Report any conflict between the knowledge base and executable behavior explicitly; do not silently choose one
+
+If actual implementation reveals skill-authoring impact that the approved plan marked `No impact`, or materially changes the planned documentation scope, treat that as a plan mismatch. Propose the minimal plan update and rationale using the mismatch process above before proceeding.
+
 ## Verification Approach
 
 After implementing a phase:
 - Run the success criteria checks (usually `mvn test` covers everything)
 - Fix any issues before proceeding
+- Review the phase's actual changes for author-facing semantic impact and confirm the plan's documentation assessment is still correct
+- When documentation changed, verify its claims against the cited tests, fixtures, samples, or production source; apply the README's LLM-first acceptance questions; and update routing and coverage when required
 - Update your progress in both the plan and your todos
 - Check off completed items in the plan file itself by updating the checkboxes in the plan
   ```
@@ -73,5 +93,6 @@ If the plan has existing checkmarks:
 - Trust that completed work is done
 - Pick up from the first unchecked item
 - Verify previous work only if something seems off
+- Still reassess skill-authoring documentation impact for the final combined diff before declaring the plan complete
 
 Remember: You're implementing a solution, not just checking boxes. Keep the end goal in mind and maintain forward momentum.

@@ -12,6 +12,7 @@ You are tasked with creating detailed implementation plans through an interactiv
 - **Research docs directory**: `ai/thoughts/research/`
 - **Ticket/requirements directory** (if present): `ai/thoughts/tickets/`
 - **Testing plan command**: `3_testing_plan.md` (creates a dedicated test plan artifact)
+- **Skill-authoring knowledge base**: `ai/skill-authoring/` (must stay synchronized with author-facing framework behavior)
 
 ## Initial Response
 
@@ -121,7 +122,16 @@ After getting initial clarifications:
    Which approach aligns best with your vision?
    ```
 
-6. **Plan testing before implementation**:
+6. **Assess skill-authoring documentation impact**:
+   - Determine whether the proposed work changes anything a Bifrost skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance
+   - Do not decide this from changed directory names alone; trace the behavior to its author-facing effects
+   - Read `ai/skill-authoring/README.md` and use its routing guidance to read only the relevant topic documents. Follow `ai/skill-authoring/source-verification.md` when source-level verification is required
+   - Identify the focused tests, fixtures, samples, and production code that will support any new or changed guidance
+   - Decide whether the README coverage table must change because a topic is added or its coverage/confidence changes
+   - Plan documentation changes to satisfy the README's `LLM-First Authoring Standard`; do not plan narrative or duplicated prose that does not improve retrieval, interpretation, or task execution
+   - Carry the result into the mandatory `Skill-Authoring Documentation Impact` section of the final plan. An omitted assessment is not equivalent to "No impact"
+
+7. **Plan testing before implementation**:
    - After the approach is agreed, recommend running `3_testing_plan.md` before implementation
    - The testing plan should outline impacted areas, a failing test (when applicable), and exit criteria
 
@@ -184,6 +194,18 @@ After structure approval:
 
 [Explicitly list out-of-scope items to prevent scope creep]
 
+## Skill-Authoring Documentation Impact
+
+**Impact**: [Affected / No impact]
+
+- **Rationale**: [Explain which author-facing behavior changes, or why the change is purely internal and does not alter authoring guidance]
+- **Documents to update**: [`ai/skill-authoring/...`, or `None`]
+- **Supporting evidence**: [Focused tests, fixtures, samples, and/or production source that establish the documented behavior]
+- **Coverage table update**: [Required / Not required, with rationale]
+- **LLM-first usability**: [How routing, topic boundaries, self-contained guidance, terminology, and explicit limitations will remain clear; or `Not applicable` when there is no impact]
+
+If the impact is `Affected`, include each documentation change in the appropriate implementation phase below. Do not defer it to an unspecified follow-up. If existing documentation conflicts with executable behavior, call out the discrepancy explicitly rather than silently choosing one.
+
 ## Implementation Approach
 
 [High-level strategy and reasoning]
@@ -210,6 +232,9 @@ After structure approval:
 - [ ] Unit tests pass: `[unit test command]`
 - [ ] Linting/formatting passes: `[lint/format command]`
 - [ ] Integration tests (if any) pass: `[integration test command]`
+- [ ] Skill-authoring guidance changed in this phase is supported by the cited tests, fixtures, samples, or production source (when applicable)
+- [ ] Relevant `ai/skill-authoring/` documents and the README coverage table are updated (when applicable)
+- [ ] Changed skill-authoring guidance satisfies the README's `LLM-First Authoring Standard` (when applicable)
 
 #### Manual Verification:
 - [ ] Feature works as expected when tested via UI
@@ -299,6 +324,7 @@ After structure approval:
    - Research actual code patterns using parallel sub-tasks
    - Include specific file paths and line numbers
    - Write measurable success criteria with clear automated vs manual distinction
+   - Include an explicit, evidence-backed skill-authoring documentation impact assessment in every final plan
    - Prefer repo-standard wrapper commands (e.g., `make`, `mvn`, `gradle`, `npm`, `just`, etc.) over ad-hoc multi-step commands
 
 4. **Be Practical**:
@@ -318,6 +344,7 @@ After structure approval:
    - Do NOT write the plan with unresolved questions
    - The implementation plan must be complete and actionable
    - Every decision must be made before finalizing the plan
+   - Do not leave skill-authoring documentation impact unresolved or use "update docs if needed" as a placeholder
 
 7. **Stop After Plan Creation (Do Not Implement)**:
    - This command's scope is strictly limited to research and creating the implementation plan document.

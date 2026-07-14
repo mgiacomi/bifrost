@@ -38,6 +38,7 @@ Then wait for the user's input.
    - Ticket/requirements files
    - Research documents
    - Any logs/error output (if provided)
+   - If the implementation plan marks `Skill-Authoring Documentation Impact` as `Affected`, read the relevant `ai/skill-authoring/` documents identified by the plan
 
 2. **Locate existing tests and patterns**:
    - Find existing tests for the impacted modules
@@ -50,6 +51,7 @@ Create a short, explicit list of:
 - **Behaviors changing** (user-visible and internal)
 - **Impacted areas** (files/components)
 - **Primary risks** (regressions, edge cases, integrations)
+- **Authoring claims requiring evidence** when the change affects `ai/skill-authoring/` guidance
 
 ### Step 3: Plan the Failing Test (When Applicable)
 
@@ -69,6 +71,8 @@ For each proposed test, specify:
 - **What it proves**: exact expected behavior
 - **Inputs/fixtures needed**
 - **Mocking strategy** (if any)
+
+When skill-authoring documentation is affected, ensure the proposed focused tests establish the author-facing semantics the updated guidance will describe. Do not add tests merely to exercise prose; test the underlying framework behavior.
 
 ### Step 5: Running Tests + Exit Criteria
 
@@ -127,5 +131,6 @@ Use this structure:
 - [ ] Failing test exists and fails pre-fix (when applicable)
 - [ ] All tests pass post-fix
 - [ ] New/updated tests cover the changed behavior and key edge cases
+- [ ] Tests cited as evidence for changed skill-authoring guidance establish the documented behavior (when applicable)
 - [ ] Manual verification steps (if any) are complete
 ```
