@@ -4,7 +4,7 @@ A Java Spring Boot–based, agentic AI framework that uses LLM‑driven skills w
 
 Bifrost while still an HTN is fundamentally different from traditional HTNs. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows. 
 
-At its core, Bifrost treats skills as the fundamental building blocks of capability. YAML skills are model-driven and can call other visible capabilities; Java `@SkillMethod`s provide deterministic application logic. This creates a flexible planning system that combines LLM reasoning with explicit contracts and ordinary Spring services.
+At its core, Bifrost treats skills as the fundamental building blocks of capability. YAML manifests define every public skill: an LLM-backed skill can reason and call other visible YAML skills, while a mapped YAML skill exposes deterministic application logic implemented by a Java `@SkillMethod`. This creates a flexible planning system that combines LLM reasoning with explicit contracts and ordinary Spring services.
 
 
 ## Why Bifrost?
@@ -87,7 +87,7 @@ execution-trace:
   persistence: ALWAYS
 ```
 
-Every LLM-backed YAML skill must name one of the entries under `bifrost.models`. Mapped Java skills do not declare a model. `default-model` is an ordinary model key; it is not selected automatically.
+Every LLM-backed YAML skill must name one of the entries under `bifrost.models`. Mapped YAML skills do not declare a model. `default-model` is an ordinary model key; it is not selected automatically.
 
 By default, Bifrost discovers `classpath:/skills/**/*.yaml`. Add the `.yml` pattern, as above, when your application uses that extension.
 
@@ -186,9 +186,11 @@ For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf
 
 ### Mapping a YAML skill to Java
 
-YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped wrapper may contain only `name`, `description`, optional `rbac_roles`, and a nonblank `mapping.target_id`.
+YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped wrapper must declare `name`, `description`, and a nonblank `mapping.target_id`; its only optional field is `rbac_roles`.
 
 Declaring `mapping`, even as `null` or an empty block, selects mapped validation and requires a nonblank target. Mapped input and output behavior is owned by the Java target: Bifrost publishes its reflected input contract, and a different public shape requires a separate Java adapter target. Model/runtime fields such as `model`, `prompt`, schemas, planning, tool allowlists, linting, retries, and evidence contracts are rejected on the mapped child. An LLM parent may still list the child in its own `allowed_skills` and `evidence_contract.tool_evidence`.
+
+The public YAML name may equal the Java method name because public skills and implementation targets use separate namespaces. Multiple mapped YAML skills may also share one Java target. Within a single Spring bean, however, annotated method names must be unique: overloaded `@SkillMethod`s would produce the same `beanName#methodName` target ID and fail startup.
 
 ```yaml
 name: expenseLookup

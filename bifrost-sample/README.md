@@ -97,7 +97,7 @@ bifrost:
       - classpath:/skills/**/*.yaml
 ```
 
-Named Bifrost models (each LLM-backed YAML skill must set `model` to one of these keys; mapped Java wrappers omit it):
+Named Bifrost models (each LLM-backed YAML skill must set `model` to one of these keys; mapped YAML wrappers omit it):
 
 | Key | Provider | Provider model |
 | --- | --- | --- |

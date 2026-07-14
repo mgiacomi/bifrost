@@ -72,7 +72,7 @@ An LLM-backed skill does not automatically see every registered capability. Its 
 
 A mapped YAML skill declares `mapping.target_id` and delegates execution to a registered Java `@SkillMethod` target.
 
-The YAML capability supplies the tree-facing name, description, and access policy. Java supplies the input/output contract and deterministic implementation behavior.
+The YAML capability supplies the tree-facing name, description, and access policy. Java supplies the reflected input contract and deterministic returned-value behavior. A mapped wrapper cannot declare a YAML `output_schema`; the direct Java route does not enforce one.
 
 A mapped YAML skill:
 
@@ -80,7 +80,8 @@ A mapped YAML skill:
 - can be invoked by `SkillTemplate` using its YAML name;
 - can appear in another YAML skill's `allowed_skills`;
 - invokes its Java target instead of an LLM;
-- MAY declare only `name`, `description`, optional `rbac_roles`, and a nonblank `mapping.target_id`;
+- MUST declare `name`, `description`, and a nonblank `mapping.target_id`;
+- MAY additionally declare only `rbac_roles`;
 - MUST omit model/runtime fields, including `model`, `thinking_level`, `prompt`, schemas, planning, nested-tool selection, linting, retries, and evidence contracts;
 - inherits its input and returned-value behavior from the Java target.
 
