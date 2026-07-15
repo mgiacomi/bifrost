@@ -1,0 +1,4 @@
+name: searchKnownIssues
+description: Searches known issues and KB entries for the support scenario.
+mapping:
+  target_id: supportCrmService#searchKnownIssues

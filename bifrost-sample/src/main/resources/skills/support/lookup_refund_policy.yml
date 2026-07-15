@@ -1,0 +1,4 @@
+name: lookupRefundPolicy
+description: Returns structured refund policy eligibility facts for the support scenario.
+mapping:
+  target_id: supportCrmService#lookupRefundPolicy

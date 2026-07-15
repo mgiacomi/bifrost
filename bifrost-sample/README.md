@@ -8,14 +8,14 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 
 | Pattern | Where |
 | --- | --- |
-| Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves |
-| Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance workers use schemas + retries only (no linter) |
-| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence) |
-| Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen` |
+| Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves, support CRM leaves |
+| Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance/support workers use schemas + retries only (no linter) |
+| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + shared `case_facts`) |
+| Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen`; `handleBilling` / `handleTechnical` / `handleHowTo` |
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
 | Named connections and model aliases (`ollama` + `openai` + OpenRouter) | `application.yml` → `bifrost.connections` / `bifrost.models` |
-| HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController`, `ClaimsController` |
-| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, incident, and claims endpoints |
+| HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController`, `ClaimsController`, `SupportController` |
+| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, incident, claims, and support endpoints |
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 - **OpenAI API key** for feedstock vision demos:
   - set `OPENAI_API_KEY` in the environment (preferred)
   - Bifrost reads it through `bifrost.connections.openai-main.api-key`; `spring.ai.*` is not inherited
-- **OpenRouter API key** for nested HTN samples (incident + insurance live demos only):
+- **OpenRouter API key** for nested HTN samples (incident + insurance + support live demos only):
   - set `OPENROUTER_API_KEY` in the environment
   - sample boots without a real key via dummy default `test-openrouter-api-key`
   - Bifrost reads it through `bifrost.connections.openrouter.api-key`
@@ -36,7 +36,7 @@ PowerShell:
 
 ```powershell
 $env:OPENAI_API_KEY = "sk-..."
-$env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/* and /claims/* process calls
+$env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/*, /claims/*, and /support/* resolve calls
 ```
 
 ## Run
@@ -77,26 +77,31 @@ bifrost-sample/
     │   │   ├── incident/
     │   │   │   ├── IncidentController.java         # Incident HTN HTTP demos
     │   │   │   └── IncidentTelemetryService.java   # Deterministic probe leaves
-    │   │   └── insurance/
-    │   │       ├── ClaimsController.java           # Insurance HTN HTTP demos
-    │   │       ├── InsurancePolicyService.java     # Policy / exclusion / payout leaves
-    │   │       └── ClaimsHistoryService.java       # Prior claims / anomaly / address leaves
+    │   │   ├── insurance/
+    │   │   │   ├── ClaimsController.java           # Insurance HTN HTTP demos
+    │   │   │   ├── InsurancePolicyService.java     # Policy / exclusion / payout leaves
+    │   │   │   └── ClaimsHistoryService.java       # Prior claims / anomaly / address leaves
+    │   │   └── support/
+    │   │       ├── SupportController.java          # Support HTN HTTP demos
+    │   │       └── SupportCrmService.java          # Deterministic CRM leaves
     │   └── resources/
     │       ├── application.yml                     # Named AI connections + Bifrost config
     │       ├── forms/                              # Sample weigh ticket image/PDF
     │       ├── fixtures/incidents/                 # Canned incident tickets
     │       ├── fixtures/insurance/claims/          # Canned FNOL claim texts
+    │       ├── fixtures/support/                   # Canned support emails
     │       └── skills/
     │           ├── basics/                         # Mapped leaf, LLM parse, 2-level plan
     │           ├── vision/                         # Feedstock Java + pure YAML vision
     │           ├── incidents/                      # 3-level HTN incident commander
     │           ├── insurance/                      # 3-level HTN claim intake (strong evidence)
-    │           ├── support/                        # HTN gallery (planned)
+    │           ├── support/                        # 3-level HTN support case resolver
     │           └── travel/                         # HTN gallery (planned)
     └── test/
         ├── java/.../sample/                        # Context + controller unit tests
         │   ├── incident/                           # Catalog, controller, leaf tests
-        │   └── insurance/                          # Catalog, controller, leaf tests
+        │   ├── insurance/                          # Catalog, controller, leaf tests
+        │   └── support/                            # Catalog, controller, leaf tests
         └── resources/fixtures/                     # Sample invoice text
 ```
 
@@ -134,7 +139,7 @@ Notes:
 - `default-model` is an ordinary named model key; it is **not** auto-selected for LLM-backed skills that omit `model`.
 - Session mission timeout is raised to `6000s` for long vision/planning runs.
 - `execution-trace.persistence: ALWAYS` keeps full execution traces for inspection (useful with `bifrost-cli`).
-- Incident and insurance planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
+- Incident, insurance, and support planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
 
 Debug logging is enabled for Bifrost chat, linter, output schema, and planning packages so skill runs are easy to follow in the console.
 
@@ -415,11 +420,133 @@ MISSION processClaim
 
 Root evidence-related plan/tool events show **L2** names at the root frame. Root `max_steps: 10`; mid-level `max_steps: 6`. Nested multi-desk runs can take minutes.
 
+### Support (`skills/support/`) — 3-level HTN
+
+**Disclaimer:** Demo only. Fake CRM data, fake refunds, and draft replies are **not** real customer support actions. Humans remain responsible for any real case disposition.
+
+Gallery role: **ambiguous multi-intent language, policy judgment, and customer-facing synthesis** — complement to ops/incident and insurance compliance samples.
+
+```
+resolveSupportCase                         [L1 planning YAML, model qwen3-35b]
+├── understandIntent                       [L2 LLM single-shot, model gpt-4o-mini]
+├── handleBilling                          [L2 planning YAML, model qwen3-35b]
+│   ├── lookupCustomer                     [L3 Java]
+│   ├── lookupInvoices                     [L3 Java]
+│   ├── lookupRefundPolicy                 [L3 Java facts]
+│   └── checkRefundPolicy                  [L2 LLM judgment]
+├── handleTechnical                        [L2 planning YAML, model qwen3-35b]
+│   ├── lookupAccountStatus                [L3 Java]
+│   ├── searchKnownIssues                  [L3 Java]
+│   └── createBugTicket                    [L3 Java, stateless]
+├── handleHowTo                            [L2 thin planning YAML, model qwen3-35b]
+│   └── searchHelpCenter                   [L3 Java]
+└── composeReply                           [L2 LLM single-shot, model gpt-4o-mini]
+```
+
+| Framework feature | How this sample uses it |
+| --- | --- |
+| Nested `planning_mode` | Root + billing/technical/how-to specialists each run the step-loop engine |
+| Multi-label intent routing | `understandIntent` can return billing + technical together |
+| Shared evidence type | Any one `handle*` specialist produces `case_facts` for the parent |
+| Dual refund path | Java `lookupRefundPolicy` (facts) + LLM `checkRefundPolicy` (judgment) under billing |
+| Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping`); Java owns contracts |
+| Planner vs worker models | Same OpenRouter aliases as incident (`qwen3-35b` / `gpt-4o-mini`) |
+
+#### Side-by-side: incident vs insurance vs support
+
+| Sample | Levels | Evidence | Branching story |
+| --- | --- | --- | --- |
+| `handleIncident` | 3 | Light root; either investigation branch can satisfy `investigation_digest` | Ops: classify → selective network/app → draft |
+| `processClaim` | 3 | **Strong** root; **all four** L2 specialists plan-required | Risk: extract → coverage **and** fraud → writer |
+| `resolveSupportCase` | 3 | Require understand + ≥1 handle* (`case_facts`) + compose | Support: multi-intent → selective specialists → customer reply |
+
+Vs incident: multi-label intents + customer-facing draft (not just ops status). Vs insurance: selective specialist branches still evidence-require **one** specialist, not all desks.
+
+#### What the LLM decides vs what is fixed
+
+| Level | Fixed (YAML/Java) | LLM freedom |
+| --- | --- | --- |
+| L1 `resolveSupportCase` | Visible specialists only; evidence requires understand + ≥1 handle* + compose | Which specialist branches; disposition; assembly of root fields |
+| L2 billing/technical/how-to | Visible CRM / policy tools only | Which lookups; when enough facts exist |
+| L2 understand/compose/checkRefund | Schemas + prompts | Intent labels, sentiment, tone, refund judgment language |
+| L3 leaves | Fake CRM data | None |
+
+#### Evidence contract rules (root)
+
+- Claim evidence lists are **AND-all**.
+- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
+- Parent `tool_evidence` keys are **L2 tools only** (`understandIntent`, `handleBilling`, `handleTechnical`, `handleHowTo`, `composeReply`) — never L3 CRM methods or `checkRefundPolicy` (billing child owns that call).
+- Multiple tools may produce `case_facts`; **one successful producer is enough**. Prompts still require every branch the intents need (mixed emails should run billing **and** technical).
+- Successful plans are expected to cover: `understandIntent` + ≥1 of `handleBilling` / `handleTechnical` / `handleHowTo` + `composeReply`.
+- Mid-level planners have **no** `evidence_contract` (structured digests only).
+
+#### Dual refund path
+
+| Skill | Kind | Role |
+| --- | --- | --- |
+| `lookupRefundPolicy` | Java leaf | Deterministic eligibility facts (`maxGoodwillAmount`, `firstComplaintEligible`, `goodwillEligible`, notes) |
+| `checkRefundPolicy` | LLM single-shot (billing allow-list only) | Soft judgment language grounded in those facts |
+
+Policy is **not** only in the root `description`. Root defaults `refundRecommended: false` when billing did not run.
+
+#### Scenario plumbing
+
+Pass `scenario` (and optional `customerId`) on root input and forward them on every leaf that accepts them. Prefer `GET /support/resolve-scenario?name=...` so the model does not invent the key. Scenario GET injects a static `customerId`; `POST /support/resolve` does **not** auto-enrich.
+
+| Scenario key | Email gist | Expected bias | Enrichment `customerId` |
+| --- | --- | --- | --- |
+| `billing-duplicate-charge` | Charged twice for March | billing → invoices; possible refund | `CUST-1001` |
+| `tech-crash-on-checkout` | App crashes on pay | technical → known issues / bug ticket | `CUST-1002` |
+| `mixed-billing-and-crash` | Charged twice *and* crash | both billing + technical branches | `CUST-1003` |
+| `how-to-export` | How do I export CSV? | how-to only; **no** refund / bug ticket | `CUST-1004` |
+| `angry-goodwill` | Small overcharge, first complaint, furious tone | policy + tone judgment | `CUST-1005` |
+
+Fixtures: `src/main/resources/fixtures/support/`. Leaves return neutral valid data for unknown scenario keys (no exceptions). `createBugTicket` is **stateless** (deterministic id per scenario).
+
+Disposition enum: `resolved_draft | refund_offered | escalated_bug | needs_human | how_to_answered`.
+
+#### PII / redaction note
+
+All fixture names and ids are **fake demo PII**. Worker prompts instruct models not to invent SSNs, card numbers, or payment instruments; account ids already present in the email may be echoed; prefer generic references (“your March invoice”) when unsure.
+
+#### Model setup
+
+Reuses the same OpenRouter connection and aliases as incident/insurance — **not** `granite4-tiny` / Ollama-only.
+
+| Role | Framework alias | OpenRouter provider model | Skills |
+| --- | --- | --- | --- |
+| Planner | `qwen3-35b` | `qwen/qwen3.6-35b-a3b` | `resolveSupportCase`, `handleBilling`, `handleTechnical`, `handleHowTo` |
+| Worker | `gpt-4o-mini` | `openai/gpt-4o-mini` | `understandIntent`, `composeReply`, `checkRefundPolicy` |
+
+#### Reading the execution journal
+
+Multi-intent runs (especially `mixed-billing-and-crash`) typically show two specialist nested missions:
+
+```
+MISSION resolveSupportCase
+  PLANNING ...
+  TOOL understandIntent
+  TOOL handleBilling
+    MISSION handleBilling
+      PLANNING ...
+      TOOL lookupCustomer
+      TOOL lookupInvoices
+      TOOL lookupRefundPolicy
+      TOOL checkRefundPolicy
+  TOOL handleTechnical
+    MISSION handleTechnical
+      PLANNING ...
+      TOOL searchKnownIssues
+      TOOL createBugTicket
+  TOOL composeReply
+```
+
+Root evidence-related plan/tool events show **L2** names only. Root `max_steps: 10`; billing/technical `max_steps: 6`; how-to thin planner `max_steps: 4`. Mixed multi-specialist runs are slower/costlier than pure how-to.
+
 ### HTN gallery (remaining)
 
 | Folder | Sample (ticket) |
 | --- | --- |
-| `skills/support/` | Support Case Resolver (planned) |
 | `skills/travel/` | Travel Concierge (planned) |
 
 See `ai/thoughts/tickets/eng-sample-htn-skill-tree-gallery.md`.
@@ -441,6 +568,9 @@ Base URL: `http://localhost:8081`
 | `GET` | `/claims/scenarios` | — | Lists five insurance fixture keys + descriptions |
 | `GET` | `/claims/process-scenario?name=...` | `processClaim` | Preferred live demo: fixture + `scenario` + static `policyId`/`claimedAmount` |
 | `POST` | `/claims/process` | `processClaim` | JSON: `claimText` + optional `policyId`, `claimedAmount`, `scenario` (no auto-enrich) |
+| `GET` | `/support/scenarios` | — | Lists five support fixture keys + descriptions |
+| `GET` | `/support/resolve-scenario?name=...` | `resolveSupportCase` | Preferred live demo: fixture + `scenario` + static `customerId` |
+| `POST` | `/support/resolve` | `resolveSupportCase` | JSON: `emailText` + optional `customerId`, `scenario` (no auto-enrich) |
 
 `/expenses` calls `skillTemplate.invoke("expenseLookup", ...)`. The Java method name and `expenseService#getLatestExpenses` target ID are not public aliases.
 
@@ -485,6 +615,20 @@ $claim = @{
   scenario = "clear-auto-pay"
 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri http://localhost:8081/claims/process -ContentType "application/json" -Body $claim
+
+# Support case HTN (requires real OPENROUTER_API_KEY for live model calls)
+Invoke-RestMethod http://localhost:8081/support/scenarios
+Invoke-RestMethod "http://localhost:8081/support/resolve-scenario?name=mixed-billing-and-crash"
+Invoke-RestMethod "http://localhost:8081/support/resolve-scenario?name=how-to-export"
+Invoke-RestMethod "http://localhost:8081/support/resolve-scenario?name=angry-goodwill"
+
+# Free-form support POST (caller supplies optional fields; no auto-enrich)
+$support = @{
+  emailText = "I was charged twice for March and the app crashes on pay"
+  customerId = "CUST-1003"
+  scenario = "mixed-billing-and-crash"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8081/support/resolve -ContentType "application/json" -Body $support
 ```
 
 curl-friendly:
@@ -502,6 +646,13 @@ curl -s "http://localhost:8081/claims/process-scenario?name=exclusion-flood"
 curl -s -X POST http://localhost:8081/claims/process \
   -H "Content-Type: application/json" \
   -d '{"claimText":"Rear-ended; bumper ~2200","policyId":"POL-AUTO-1001","claimedAmount":2200,"scenario":"clear-auto-pay"}'
+
+curl -s http://localhost:8081/support/scenarios
+curl -s "http://localhost:8081/support/resolve-scenario?name=mixed-billing-and-crash"
+curl -s "http://localhost:8081/support/resolve-scenario?name=how-to-export"
+curl -s -X POST http://localhost:8081/support/resolve \
+  -H "Content-Type: application/json" \
+  -d '{"emailText":"Charged twice for March","customerId":"CUST-1001","scenario":"billing-duplicate-charge"}'
 ```
 
 ### Response shape
@@ -521,7 +672,7 @@ Endpoints that use the `SkillTemplate` observer return:
 - **`sessionId`** — Bifrost execution session id
 - **`executionJournal`** — step-level execution record for debugging / CLI inspection
 
-`/expenses` returns the skill result object directly (list of expense maps). Incident and claims endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
+`/expenses` returns the skill result object directly (list of expense maps). Incident, claims, and support endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
 
 ## Sample assets
 
@@ -532,6 +683,7 @@ Endpoints that use the `SkillTemplate` observer return:
 | `src/test/resources/fixtures/duplicate-invoice.txt` | Minimal invoice text for parse / duplicate-check demos |
 | `src/main/resources/fixtures/incidents/*.txt` | Canned incident tickets for HTN demos (`network-dns`, `app-deploy-regression`, `ambiguous-slow`, `firewall-block`) |
 | `src/main/resources/fixtures/insurance/claims/*.txt` | Canned FNOL claim texts (`clear-auto-pay`, `exclusion-flood`, `fraud-velocity`, `ambiguous-liability`, `over-limit`) |
+| `src/main/resources/fixtures/support/*.txt` | Canned support emails (`billing-duplicate-charge`, `tech-crash-on-checkout`, `mixed-billing-and-crash`, `how-to-export`, `angry-goodwill`) |
 
 Fixture content:
 
@@ -570,8 +722,11 @@ String result = skillTemplate.invoke("invoiceParser", Map.of("payload", invoiceT
 | `ClaimsControllerTest` | POST process inputs, process-scenario fixture+enrichment, scenarios list, unknown rejection, journal envelope |
 | `InsurancePolicyServiceTest` | Payout formula, exclusion matching, unknown neutrality |
 | `ClaimsHistoryServiceTest` | Fraud velocity elevation, clean history, unknown neutrality |
+| `SupportSkillCatalogTests` | 14 support skills, target isolation, planning graph, root evidence (L2 only; no `checkRefundPolicy` at root), model aliases, locked schemas |
+| `SupportControllerTest` | POST resolve inputs, resolve-scenario fixture+customerId enrichment, scenarios list, unknown/missing rejection, journal envelope |
+| `SupportCrmServiceTest` | Scenario bias (duplicates, goodwill, tickets, help articles), unknown neutrality, deterministic bug tickets |
 
-These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident/insurance skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
+These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident/insurance/support skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
 
 ## Troubleshooting
 
@@ -580,12 +735,13 @@ These tests mock or stub model calls where needed; they validate wiring, not liv
 | Connection errors on invoice / planning skills | The selected named Ollama connection is not running, or its model is not pulled |
 | Startup rejects `provider` or `spring.ai.*` appears ignored | Replace each model's `provider` with `connection`, define the connection, and move transport credentials/settings there |
 | Feedstock endpoints fail with missing API key | `OPENAI_API_KEY` not set in the process environment |
-| Incident handle or claims process endpoints fail at runtime | `OPENROUTER_API_KEY` not set (boot still works with dummy default; live calls need a real key) |
+| Incident handle, claims process, or support resolve endpoints fail at runtime | `OPENROUTER_API_KEY` not set (boot still works with dummy default; live calls need a real key) |
 | Skill not found | Skill `name` mismatch, or file not under `classpath:/skills/**/*.yml` |
-| Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design; nested incident/insurance planning is slower/costlier than invoice samples |
+| Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design; nested incident/insurance/support planning is slower/costlier than invoice samples |
 | Schema / linter retries in logs | Expected when the model returns non-JSON or incomplete fields; check DEBUG logs |
 | Unknown scenario on `/incidents/handle-scenario` | Use `GET /incidents/scenarios` for valid keys (`network-dns`, `app-deploy-regression`, `ambiguous-slow`, `firewall-block`) |
 | Unknown scenario on `/claims/process-scenario` | Use `GET /claims/scenarios` for valid keys (`clear-auto-pay`, `exclusion-flood`, `fraud-velocity`, `ambiguous-liability`, `over-limit`) |
+| Unknown scenario on `/support/resolve-scenario` | Use `GET /support/scenarios` for valid keys (`billing-duplicate-charge`, `tech-crash-on-checkout`, `mixed-billing-and-crash`, `how-to-export`, `angry-goodwill`) |
 
 ## Related modules
 

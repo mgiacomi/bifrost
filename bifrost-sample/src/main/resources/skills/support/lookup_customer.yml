@@ -1,0 +1,4 @@
+name: lookupCustomer
+description: Looks up customer plan, tenure, and prior complaint count for the support scenario.
+mapping:
+  target_id: supportCrmService#lookupCustomer

@@ -1,0 +1,4 @@
+name: lookupAccountStatus
+description: Looks up account status and feature flags for the support scenario.
+mapping:
+  target_id: supportCrmService#lookupAccountStatus

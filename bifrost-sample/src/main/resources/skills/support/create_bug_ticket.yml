@@ -1,0 +1,4 @@
+name: createBugTicket
+description: Creates a deterministic fake bug ticket id for the support scenario.
+mapping:
+  target_id: supportCrmService#createBugTicket

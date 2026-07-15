@@ -1,0 +1,4 @@
+name: searchHelpCenter
+description: Searches help-center articles for the support scenario.
+mapping:
+  target_id: supportCrmService#searchHelpCenter

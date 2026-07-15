@@ -1,0 +1,4 @@
+name: lookupInvoices
+description: Looks up recent invoice charges for the support scenario.
+mapping:
+  target_id: supportCrmService#lookupInvoices
