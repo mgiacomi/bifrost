@@ -1,0 +1,4 @@
+name: getServiceHealth
+description: Returns service health status for the incident scenario.
+mapping:
+  target_id: incidentTelemetryService#getServiceHealth

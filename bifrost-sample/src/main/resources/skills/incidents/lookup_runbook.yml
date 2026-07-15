@@ -1,0 +1,4 @@
+name: lookupRunbook
+description: Looks up a short incident runbook excerpt for the scenario and optional category.
+mapping:
+  target_id: incidentTelemetryService#lookupRunbook

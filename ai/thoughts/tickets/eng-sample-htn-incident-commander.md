@@ -1,6 +1,6 @@
 ﻿# Ticket: Sample HTN Skill Tree — IT Incident Commander
 
-**Status:** Design (decisions locked 2026-07-14; model selection deferred)  
+**Status:** Design (decisions locked 2026-07-14; model selection locked 2026-07-14)  
 **Priority:** P1 (recommended first nested-planning sample)  
 **Module:** `bifrost-sample`  
 **Related tickets:**  
@@ -8,8 +8,7 @@
 - `eng-sample-htn-support-case-resolver.md`  
 - `eng-sample-htn-travel-concierge.md`  
 - `eng-sample-htn-insurance-claim-intake.md`  
-- `eng-support-named-ai-provider-connections.md` (model catalog / connection redesign — **out of scope here**)  
-**Depends on:** Nested `planning_mode` skills + `allowed_skills` (already supported). Mapped YAML leaves already use minimal manifests (`name` / `description` / `mapping` only) as in `expenseLookup`.  
+**Depends on:** Nested `planning_mode` skills + `allowed_skills` (already supported). Mapped YAML leaves already use minimal manifests (`name` / `description` / `mapping` only) as in `expenseLookup`. Named AI connections are already in the framework.  
 
 ---
 
@@ -41,7 +40,7 @@ Incident response is a natural domain:
 ## Goals
 
 - Demonstrate **skill-stack depth ≥ 3**: root planner → mid planner → leaf.
-- Keep the demo **runnable without OpenAI** (local provider only for LLM skills).
+- Run nested planning against a **capable** model (not a tiny local model); default sample path uses OpenRouter.
 - Make the tree **inspectable** via `sessionId` + `executionJournal` (and later `bifrost-cli`).
 - Provide **canned scenarios** with documented expected *branches* (not brittle exact JSON).
 - Document the sample in `bifrost-sample/README.md` (or a dedicated walkthrough section).
@@ -58,7 +57,7 @@ Incident response is a natural domain:
 - Production-grade runbooks or security scanning.
 - Attachments, RBAC, multi-provider routing, or regex linters (already covered by invoice/feedstock samples).
 - Exhausting `max_steps` / depth limits as a first-class demo scenario (document limits in README only for v1).
-- **Model catalog / named connection design** — deferred to `eng-support-named-ai-provider-connections.md`. This ticket does not choose, document, or smoke-test specific model keys.
+- Proving that tiny local models can execute multi-level planning trees (they remain useful for shallow samples like invoice parse).
 
 ## Framework features this sample showcases
 
@@ -75,6 +74,7 @@ Incident response is a natural domain:
 | Nested mission isolation | Parent plan/evidence snapshotted while child planner runs (visible in journal frames) |
 | `prompt` vs `description` | Planners get private runbook-style prompts; public descriptions stay short |
 | `max_steps` | Tighter mid-level budgets teach step limits without a failure fixture |
+| Named AI connections | Shared OpenRouter connection; planner alias `qwen3-35b` + worker alias `gpt-4o-mini` |
 
 ## Domain story
 
@@ -138,7 +138,7 @@ This is **skill-stack depth**, not merely "three tasks in one plan."
 Locked settings:
 
 - **`max_steps`:** root `10`; mid-level `6` (tight enough to show budgets; engine default is 10).
-- **`model`:** **out of scope for this ticket.** Use whatever catalog keys exist when implementing; revisit after `eng-support-named-ai-provider-connections.md` lands. Do not invent model-selection guidance here.
+- **`model`:** planners use framework alias `qwen3-35b`; single-shot workers use `gpt-4o-mini` (both OpenRouter-backed). See [Model selection](#model-selection).
 - **`prompt`:** private planning instructions on root + mid-level (forward `scenario` on every tool call; prefer classify early; do not call every investigation branch; stop when enough evidence; pass structured digests into draft).
 - **`evidence_contract`:** locked light contract on root only; **none** on mid-level — see [Evidence contract rules](#evidence-contract-rules).
 - **`input_schema` / `output_schema`:** locked for all three planners — see [Mission input / output](#mission-input--output).
@@ -310,6 +310,7 @@ Both `investigateNetwork` and `investigateApp` share the same I/O shape. They di
 ```yaml
 planning_mode: true
 max_steps: 6
+output_schema_max_retries: 2
 
 input_schema:
   type: object
@@ -366,6 +367,7 @@ Mid-level prompt guidance:
 - Call only the probes needed for this ticket; stop when `summary` can be supported.
 - Do not invent telemetry; base findings on probe results.
 - Set `domain` to `network` or `application` to match the skill.
+- `findings` must reflect probes actually run (do not invent empty high-confidence digests).
 
 ### Draft — `draftIncidentResponse` (locked)
 
@@ -407,6 +409,52 @@ output_schema:
 ```
 
 Root may compose `investigationSummary` from one or both specialist digests (e.g. JSON stringified or plain-text concatenation of `summary` + findings). Exact composition is prompt-guided, not schema-enforced.
+
+## Model selection
+
+Nested planning needs reliable tool use, plan coverage, and selective branching. Single-shot workers need solid schema adherence at lower cost. Tiny local models are fine for shallow extract samples; they are **not** the target for this tree.
+
+**Sample convention (locked):** one shared OpenRouter connection; **planner** vs **worker** framework aliases.
+
+| Role | Framework alias | OpenRouter provider model | Used by |
+| --- | --- | --- | --- |
+| **Planner** | `qwen3-35b` | `qwen/qwen3.6-35b-a3b` | `handleIncident`, `investigateNetwork`, `investigateApp` |
+| **Worker** | `gpt-4o-mini` | `openai/gpt-4o-mini` | `classifyIncident`, `draftIncidentResponse` |
+
+| Layer | Value |
+| --- | --- |
+| Connection | `openrouter` (`driver: openai`) — **both** aliases share this connection |
+| Credential | `${OPENROUTER_API_KEY:test-openrouter-api-key}` — dummy default so sample boot and CI work without a real key; live demos require a real key |
+| Mapped leaves | Omit `model` |
+
+Sample `application.yml` additions (illustrative):
+
+```yaml
+bifrost:
+  connections:
+    openrouter:
+      driver: openai
+      base-url: https://openrouter.ai/api/v1
+      api-key: ${OPENROUTER_API_KEY:test-openrouter-api-key}
+      # optional OpenRouter attribution headers if desired:
+      # headers:
+      #   HTTP-Referer: ${OPENROUTER_SITE_URL}
+  models:
+    qwen3-35b:
+      connection: openrouter
+      provider-model: qwen/qwen3.6-35b-a3b
+    gpt-4o-mini:
+      connection: openrouter
+      provider-model: openai/gpt-4o-mini
+```
+
+Planning YAML skills set `model: qwen3-35b`. Single-shot classify/draft set `model: gpt-4o-mini`. Mapped leaves omit `model`.
+
+**Why this split:** Qwen 3.6 35B is the sample's main planner for multi-step tool calling and HTN branch selection; GPT-4o-mini is the cheaper worker for structured single-shot classify/draft. Both route through OpenRouter so demos need one API key. Confirm OpenRouter slugs at implement time; keep the framework aliases stable if a slug changes.
+
+**CI / tests:** OpenAI-driver connections require a nonblank api-key at startup. The dummy default keeps `@SpringBootTest` and local boot working without OpenRouter. Catalog, controller, and leaf tests must not call the live API. Live smoke remains a manual/local demo step with a real `OPENROUTER_API_KEY`.
+
+**Local override:** operators MAY retarget either alias to another connection later; the sample default is OpenRouter for both. Do not default this tree to `granite4-tiny`.
 
 ## Canned scenarios / fixtures
 
@@ -487,8 +535,7 @@ Update `bifrost-sample/README.md` with:
 - How to read the journal for nested planning (MISSION → PLANNING → TOOL → nested MISSION)
 - Contrast with `duplicateInvoiceChecker` (2-level vs 3-level)
 - Session / `max_steps` limits (document only; no failure fixture)
-
-**Defer to model-connection ticket:** model key choice, Ollama pull prerequisites, and multi-level model quality notes. Link or add those after `eng-support-named-ai-provider-connections.md` is complete.
+- Model setup: shared OpenRouter connection; planner alias `qwen3-35b` (`qwen/qwen3.6-35b-a3b`); worker alias `gpt-4o-mini` (`openai/gpt-4o-mini`); `OPENROUTER_API_KEY`; why this sample does not use tiny local models
 
 Optional later: `WALKTHROUGH.md` tour order including this sample.
 
@@ -513,10 +560,13 @@ Minimum:
 - [ ] HTTP endpoints return result + sessionId + executionJournal.
 - [ ] `GET /incidents/scenarios` and `GET /incidents/handle-scenario` work for demos.
 - [ ] Leaves accept `scenario`; fixture endpoint sets it explicitly; prompts instruct forwarding.
-- [ ] README section explains the tree, evidence rules, journal nesting, scenario plumbing, and how to invoke HTTP endpoints.
-- [ ] Default sample config runs without requiring a paid cloud key; other providers remain usable via config (not forced).
+- [ ] README section explains the tree, evidence rules, journal nesting, scenario plumbing, model setup, and how to invoke HTTP endpoints.
+- [ ] Sample config adds OpenRouter connection with dummy-default api-key + planner alias `qwen3-35b` and worker alias `gpt-4o-mini`; live demo uses real `OPENROUTER_API_KEY`.
+- [ ] Planning skills (`handleIncident`, `investigateNetwork`, `investigateApp`) declare `model: qwen3-35b`.
+- [ ] Single-shot skills (`classifyIncident`, `draftIncidentResponse`) declare `model: gpt-4o-mini`.
+- [ ] Mid-level investigate skills declare `output_schema_max_retries: 2`.
+- [ ] CI / sample boot succeeds without a real OpenRouter key; tests do not call the live API.
 - [ ] Naming is consistent across YAML, Java, and HTTP.
-- [ ] Model selection / connection config is **not** invented in this ticket; follow current sample config until the named-connections work lands, then revisit.
 
 ## Design decisions
 
@@ -526,23 +576,27 @@ Minimum:
 | 2 | Classify required? | **Plan-required** via root evidence + required output fields (`incident_classification`). Prompt steers early ordering. Not Java-hardcoded. | 2026-07-14 (revised) |
 | 3 | Evidence strength | Light on root only; none on mid-level; shared `investigation_digest` for either branch; locked contract shape | 2026-07-14 |
 | 4 | Scenario plumbing | Explicit `scenario` on root + leaves; prompts forward it; fixture endpoint for demos | 2026-07-12 |
-| 5 | Model choice | **Deferred** to `eng-support-named-ai-provider-connections.md` | 2026-07-14 |
+| 5 | Model choice | Shared OpenRouter connection; planner `qwen3-35b` → `qwen/qwen3.6-35b-a3b`; worker `gpt-4o-mini` → `openai/gpt-4o-mini`; not tiny local models | 2026-07-15 |
 | 6 | Controller home | New `IncidentController` | 2026-07-12 |
 | 7 | Draft skill | Single-shot; optional `lookupRunbook` via root (not a third planner) | 2026-07-12 |
 | 8 | Failure / limits demo | Defer; document session/`max_steps` limits in README only | 2026-07-12 |
 | 9 | Mid-level I/O | Shared structured digest schema (`domain`, `summary`, `findings`, `probesUsed`, `confidence`) | 2026-07-14 |
 | 10 | Classify / draft I/O | Full schemas locked in this ticket | 2026-07-14 |
 | 11 | Mapped leaf manifests | Minimal only (`name`, `description`, `mapping`); Java owns contracts | 2026-07-14 |
+| 12 | OpenRouter boot key | Dummy default `${OPENROUTER_API_KEY:test-openrouter-api-key}` so sample boots/CI without a real key; live demos need a real key | 2026-07-14 |
+| 13 | Mid-level schema retries | `output_schema_max_retries: 2` on both investigate planners (same as classify/draft) | 2026-07-14 |
+| 14 | Scope freeze | No additional demo scenarios or framework features for v1; expand later if needed | 2026-07-14 |
 
 ## Implementation sketch
 
 1. Add `IncidentTelemetryService` + seven mapped YAML leaves (minimal manifests; reflected `scenario` contract).
 2. Add `classifyIncident` and `draftIncidentResponse` single-shot skills with locked schemas.
-3. Add mid-level planning skills with locked I/O, `planning_mode`, `max_steps: 6`, prompts, no evidence contract.
+3. Add mid-level planning skills with locked I/O, `planning_mode`, `max_steps: 6`, `output_schema_max_retries: 2`, prompts, no evidence contract.
 4. Add root planning skill with locked I/O, evidence contract, `max_steps: 10`, prompts.
 5. Wire `IncidentController` + fixtures + scenario list/run endpoints.
-6. Catalog / controller / leaf tests + README (journal nesting + evidence rules; no model-selection section yet).
-7. After named-connections ticket: choose model keys, smoke nested planning, add README model/prereq notes.
+6. Add OpenRouter connection (`api-key: ${OPENROUTER_API_KEY:test-openrouter-api-key}`) + planner alias `qwen3-35b` and worker alias `gpt-4o-mini` in sample `application.yml`; set planner model on the three planning skills and worker model on classify/draft.
+7. Catalog / controller / leaf tests + README (journal nesting + evidence rules + model/prereq notes).
+8. Manual smoke: nested planning on one network and one app fixture with a real OpenRouter key.
 
 ## Why build this first among A–D
 
@@ -557,4 +611,7 @@ Minimum:
 - Reviewers: TBD  
 - Decisions log:  
   - 2026-07-12: Reviewed against `bifrost-spring-boot-starter` capabilities; locked evidence direction, scenario, controller, draft, and HTTP decisions. Implementation deferred.
-  - 2026-07-14: Design review against `ai/skill-authoring`. Locked mid-level/classify/draft I/O schemas; revised classify from "soft-required" to plan-required via evidence; removed model-selection scope pending `eng-support-named-ai-provider-connections.md`; dropped obsolete mapped-manifest dependency tickets (behavior already in checkout).
+  - 2026-07-14: Design review against `ai/skill-authoring`. Locked mid-level/classify/draft I/O schemas; revised classify from "soft-required" to plan-required via evidence; dropped obsolete mapped-manifest dependency tickets (behavior already in checkout).
+  - 2026-07-14: Named AI connections already in framework. Locked model to OpenRouter via named aliases; removed all named-connection deferral language from this ticket.
+  - 2026-07-14: Final pre-impl locks — dummy OpenRouter key default for boot/CI; mid-level `output_schema_max_retries: 2`; no further v1 scope.
+  - 2026-07-15: Sample model convention — shared OpenRouter connection; planner `qwen3-35b` → `qwen/qwen3.6-35b-a3b` for planning skills; worker `gpt-4o-mini` → `openai/gpt-4o-mini` for classify/draft (replaces single `qwen3-235b` alias for all five).

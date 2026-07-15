@@ -1,0 +1,4 @@
+name: checkFirewallRules
+description: Checks recent firewall deny hits for the incident scenario.
+mapping:
+  target_id: incidentTelemetryService#checkFirewallRules

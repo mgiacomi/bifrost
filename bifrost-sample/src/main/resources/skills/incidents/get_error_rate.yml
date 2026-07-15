@@ -1,0 +1,4 @@
+name: getErrorRate
+description: Returns application 5xx error rate for the incident scenario.
+mapping:
+  target_id: incidentTelemetryService#getErrorRate

@@ -1,0 +1,4 @@
+name: checkDns
+description: Checks DNS resolution status for the incident scenario.
+mapping:
+  target_id: incidentTelemetryService#checkDns

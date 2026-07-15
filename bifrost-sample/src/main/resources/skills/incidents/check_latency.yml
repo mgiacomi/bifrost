@@ -1,0 +1,4 @@
+name: checkLatency
+description: Checks service latency percentiles for the incident scenario.
+mapping:
+  target_id: incidentTelemetryService#checkLatency

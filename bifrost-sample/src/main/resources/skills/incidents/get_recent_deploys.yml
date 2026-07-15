@@ -1,0 +1,4 @@
+name: getRecentDeploys
+description: Returns recent deploys for services related to the incident scenario.
+mapping:
+  target_id: incidentTelemetryService#getRecentDeploys

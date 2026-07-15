@@ -1,0 +1,71 @@
+name: handleIncident
+description: >
+  Root IT incident commander. Plans classification, selective network or app
+  investigation, optional runbook lookup, and response drafting into a structured
+  incident report.
+model: qwen3-35b
+planning_mode: true
+max_steps: 10
+allowed_skills:
+  - classifyIncident
+  - investigateNetwork
+  - investigateApp
+  - draftIncidentResponse
+  - lookupRunbook
+prompt: |
+  You are the root IT incident commander.
+
+  1. Prefer calling classifyIncident early with ticketText (and scenario if present).
+  2. Choose investigation branch(es) from classification + ticket. Call investigateNetwork
+     or investigateApp as needed. Do not call both specialists unless the ticket is
+     genuinely mixed/ambiguous.
+  3. Forward scenario on every tool call that accepts it (classify, investigate*, lookupRunbook).
+  4. Optionally call lookupRunbook with category/scenario; pass any runbook text into draft.
+  5. Call draftIncidentResponse with ticketText plus investigation digest(s)
+     (and optional classificationSummary / runbookText).
+  6. Emit the full root report fields from classification + investigation + draft results.
+
+  Do not invent telemetry. Do not call leaf probes directly — only the specialists listed
+  in allowed_skills. Either investigation specialist can satisfy investigation evidence;
+  you do not need both branches for a successful plan.
+evidence_contract:
+  claims:
+    severity: [incident_classification]
+    category: [incident_classification]
+    likelyCause: [incident_classification, investigation_digest]
+    evidenceSummary: [investigation_digest]
+    recommendedAction: [investigation_digest]
+    userMessage: [response_draft]
+  tool_evidence:
+    classifyIncident: [incident_classification]
+    investigateNetwork: [investigation_digest]
+    investigateApp: [investigation_digest]
+    draftIncidentResponse: [response_draft]
+input_schema:
+  type: object
+  properties:
+    ticketText:
+      type: string
+      description: Free-text incident report from a human or alert system.
+    scenario:
+      type: string
+      description: Optional fixture key for deterministic leaf data (e.g. network-dns, app-deploy-regression, ambiguous-slow).
+  required: [ticketText]
+  additionalProperties: false
+output_schema:
+  type: object
+  properties:
+    severity:
+      type: string
+      description: SEV1 (highest) through SEV4 (lowest)
+      enum: [SEV1, SEV2, SEV3, SEV4]
+    category:
+      type: string
+      enum: [network, application, mixed, unknown]
+    likelyCause: { type: string }
+    evidenceSummary: { type: string }
+    recommendedAction: { type: string }
+    userMessage: { type: string }
+  required: [severity, category, likelyCause, evidenceSummary, recommendedAction, userMessage]
+  additionalProperties: false
+output_schema_max_retries: 2
