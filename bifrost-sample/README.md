@@ -8,14 +8,14 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 
 | Pattern | Where |
 | --- | --- |
-| Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes |
-| Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident `classifyIncident` / `draftIncidentResponse` use schemas + retries only (no linter) |
-| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level HTN) |
-| Nested mid-level planners | `investigateNetwork`, `investigateApp` |
+| Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves |
+| Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance workers use schemas + retries only (no linter) |
+| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence) |
+| Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen` |
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
 | Named connections and model aliases (`ollama` + `openai` + OpenRouter) | `application.yml` → `bifrost.connections` / `bifrost.models` |
-| HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController` |
-| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, and incident endpoints |
+| HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController`, `ClaimsController` |
+| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, incident, and claims endpoints |
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 - **OpenAI API key** for feedstock vision demos:
   - set `OPENAI_API_KEY` in the environment (preferred)
   - Bifrost reads it through `bifrost.connections.openai-main.api-key`; `spring.ai.*` is not inherited
-- **OpenRouter API key** for the nested incident HTN sample (live demos only):
+- **OpenRouter API key** for nested HTN samples (incident + insurance live demos only):
   - set `OPENROUTER_API_KEY` in the environment
   - sample boots without a real key via dummy default `test-openrouter-api-key`
   - Bifrost reads it through `bifrost.connections.openrouter.api-key`
@@ -36,7 +36,7 @@ PowerShell:
 
 ```powershell
 $env:OPENAI_API_KEY = "sk-..."
-$env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/* handle calls
+$env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/* and /claims/* process calls
 ```
 
 ## Run
@@ -74,23 +74,29 @@ bifrost-sample/
     │   │   ├── SampleController.java               # Invoice/feedstock HTTP demos
     │   │   ├── ExpenseService.java                 # @SkillMethod (deterministic data)
     │   │   ├── FeedstockFormExtractionService.java # @SkillMethod (OpenAI vision HTTP)
-    │   │   └── incident/
-    │   │       ├── IncidentController.java         # Incident HTN HTTP demos
-    │   │       └── IncidentTelemetryService.java   # Deterministic probe leaves
+    │   │   ├── incident/
+    │   │   │   ├── IncidentController.java         # Incident HTN HTTP demos
+    │   │   │   └── IncidentTelemetryService.java   # Deterministic probe leaves
+    │   │   └── insurance/
+    │   │       ├── ClaimsController.java           # Insurance HTN HTTP demos
+    │   │       ├── InsurancePolicyService.java     # Policy / exclusion / payout leaves
+    │   │       └── ClaimsHistoryService.java       # Prior claims / anomaly / address leaves
     │   └── resources/
     │       ├── application.yml                     # Named AI connections + Bifrost config
     │       ├── forms/                              # Sample weigh ticket image/PDF
     │       ├── fixtures/incidents/                 # Canned incident tickets
+    │       ├── fixtures/insurance/claims/          # Canned FNOL claim texts
     │       └── skills/
     │           ├── basics/                         # Mapped leaf, LLM parse, 2-level plan
     │           ├── vision/                         # Feedstock Java + pure YAML vision
     │           ├── incidents/                      # 3-level HTN incident commander
+    │           ├── insurance/                      # 3-level HTN claim intake (strong evidence)
     │           ├── support/                        # HTN gallery (planned)
-    │           ├── insurance/                      # HTN gallery (planned)
     │           └── travel/                         # HTN gallery (planned)
     └── test/
         ├── java/.../sample/                        # Context + controller unit tests
-        │   └── incident/                           # Catalog, controller, leaf tests
+        │   ├── incident/                           # Catalog, controller, leaf tests
+        │   └── insurance/                          # Catalog, controller, leaf tests
         └── resources/fixtures/                     # Sample invoice text
 ```
 
@@ -128,7 +134,7 @@ Notes:
 - `default-model` is an ordinary named model key; it is **not** auto-selected for LLM-backed skills that omit `model`.
 - Session mission timeout is raised to `6000s` for long vision/planning runs.
 - `execution-trace.persistence: ALWAYS` keeps full execution traces for inspection (useful with `bifrost-cli`).
-- Incident planners use `qwen3-35b`; classify/draft workers use `gpt-4o-mini`. Nested planning needs a capable model — this sample does **not** use `granite4-tiny` for the incident tree.
+- Incident and insurance planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
 
 Debug logging is enabled for Bifrost chat, linter, output schema, and planning packages so skill runs are easy to follow in the console.
 
@@ -285,12 +291,135 @@ MISSION handleIncident
 
 Root `max_steps: 10`; mid-level `max_steps: 6`. Session mission timeout is `6000s`. Nested runs with a large planner can take minutes and cost more than the invoice samples.
 
+### Insurance (`skills/insurance/`) — 3-level HTN (enterprise / evidence)
+
+**Disclaimer:** This sample is a **demo only**. It is **not** real insurance advice, not actuarially correct, and **not** legally binding. Humans remain responsible for final claim decisions.
+
+Enterprise / compliance gallery piece: evidence-backed risk decisioning under HTN structure (stronger root `evidence_contract` than incident).
+
+```
+processClaim                               [L1 planning YAML, model qwen3-35b]
+├── extractClaimFacts                      [L2 LLM single-shot, model gpt-4o-mini]
+├── assessCoverage                         [L2 planning YAML, model qwen3-35b]
+│   ├── getPolicy                          [L3 Java]
+│   ├── checkExclusions                    [L3 Java]
+│   └── estimatePayout                     [L3 Java]
+├── fraudScreen                            [L2 planning YAML, model qwen3-35b]
+│   ├── priorClaimsLookup                  [L3 Java]
+│   ├── anomalyScore                       [L3 Java]
+│   └── addressRiskSignals                 [L3 Java optional depth]
+└── recommendDisposition                   [L2 LLM single-shot writer, model gpt-4o-mini]
+```
+
+| Framework feature | How this sample uses it |
+| --- | --- |
+| Nested `planning_mode` | Root + `assessCoverage` / `fraudScreen` each run the step-loop engine |
+| `allowed_skills` governance | Root sees only four L2 specialists; mid-level desks see only their leaves |
+| Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping`); Java owns contracts |
+| **Strong** root `evidence_contract` | Plan-requires extract + coverage + fraud + recommend (all four specialists) |
+| Nested mission isolation | Parent plan/evidence snapshotted while a child planner runs |
+| Planner vs worker models | Same OpenRouter aliases as incident (`qwen3-35b` / `gpt-4o-mini`) |
+| Adjudication writer | `recommendDisposition` synthesizes full root-shaped fields; root **copies** them |
+
+#### Side-by-side: invoice vs incident vs insurance
+
+| Sample | Levels | Evidence | Branching story |
+| --- | --- | --- | --- |
+| `duplicateInvoiceChecker` | 2 | Shallow root contract | Parse + lookup, then decide |
+| `handleIncident` | 3 | Light root contract; either investigation branch can satisfy `investigation_digest` | Ops: classify → selective network/app → draft |
+| `processClaim` | 3 | **Strong** root contract; **all four** L2 specialists plan-required | Risk: extract → coverage desk **and** SIU-lite → writer |
+
+#### What the LLM decides vs what is fixed
+
+| Level | Fixed (YAML/Java) | LLM freedom |
+| --- | --- | --- |
+| L1 `processClaim` | May only call four specialists; plan must cover root evidence (all four) | Order; how digests are passed; assemble report by copying recommend |
+| L2 coverage/fraud | Listed leaves only; structured digests | Which checks; when enough for a sub-conclusion |
+| L2 extract/recommend | Schemas + prompts | Fact extraction; disposition language |
+| L3 leaves | Policy/history math and canned scenario data | None |
+
+Fraud specialist is **plan-required** (clean claims still run SIU-lite and return `fraudRisk: low`). Depth *inside* fraud (which leaves) remains free.
+
+#### Evidence contract rules (root)
+
+- Claim evidence lists are **AND-all**.
+- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
+- Parent `tool_evidence` keys are **L2 specialists only** (`extractClaimFacts`, `assessCoverage`, `fraudScreen`, `recommendDisposition`) — never L3 leaves (`getPolicy`, `anomalyScore`, …).
+- Successful plans must include **all four** specialists. Fraud is not skippable.
+- Mid-level planners have **no** `evidence_contract` (structured digests only).
+
+#### Payout formula (deterministic Java)
+
+Implemented exactly in `estimatePayout`:
+
+```
+gross = min(claimedAmount, policyLimit)
+payable = max(0, gross - deductible)
+```
+
+If exclusions match for the loss (scenario-driven), payable is forced to `0`. Unknown scenarios use a neutral policy (limit 5000, deductible 500) and the same formula.
+
+#### claimedAmount precedence
+
+When forwarding amounts into coverage:
+
+1. Root / POST `claimedAmount` if present  
+2. Else extract `claimedAmount`  
+3. Else scenario enrichment default (process-scenario table)
+
+#### Scenario plumbing
+
+Pass `scenario` on root input and forward it on every leaf that accepts it. Prefer `GET /claims/process-scenario?name=...` — it loads fixture text, sets `scenario`, and injects static `policyId` / `claimedAmount` so over-limit and clear-pay demos do not depend on extract alone. `POST /claims/process` does **not** auto-enrich.
+
+| Scenario key | Claim gist | Expected disposition bias | Enrichment |
+| --- | --- | --- | --- |
+| `clear-auto-pay` | Minor covered collision, clean history | `pay` or `partial_pay` after deductible | `POL-AUTO-1001` / `2200` |
+| `exclusion-flood` | Water damage where flood excluded | `deny` + matched exclusions | `POL-HOME-2002` / `15000` |
+| `fraud-velocity` | Third similar claim in 60 days | `refer_siu` | `POL-AUTO-1001` / `4800` |
+| `ambiguous-liability` | Unclear fault, missing date | `refer_human` | `POL-AUTO-1001` / (no amount) |
+| `over-limit` | Claimed amount above policy limit | `partial_pay` at formula | `POL-AUTO-1001` / `25000` |
+
+Fixtures: `src/main/resources/fixtures/insurance/claims/`. Leaves return neutral valid data for unknown scenario keys (no exceptions).
+
+Disposition enum: `pay | partial_pay | deny | refer_human | refer_siu`.
+
+#### Model setup
+
+Reuses the same OpenRouter connection and aliases as incident — **not** `granite4-tiny` / Ollama-only.
+
+| Role | Framework alias | OpenRouter provider model | Skills |
+| --- | --- | --- | --- |
+| Planner | `qwen3-35b` | `qwen/qwen3.6-35b-a3b` | `processClaim`, `assessCoverage`, `fraudScreen` |
+| Worker | `gpt-4o-mini` | `openai/gpt-4o-mini` | `extractClaimFacts`, `recommendDisposition` |
+
+#### Reading the execution journal
+
+```
+MISSION processClaim
+  PLANNING ...
+  TOOL extractClaimFacts
+  TOOL assessCoverage
+    MISSION assessCoverage
+      PLANNING ...
+      TOOL getPolicy
+      TOOL checkExclusions
+      TOOL estimatePayout
+  TOOL fraudScreen
+    MISSION fraudScreen
+      PLANNING ...
+      TOOL priorClaimsLookup
+      TOOL anomalyScore
+      ...
+  TOOL recommendDisposition
+```
+
+Root evidence-related plan/tool events show **L2** names at the root frame. Root `max_steps: 10`; mid-level `max_steps: 6`. Nested multi-desk runs can take minutes.
+
 ### HTN gallery (remaining)
 
 | Folder | Sample (ticket) |
 | --- | --- |
 | `skills/support/` | Support Case Resolver (planned) |
-| `skills/insurance/` | Insurance Claim Intake (planned) |
 | `skills/travel/` | Travel Concierge (planned) |
 
 See `ai/thoughts/tickets/eng-sample-htn-skill-tree-gallery.md`.
@@ -309,6 +438,9 @@ Base URL: `http://localhost:8081`
 | `GET` | `/incidents/scenarios` | — | Lists fixture keys + short descriptions |
 | `GET` | `/incidents/handle-scenario?name=...` | `handleIncident` | Preferred live demo: loads fixture + sets `scenario` |
 | `POST` | `/incidents/handle` | `handleIncident` | JSON body: `ticketText` + optional `scenario` |
+| `GET` | `/claims/scenarios` | — | Lists five insurance fixture keys + descriptions |
+| `GET` | `/claims/process-scenario?name=...` | `processClaim` | Preferred live demo: fixture + `scenario` + static `policyId`/`claimedAmount` |
+| `POST` | `/claims/process` | `processClaim` | JSON: `claimText` + optional `policyId`, `claimedAmount`, `scenario` (no auto-enrich) |
 
 `/expenses` calls `skillTemplate.invoke("expenseLookup", ...)`. The Java method name and `expenseService#getLatestExpenses` target ID are not public aliases.
 
@@ -338,6 +470,21 @@ Invoke-RestMethod "http://localhost:8081/incidents/handle-scenario?name=app-depl
 # Free-text incident (optional scenario)
 $body = @{ ticketText = "EU users cannot resolve api.example.com"; scenario = "network-dns" } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri http://localhost:8081/incidents/handle -ContentType "application/json" -Body $body
+
+# Insurance claim HTN (requires real OPENROUTER_API_KEY for live model calls)
+Invoke-RestMethod http://localhost:8081/claims/scenarios
+Invoke-RestMethod "http://localhost:8081/claims/process-scenario?name=clear-auto-pay"
+Invoke-RestMethod "http://localhost:8081/claims/process-scenario?name=exclusion-flood"
+Invoke-RestMethod "http://localhost:8081/claims/process-scenario?name=fraud-velocity"
+
+# Free-form claim POST (caller supplies optional structured fields; no auto-enrich)
+$claim = @{
+  claimText = "Rear-ended at stoplight; bumper damage about 2200"
+  policyId = "POL-AUTO-1001"
+  claimedAmount = 2200
+  scenario = "clear-auto-pay"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8081/claims/process -ContentType "application/json" -Body $claim
 ```
 
 curl-friendly:
@@ -348,6 +495,13 @@ curl -s "http://localhost:8081/incidents/handle-scenario?name=network-dns"
 curl -s -X POST http://localhost:8081/incidents/handle \
   -H "Content-Type: application/json" \
   -d '{"ticketText":"Checkout 500s after deploy","scenario":"app-deploy-regression"}'
+
+curl -s http://localhost:8081/claims/scenarios
+curl -s "http://localhost:8081/claims/process-scenario?name=clear-auto-pay"
+curl -s "http://localhost:8081/claims/process-scenario?name=exclusion-flood"
+curl -s -X POST http://localhost:8081/claims/process \
+  -H "Content-Type: application/json" \
+  -d '{"claimText":"Rear-ended; bumper ~2200","policyId":"POL-AUTO-1001","claimedAmount":2200,"scenario":"clear-auto-pay"}'
 ```
 
 ### Response shape
@@ -367,7 +521,7 @@ Endpoints that use the `SkillTemplate` observer return:
 - **`sessionId`** — Bifrost execution session id
 - **`executionJournal`** — step-level execution record for debugging / CLI inspection
 
-`/expenses` returns the skill result object directly (list of expense maps). Incident endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
+`/expenses` returns the skill result object directly (list of expense maps). Incident and claims endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
 
 ## Sample assets
 
@@ -377,6 +531,7 @@ Endpoints that use the `SkillTemplate` observer return:
 | `src/main/resources/forms/feedstock.pdf` | Related PDF form (available on classpath; not wired to an endpoint yet) |
 | `src/test/resources/fixtures/duplicate-invoice.txt` | Minimal invoice text for parse / duplicate-check demos |
 | `src/main/resources/fixtures/incidents/*.txt` | Canned incident tickets for HTN demos (`network-dns`, `app-deploy-regression`, `ambiguous-slow`, `firewall-block`) |
+| `src/main/resources/fixtures/insurance/claims/*.txt` | Canned FNOL claim texts (`clear-auto-pay`, `exclusion-flood`, `fraud-velocity`, `ambiguous-liability`, `over-limit`) |
 
 Fixture content:
 
@@ -411,8 +566,12 @@ String result = skillTemplate.invoke("invoiceParser", Map.of("payload", invoiceT
 | `IncidentSkillCatalogTests` | 12 incident skills, target isolation, planning graph, root evidence shape, OpenRouter + model aliases, locked schema fields |
 | `IncidentControllerTest` | POST handle inputs, handle-scenario fixture+scenario, scenarios list, unknown scenario rejection, journal envelope |
 | `IncidentTelemetryServiceTest` | Known scenario story data, unknown neutrality, optional runbook category |
+| `InsuranceSkillCatalogTests` | 11 insurance skills, target isolation, root evidence (L2 only), mid-level no contract, model aliases, locked schemas |
+| `ClaimsControllerTest` | POST process inputs, process-scenario fixture+enrichment, scenarios list, unknown rejection, journal envelope |
+| `InsurancePolicyServiceTest` | Payout formula, exclusion matching, unknown neutrality |
+| `ClaimsHistoryServiceTest` | Fraud velocity elevation, clean history, unknown neutrality |
 
-These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
+These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident/insurance skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
 
 ## Troubleshooting
 
@@ -421,11 +580,12 @@ These tests mock or stub model calls where needed; they validate wiring, not liv
 | Connection errors on invoice / planning skills | The selected named Ollama connection is not running, or its model is not pulled |
 | Startup rejects `provider` or `spring.ai.*` appears ignored | Replace each model's `provider` with `connection`, define the connection, and move transport credentials/settings there |
 | Feedstock endpoints fail with missing API key | `OPENAI_API_KEY` not set in the process environment |
-| Incident handle endpoints fail at runtime | `OPENROUTER_API_KEY` not set (boot still works with dummy default; live calls need a real key) |
+| Incident handle or claims process endpoints fail at runtime | `OPENROUTER_API_KEY` not set (boot still works with dummy default; live calls need a real key) |
 | Skill not found | Skill `name` mismatch, or file not under `classpath:/skills/**/*.yml` |
-| Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design; nested incident planning is slower/costlier than invoice samples |
+| Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design; nested incident/insurance planning is slower/costlier than invoice samples |
 | Schema / linter retries in logs | Expected when the model returns non-JSON or incomplete fields; check DEBUG logs |
 | Unknown scenario on `/incidents/handle-scenario` | Use `GET /incidents/scenarios` for valid keys (`network-dns`, `app-deploy-regression`, `ambiguous-slow`, `firewall-block`) |
+| Unknown scenario on `/claims/process-scenario` | Use `GET /claims/scenarios` for valid keys (`clear-auto-pay`, `exclusion-flood`, `fraud-velocity`, `ambiguous-liability`, `over-limit`) |
 
 ## Related modules
 

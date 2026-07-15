@@ -1,0 +1,4 @@
+name: anomalyScore
+description: Returns a 0.0–1.0 anomaly score and short reason for the claim scenario.
+mapping:
+  target_id: claimsHistoryService#anomalyScore

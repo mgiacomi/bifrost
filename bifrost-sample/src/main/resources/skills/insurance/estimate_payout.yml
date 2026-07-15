@@ -1,0 +1,4 @@
+name: estimatePayout
+description: Estimates payable amount using the deterministic limit/deductible formula for the claim scenario.
+mapping:
+  target_id: insurancePolicyService#estimatePayout

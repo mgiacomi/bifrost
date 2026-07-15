@@ -1,0 +1,4 @@
+name: priorClaimsLookup
+description: Looks up prior claims count, recency, and similar loss types for the claim scenario.
+mapping:
+  target_id: claimsHistoryService#priorClaimsLookup

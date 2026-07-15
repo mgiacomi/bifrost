@@ -1,0 +1,4 @@
+name: addressRiskSignals
+description: Returns optional address/velocity risk flags for the claim scenario.
+mapping:
+  target_id: claimsHistoryService#addressRiskSignals

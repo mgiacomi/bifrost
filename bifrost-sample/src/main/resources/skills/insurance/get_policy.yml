@@ -1,0 +1,4 @@
+name: getPolicy
+description: Retrieves policy limits, deductible, and product metadata for the claim scenario.
+mapping:
+  target_id: insurancePolicyService#getPolicy

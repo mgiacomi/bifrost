@@ -1,0 +1,4 @@
+name: checkExclusions
+description: Lists matched policy exclusions for the claim scenario and optional loss type/keywords.
+mapping:
+  target_id: insurancePolicyService#checkExclusions
