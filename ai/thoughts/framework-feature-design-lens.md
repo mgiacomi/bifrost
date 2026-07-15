@@ -14,6 +14,29 @@ Updates should preserve the document's role as a judgment aid. A principle may b
 
 These principles are strong defaults, not mechanical gates. A proposed feature may reasonably depart from one of them when the benefit and tradeoff are made explicit.
 
+## Current Pre-1.0 Compatibility Posture
+
+Until Bifrost adopts a version 1.0 compatibility policy, classify every affected framework surface before deciding whether to preserve or change it. Deliberately supported contracts are assessed and protected according to evidence. Configuration and manifest contracts are always assessed, and current-run diagnostic usefulness and security remain protected product goals.
+
+A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, fixture, or previous implementation does not by itself establish a supported contract. These are evidence of technical exposure or existing behavior, not independent proof of a compatibility promise.
+
+Use these categories consistently:
+
+1. **Application API** — deliberately supported entry points used by ordinary application developers.
+2. **Supported SPI** — deliberately supported customization or replacement points.
+3. **Configuration and manifest contracts** — documented `bifrost.*` properties, YAML skill syntax, validation, defaults, and author-facing semantics.
+4. **Persisted or serialized contracts** — formats deliberately intended for durable or cross-version use.
+5. **Ephemeral diagnostic formats** — traces and related representations intended to debug and understand executions from the current implementation.
+6. **Internal or accidentally exposed implementation** — runtime decomposition, wiring seams, implementation DTOs, constructors, beans, and behaviors not deliberately classified above.
+
+Documentation, an explicit API/SPI allowlist, an approved ticket, and verified consumer usage are evidence of a supported contract. Record the evidence and the protected consumers rather than inferring support from visibility or replaceability.
+
+For internal or accidentally exposed implementation, prefer one coherent design. Remove intentionally obsolete paths completely and update all in-repository callers, tests, samples, fixtures, configuration, manifests, and documentation atomically. Before adding an overload, alias, fallback, adapter, deprecated path, legacy reader, duplicate interface, compatibility constructor, bridge type, or dual behavior, identify the protected contract and explain why an atomic change is inappropriate. If temporary compatibility machinery is explicitly required, state its removal condition.
+
+Documented configuration and manifest behavior is deliberate and must always receive an impact assessment. An intentional pre-1.0 break must be identified in the ticket and plan, explain the developer or skill-author impact, and update every in-repository configuration, manifest, fixture, sample, test, and guidance reference atomically. Prefer one coherent new contract; add migration machinery only when the ticket explicitly requires it.
+
+Execution traces are current-run debugging and execution-understanding tools, not historical analytics, archival, audit-history, trend-analysis, or cross-version interchange formats. Preserve current-run diagnostic usefulness, accuracy, ordering, failure visibility, security boundaries, and sensitive-data redaction, and keep the current writer, reader, projector, and debugging tools coherent. Trace schemas, record types, field names, storage layout, and projection behavior may change to improve the current tool. Historical or cross-version readability is not required; do not add legacy readers, schema migrations, version adapters, dual record formats, or historical compatibility fixtures unless a future ticket explicitly changes this policy. Update or remove obsolete trace fixtures and compatibility tests atomically.
+
 ## North Star
 
 Bifrost should make production-grade hierarchical skill development understandable and dependable without hiding important behavior or burdening developers with orchestration plumbing.
@@ -157,6 +180,15 @@ Use the questions that are relevant to the proposal. They are prompts for discus
 - What ongoing compatibility, testing, documentation, and security obligations does it create?
 - If we decline the feature, what concrete friction remains?
 
+### Contract and compatibility
+
+- Which affected surfaces are Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, or Internal or accidentally exposed implementation?
+- What evidence establishes supported status, and what is only technical exposure or evidence of existing behavior?
+- Which protected consumers exist, and which in-repository consumers must be updated atomically?
+- What is the public-surface delta, including public signature types and Spring extension points?
+- Which breaking changes are intentional, and why are they appropriate under the current lifecycle posture?
+- Is the decision shim or no shim? If a shim is proposed, what protected contract requires it, why is atomic change inappropriate, and what is its removal condition?
+
 ## Applying the Lens
 
 Feature research and plans should summarize the relevant tradeoffs rather than claiming that a proposal simply "follows" this document. At minimum, the analysis should identify:
@@ -167,6 +199,10 @@ Feature research and plans should summarize the relevant tradeoffs rather than c
 4. any new state, dataflow, trust, or mutability semantics;
 5. safeguards that could be weakened or strengthened;
 6. evidence that justifies the size of the proposed abstraction;
-7. meaningful alternatives, including making no framework change.
+7. meaningful alternatives, including making no framework change;
+8. the classification and supporting evidence for every affected contract surface;
+9. intended breaking changes and the protected and in-repository consumers affected;
+10. the public-surface delta, including signature and extension-point exposure;
+11. an explicit shim/no-shim decision, with justification and a removal condition for any temporary mechanism.
 
 When principles pull in different directions, document the tradeoff. The purpose of this lens is not to eliminate judgment; it is to make that judgment deliberate, consistent, and reviewable.

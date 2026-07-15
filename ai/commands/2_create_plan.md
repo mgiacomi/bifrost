@@ -50,6 +50,7 @@ Then wait for the user's input.
    - **IMPORTANT**: Use your file-reading tool WITHOUT limit/offset parameters to read entire files
    - **CRITICAL**: DO NOT start broader research steps before reading these files yourself in the main context
    - **NEVER** read files partially - if a file is mentioned, read it completely
+   - For Bifrost framework work, read `ai/thoughts/framework-feature-design-lens.md` completely before forming compatibility conclusions
 
 2. **Read all files identified by research steps**:
    - After research steps complete, read ALL files they identified as relevant
@@ -61,6 +62,7 @@ Then wait for the user's input.
    - Identify any discrepancies or misunderstandings
    - Note assumptions that need verification
    - Determine true scope based on codebase reality
+   - For framework work, inventory affected surfaces and evidence, then classify each as Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, or Internal or accidentally exposed implementation before evaluating compatibility
 
 4. **Present informed understanding and focused questions**:
    ```
@@ -121,6 +123,8 @@ After getting initial clarifications:
 
    Which approach aligns best with your vision?
    ```
+
+   For framework options, compare the protected consumers, intended breaks, atomic repository updates, public-surface delta, and shim/no-shim decision. A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, or previous implementation does not by itself establish a supported contract. Use the canonical policy in the design lens rather than inferring protection from technical exposure.
 
 6. **Assess skill-authoring documentation impact**:
    - Determine whether the proposed work changes anything a Bifrost skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance
@@ -205,6 +209,25 @@ After structure approval:
 - **LLM-first usability**: [How routing, topic boundaries, self-contained guidance, terminology, and explicit limitations will remain clear; or `Not applicable` when there is no impact]
 
 If the impact is `Affected`, include each documentation change in the appropriate implementation phase below. Do not defer it to an unspecified follow-up. If existing documentation conflicts with executable behavior, call out the discrepancy explicitly rather than silently choosing one.
+
+## Contract and Compatibility Impact
+
+Required for Bifrost framework work. Cover every category, including categories with no impact:
+
+| Surface | Classification and supporting evidence | Planned compatibility treatment |
+| --- | --- | --- |
+| Application API | [Affected entry points, evidence, and protected consumers, or no impact] | [Preserve or intentional break] |
+| Supported SPI | [Affected extension points, evidence, and protected consumers, or no impact] | [Preserve or intentional break] |
+| Configuration and manifest contracts | [Affected documented behavior and developer/skill-author impact, or no impact] | [Preserve or explicit atomic break] |
+| Persisted or serialized contracts | [Durable intent and evidence, or no impact] | [Preserve or intentional break] |
+| Ephemeral diagnostic formats | [Current-run trace impact, or no impact] | [Current-version coherence and security treatment] |
+| Internal or accidentally exposed implementation | [Affected surfaces and technical exposure, or no impact] | [Atomic removal/update or justified preservation] |
+
+- **Evidence of supported contracts**: [Documentation, explicit API/SPI allowlist, approved ticket, and/or verified consumer usage]
+- **Intended breaks**: [Each approved break and its impact, or none]
+- **In-repository consumers to update**: [Callers, tests, samples, fixtures, configuration, manifests, and documentation]
+- **Public-surface delta**: [Types, signatures, constructors, and Spring extension points added or removed]
+- **Shim decision**: **[Shim / No shim].** [For a shim, identify the protected contract, explain why atomic change is inappropriate, name the mechanism, and state its removal condition]
 
 ## Implementation Approach
 
@@ -343,6 +366,7 @@ If the impact is `Affected`, include each documentation change in the appropriat
    - The implementation plan must be complete and actionable
    - Every decision must be made before finalizing the plan
    - Do not leave skill-authoring documentation impact unresolved or use "update docs if needed" as a placeholder
+   - For framework work, do not finalize with an unresolved contract classification, an unclassified documented contract, vague migration placeholders, or unexplained compatibility machinery such as overloads, aliases, fallbacks, adapters, deprecated paths, legacy readers, duplicate interfaces, or dual behavior
 
 7. **Stop After Plan Creation (Do Not Implement)**:
    - This command's scope is strictly limited to research and creating the implementation plan document.
@@ -401,8 +425,9 @@ If the impact is `Affected`, include each documentation change in the appropriat
 ### For Refactoring:
 - Document current behavior
 - Plan incremental changes
-- Maintain backwards compatibility
-- Include migration strategy
+- Classify affected framework surfaces before making compatibility decisions
+- Preserve deliberately protected contracts; for approved breaks, remove obsolete behavior and update in-repository consumers atomically
+- Include a concrete migration strategy only when a protected contract or explicit ticket requires one; otherwise record the no-shim decision
 
 ## Sub-task Spawning Best Practices
 

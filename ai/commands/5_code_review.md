@@ -72,6 +72,7 @@ Do not review only the diff hunks. Read enough surrounding code and connected ca
    - trust boundaries and failure boundaries;
    - assumptions the implementation relies on.
 5. Use the ticket and plans to understand intent, but record discrepancies between those documents and executable behavior rather than silently choosing one.
+6. For Bifrost framework changes, read the canonical policy in `ai/thoughts/framework-feature-design-lens.md`. Inventory exposure and evidence, then classify each affected surface as Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, or Internal or accidentally exposed implementation before evaluating compatibility.
 
 ### Step 3: Perform an independent defect review
 
@@ -86,10 +87,12 @@ Perform this step **before** plan-conformance validation. Select all applicable 
 
 #### API and compatibility
 
-- Check source, binary, configuration, serialization, schema, stored-data, trace, CLI, and extension-point compatibility as applicable.
-- Verify defaults and migration behavior, including mixed old/new configurations.
+- First separate technical exposure and existing behavior from evidence of a deliberately supported contract. Documentation, an explicit API/SPI allowlist, an approved ticket, and verified consumer usage can establish protection.
+- A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, fixture, or previous implementation does not by itself establish a supported contract.
+- For deliberately protected Application API, Supported SPI, Configuration and manifest contracts, and Persisted or serialized contracts, check source, binary, configuration, serialization, schema, stored-data, CLI, and extension-point compatibility as applicable.
+- Verify defaults and any explicitly required migration behavior. For an approved pre-1.0 break, verify atomic repository updates rather than assuming mixed old/new behavior is required.
 - Identify silent behavior changes, ambiguous precedence, renamed fields, altered validation order, and changed exception contracts.
-- Treat compatibility promises in documentation and tests as contracts, not suggestions.
+- Do not report an approved break of Internal or accidentally exposed implementation as a compatibility defect. Do report regressions of deliberately protected contracts and breaks that lack the required classification, evidence, impact assessment, or approval.
 
 #### Security and privacy
 
@@ -126,7 +129,7 @@ Perform this step **before** plan-conformance validation. Select all applicable 
 #### Observability and operations
 
 - Verify logs, metrics, traces, and errors identify the failing operation without leaking sensitive data.
-- Check metric-tag cardinality and trace/schema compatibility.
+- Check metric-tag cardinality. For Ephemeral diagnostic formats, verify current writer/reader/projector/debugging-tool coherence, usefulness, accuracy, ordering, failure visibility, security boundaries, and redaction. Historical or cross-version readability is not required unless a ticket explicitly changes the canonical policy.
 - Confirm operators can distinguish multiple configured instances, tenants, models, or endpoints when the change introduces them.
 - Verify failures at startup and runtime are diagnosable.
 
@@ -135,6 +138,8 @@ Perform this step **before** plan-conformance validation. Select all applicable 
 - Check ownership boundaries, naming, duplication, extension points, and consistency with existing patterns.
 - Report maintainability concerns only when they create a concrete risk of misuse, divergence, or future defects; do not report stylistic preferences as findings.
 - Check dependency, build, packaging, and deployment changes for necessity and unintended scope.
+- Treat unjustified overloads, aliases, fallbacks, adapters, deprecated paths, legacy readers, duplicate interfaces, compatibility constructors, bridge types, dual behavior, and retained obsolete paths as actionable maintainability risks.
+- Check for accidental public types, internal types leaked through public Application API or Supported SPI signatures, and new or retained `@ConditionalOnMissingBean` beans not deliberately classified as Supported SPI.
 
 #### Documentation and user-facing semantics
 
@@ -151,6 +156,7 @@ Perform this step **before** plan-conformance validation. Select all applicable 
    - Does it cover negative and compatibility paths?
    - Can mocks hide the integration defect being tested?
    - Are assertions strong enough to detect incorrect routing or state?
+   - Are compatibility-path tests limited to protected surfaces, and do tests confirm approved obsolete behavior was removed rather than hidden behind a fallback?
 3. Compare implemented tests with the dedicated testing plan when present. The testing plan is expected coverage, not a ceiling.
 4. Run the narrowest relevant tests first, followed by the module or repository verification appropriate to the change.
 5. Record exact commands and results. Do not state that a check passed unless it was run successfully in this review context.
@@ -169,6 +175,8 @@ After the independent review:
    - deviations that introduce risk;
    - deliberate deviations that are safe and justified;
    - implementation added outside the approved scope.
+   - approved intentional breaks incorrectly retained behind compatibility machinery;
+   - unexplained preservation or surface growth not supported by the contract classification.
 4. Do not report harmless naming or mechanical differences as defects. Put non-defective deviations in the conformance summary.
 5. A plan-conformant implementation can still receive blocking findings.
 
@@ -211,6 +219,7 @@ Before reporting any finding:
 4. Check relevant tests and framework/library semantics.
 5. Confirm the issue is introduced by, worsened by, or directly relevant to the reviewed change.
 6. State the observable impact without exaggeration.
+7. For compatibility candidates, confirm the surface classification and supporting evidence before deciding whether the change is a protected-contract regression, an approved break, or an unjustified shim.
 
 Do not report:
 
@@ -276,6 +285,7 @@ Lead with findings. Do not lead with a summary of work performed.
 - Partial: [criteria and missing portion]
 - Missing: [criteria]
 - Safe deviations: [non-defective differences and rationale]
+- Contract classification: [affected canonical categories, evidence, approved breaks, protected consumers, public-surface delta, and shim/no-shim conformance]
 
 ## Skill-Authoring Documentation Impact
 
@@ -307,6 +317,8 @@ If there are no findings, say **“No actionable findings.”** Do not invent lo
 - [ ] Changed behavior was traced beyond isolated diff hunks.
 - [ ] Independent defect review happened before plan comparison.
 - [ ] Applicable correctness, compatibility, security, concurrency, lifecycle, persistence, integration, performance, observability, and documentation risks were considered.
+- [ ] Framework surfaces were classified before compatibility findings were evaluated, and approved breaks were distinguished from regressions of protected contracts.
+- [ ] Unjustified compatibility machinery, retained obsolete behavior, accidental public types, leaked internal signature types, and unclassified `@ConditionalOnMissingBean` extension points were checked.
 - [ ] Every reported finding has a reachable trigger, concrete impact, tight location, and supporting evidence.
 - [ ] Candidate findings were checked for existing safeguards and false positives.
 - [ ] Tests were assessed for quality and coverage, not merely counted.

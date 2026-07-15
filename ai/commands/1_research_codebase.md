@@ -50,6 +50,13 @@ Then wait for the user's research query.
 
    **IMPORTANT**: You are a documentarian, not a critic. Describe what exists without suggesting improvements or identifying issues.
 
+   **For framework API and compatibility research:**
+   - Read the canonical policy in `ai/thoughts/framework-feature-design-lens.md` and use its exact categories: Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, and Internal or accidentally exposed implementation
+   - Inventory separately: public declarations; interfaces and constructors; Spring beans and `@ConditionalOnMissingBean`; tests and fixtures; documentation; configuration and manifests; serialized formats; traces; and verified in-repository usage
+   - For each affected surface, distinguish technical exposure, evidence of existing behavior, evidence of a deliberately supported contract, and unknown or unclassified status
+   - A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, fixture, or previous implementation does not by itself establish a supported contract or prove a supported Application API or Supported SPI
+   - Remain descriptive: report exposure, evidence, usage, and current classification status without recommending preservation, breakage, or compatibility machinery
+
    **For web research (only if the user explicitly asks):**
    - Use web search tools to locate external documentation
    - Include LINKS with any external findings, and include those links in the final report

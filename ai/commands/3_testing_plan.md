@@ -39,6 +39,7 @@ Then wait for the user's input.
    - Research documents
    - Any logs/error output (if provided)
    - If the implementation plan marks `Skill-Authoring Documentation Impact` as `Affected`, read the relevant `ai/skill-authoring/` documents identified by the plan
+   - For framework work, read the implementation plan's `Contract and Compatibility Impact` section and use its classifications to determine compatibility test scope
 
 2. **Locate existing tests and patterns**:
    - Find existing tests for the impacted modules
@@ -52,6 +53,9 @@ Create a short, explicit list of:
 - **Impacted areas** (files/components)
 - **Primary risks** (regressions, edge cases, integrations)
 - **Authoring claims requiring evidence** when the change affects `ai/skill-authoring/` guidance
+- **Protected compatibility paths** and their evidence, plus **intentionally removed obsolete paths**
+
+Tests establish existing behavior but do not independently establish a supported compatibility promise. Use the canonical categories from `ai/thoughts/framework-feature-design-lens.md`: Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, and Internal or accidentally exposed implementation.
 
 ### Step 3: Plan the Failing Test (When Applicable)
 
@@ -72,6 +76,10 @@ For each proposed test, specify:
 - **Inputs/fixtures needed**
 - **Mocking strategy** (if any)
 
+Preserve compatibility-path tests only for deliberately protected Application API, Supported SPI, Configuration and manifest contracts, or Persisted or serialized contracts. Update or remove tests that encode an approved obsolete Internal or accidentally exposed implementation; do not require old and new behavior simultaneously after an approved break. When Application API, Supported SPI, or accidental public exposure changes, add boundary tests for public signatures, leaked internal types, and unintended extension points where applicable.
+
+For Ephemeral diagnostic formats, test current writer/reader/projector/debugging-tool coherence, diagnostic usefulness, accuracy, ordering, failure visibility, security boundaries, and redaction. Do not require historical trace readability, old schemas, or obsolete fixtures.
+
 When skill-authoring documentation is affected, ensure the proposed focused tests establish the author-facing semantics the updated guidance will describe. Do not add tests merely to exercise prose; test the underlying framework behavior.
 
 ### Step 5: Running Tests + Exit Criteria
@@ -80,6 +88,7 @@ Define:
 - **Commands to run locally** (build + tests)
 - **Any required profiles/env vars/test data**
 - **Exit criteria** (what must be true to consider the change verified)
+- For framework changes, confirmation that protected paths still work and approved obsolete paths are absent rather than retained behind fallbacks
 
 ## Output Artifact
 
@@ -104,6 +113,7 @@ Use this structure:
 ## Risk Assessment
 - [High-risk behaviors]
 - [Edge cases]
+- [Protected compatibility paths and intentionally removed obsolete paths]
 
 ## Existing Test Coverage
 - [Relevant existing tests]
@@ -122,6 +132,8 @@ Use this structure:
 - What it proves:
 - Fixtures/data:
 - Mocks:
+- Contract classification: [one canonical category]
+- Compatibility expectation: [protected path / approved removal / current-run diagnostic coherence]
 
 ## How to Run
 - [Build command]
@@ -132,5 +144,7 @@ Use this structure:
 - [ ] All tests pass post-fix
 - [ ] New/updated tests cover the changed behavior and key edge cases
 - [ ] Tests cited as evidence for changed skill-authoring guidance establish the documented behavior (when applicable)
+- [ ] Protected compatibility paths pass, and approved obsolete paths are removed without simultaneous old/new behavior (when applicable)
+- [ ] Changed public boundaries and current-run trace obligations are covered according to the plan's classification (when applicable)
 - [ ] Manual verification steps (if any) are complete
 ```
