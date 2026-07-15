@@ -152,6 +152,19 @@ Debug logging is enabled for Bifrost chat, linter, output schema, and planning p
 
 Manifests live under `src/main/resources/skills/<area>/`. Skill `name` values are global and unchanged.
 
+### HTN skill tree gallery
+
+Nested 3-level planners (root → mid specialist → leaf). Live demos need `OPENROUTER_API_KEY`. Details in each domain section below.
+
+| Sample | Levels | Highlights | Endpoint |
+| --- | --- | --- | --- |
+| Incident Commander | 3 | Nested `investigate*` planners; light evidence | `/incidents/...` |
+| Support Case Resolver | 3 | Multi-intent routing + customer reply | `/support/...` |
+| Insurance Claim Intake | 3 | Strong evidence contracts (all desks required) | `/claims/...` |
+| Travel Concierge | 3 | Multi-option catalogs / rank + pick | `/travel/...` |
+
+Also: `duplicateInvoiceChecker` under Basics is a **2-level** planning sample (one planner + leaves) on Ollama — useful contrast before the nested trees.
+
 ### Basics (`skills/basics/`)
 
 On-ramp patterns: mapped Java, single-shot LLM, shallow planning.
