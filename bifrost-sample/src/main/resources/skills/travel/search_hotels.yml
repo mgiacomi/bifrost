@@ -1,0 +1,4 @@
+name: searchHotels
+description: Searches fake hotel inventory and returns multiple priced options for the trip scenario.
+mapping:
+  target_id: travelCatalogService#searchHotels

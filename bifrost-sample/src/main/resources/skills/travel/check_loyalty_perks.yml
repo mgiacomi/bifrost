@@ -1,0 +1,4 @@
+name: checkLoyaltyPerks
+description: Returns loyalty tier and hotel-chain perks for the trip scenario.
+mapping:
+  target_id: travelCatalogService#checkLoyaltyPerks

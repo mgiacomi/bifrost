@@ -1,0 +1,4 @@
+name: searchTrains
+description: Searches fake train inventory and returns multiple priced options for the trip scenario.
+mapping:
+  target_id: travelCatalogService#searchTrains

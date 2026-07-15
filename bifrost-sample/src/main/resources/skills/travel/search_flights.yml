@@ -1,0 +1,4 @@
+name: searchFlights
+description: Searches fake flight inventory and returns multiple priced options for the trip scenario.
+mapping:
+  target_id: travelCatalogService#searchFlights

@@ -1,0 +1,9 @@
+name: rankTransportOptions
+description: >
+  Deterministically ranks transport options by price or duration (Java ranks;
+  planner still picks). Prefer options as a compact JSON array of option objects
+  (price, durationMinutes, and a short identity field). optionsJson string is a fallback.
+  sortBy is optional (price|duration; default price). Returns ok=false with error/hint
+  when options/optionsJson is missing or invalid.
+mapping:
+  target_id: travelCatalogService#rankTransportOptions

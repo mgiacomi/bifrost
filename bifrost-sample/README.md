@@ -8,14 +8,14 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 
 | Pattern | Where |
 | --- | --- |
-| Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves, support CRM leaves |
-| Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance/support workers use schemas + retries only (no linter) |
-| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + shared `case_facts`) |
-| Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen`; `handleBilling` / `handleTechnical` / `handleHowTo` |
+| Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves, support CRM leaves, travel catalog leaves |
+| Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance/support/travel workers use schemas + retries only (no linter) |
+| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + shared `case_facts`), `planTrip` (3-level light evidence + multi-option catalogs) |
+| Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen`; `handleBilling` / `handleTechnical` / `handleHowTo`; `planTransport` / `planStay` |
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
 | Named connections and model aliases (`ollama` + `openai` + OpenRouter) | `application.yml` → `bifrost.connections` / `bifrost.models` |
-| HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController`, `ClaimsController`, `SupportController` |
-| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, incident, claims, and support endpoints |
+| HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController`, `ClaimsController`, `SupportController`, `TravelController` |
+| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, incident, claims, support, and travel endpoints |
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 - **OpenAI API key** for feedstock vision demos:
   - set `OPENAI_API_KEY` in the environment (preferred)
   - Bifrost reads it through `bifrost.connections.openai-main.api-key`; `spring.ai.*` is not inherited
-- **OpenRouter API key** for nested HTN samples (incident + insurance + support live demos only):
+- **OpenRouter API key** for nested HTN samples (incident + insurance + support + travel live demos only):
   - set `OPENROUTER_API_KEY` in the environment
   - sample boots without a real key via dummy default `test-openrouter-api-key`
   - Bifrost reads it through `bifrost.connections.openrouter.api-key`
@@ -36,7 +36,7 @@ PowerShell:
 
 ```powershell
 $env:OPENAI_API_KEY = "sk-..."
-$env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/*, /claims/*, and /support/* resolve calls
+$env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/*, /claims/*, /support/*, and /travel/* plan calls
 ```
 
 ## Run
@@ -81,27 +81,32 @@ bifrost-sample/
     │   │   │   ├── ClaimsController.java           # Insurance HTN HTTP demos
     │   │   │   ├── InsurancePolicyService.java     # Policy / exclusion / payout leaves
     │   │   │   └── ClaimsHistoryService.java       # Prior claims / anomaly / address leaves
-    │   │   └── support/
-    │   │       ├── SupportController.java          # Support HTN HTTP demos
-    │   │       └── SupportCrmService.java          # Deterministic CRM leaves
+    │   │   ├── support/
+    │   │   │   ├── SupportController.java          # Support HTN HTTP demos
+    │   │   │   └── SupportCrmService.java          # Deterministic CRM leaves
+    │   │   └── travel/
+    │   │       ├── TravelController.java           # Travel HTN HTTP demos
+    │   │       └── TravelCatalogService.java       # Multi-option catalog + ranker leaves
     │   └── resources/
     │       ├── application.yml                     # Named AI connections + Bifrost config
     │       ├── forms/                              # Sample weigh ticket image/PDF
     │       ├── fixtures/incidents/                 # Canned incident tickets
     │       ├── fixtures/insurance/claims/          # Canned FNOL claim texts
     │       ├── fixtures/support/                   # Canned support emails
+    │       ├── fixtures/travel/                    # Canned trip requests
     │       └── skills/
     │           ├── basics/                         # Mapped leaf, LLM parse, 2-level plan
     │           ├── vision/                         # Feedstock Java + pure YAML vision
     │           ├── incidents/                      # 3-level HTN incident commander
     │           ├── insurance/                      # 3-level HTN claim intake (strong evidence)
     │           ├── support/                        # 3-level HTN support case resolver
-    │           └── travel/                         # HTN gallery (planned)
+    │           └── travel/                         # 3-level HTN travel concierge (training demo)
     └── test/
         ├── java/.../sample/                        # Context + controller unit tests
         │   ├── incident/                           # Catalog, controller, leaf tests
         │   ├── insurance/                          # Catalog, controller, leaf tests
-        │   └── support/                            # Catalog, controller, leaf tests
+        │   ├── support/                            # Catalog, controller, leaf tests
+        │   └── travel/                             # Catalog, controller, leaf tests
         └── resources/fixtures/                     # Sample invoice text
 ```
 
@@ -139,7 +144,7 @@ Notes:
 - `default-model` is an ordinary named model key; it is **not** auto-selected for LLM-backed skills that omit `model`.
 - Session mission timeout is raised to `6000s` for long vision/planning runs.
 - `execution-trace.persistence: ALWAYS` keeps full execution traces for inspection (useful with `bifrost-cli`).
-- Incident, insurance, and support planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
+- Incident, insurance, support, and travel planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
 
 Debug logging is enabled for Bifrost chat, linter, output schema, and planning packages so skill runs are easy to follow in the console.
 
@@ -543,13 +548,132 @@ MISSION resolveSupportCase
 
 Root evidence-related plan/tool events show **L2** names only. Root `max_steps: 10`; billing/technical `max_steps: 6`; how-to thin planner `max_steps: 4`. Mixed multi-specialist runs are slower/costlier than pure how-to.
 
-### HTN gallery (remaining)
+### Travel (`skills/travel/`) — 3-level HTN (training demo)
 
-| Folder | Sample (ticket) |
+**Disclaimer:** Demo only. Fake flights, trains, hotels, and loyalty perks are **not** real availability or bookings.
+
+Gallery role: **approachable HTN training demo** for developers learning Bifrost — nested planning, structured preference handoffs, multi-option catalogs (“options in / choice out”), Java rank + LLM pick, light root evidence, and journals. Prefer this sample when onboarding someone new to the framework before ops/compliance trees.
+
+```
+planTrip                                   [L1 planning YAML, model qwen3-35b]
+├── understandPreferences                  [L2 LLM single-shot, model gpt-4o-mini]
+├── planTransport                          [L2 planning YAML, model qwen3-35b]
+│   ├── searchFlights                      [L3 Java — multi-option catalog]
+│   ├── searchTrains                       [L3 Java — multi-option catalog]
+│   └── rankTransportOptions               [L3 Java — ranks; LLM picks]
+├── planStay                               [L2 planning YAML, model qwen3-35b]
+│   ├── searchHotels                       [L3 Java — multi-option catalog]
+│   └── checkLoyaltyPerks                  [L3 Java]
+└── assembleItinerary                      [L2 LLM single-shot, model gpt-4o-mini — synthesize only]
+```
+
+#### Teaching points
+
+| Concept | What to look for |
 | --- | --- |
-| `skills/travel/` | Travel Concierge (planned) |
+| Nested planners + `allowed_skills` | Root only sees L2 specialists; transport only sees search + rank; stay only sees hotel + perks |
+| Structured preference handoff | `understandPreferences` extracts fields; leaves key off `scenario` / origin / destination / dates — **not** re-parse the essay in Java |
+| Options in / choice out | Catalog leaves return ≥2 options including **dominated** options so journals show real choice |
+| Java ranks, LLM picks | `rankTransportOptions` sorts deterministically; transport planner still chooses |
+| Light root evidence + nested isolation | Root requires prefs + transport + stay + itinerary digests; `tool_evidence` names **L2 only** |
+| Planner vs worker models | `qwen3-35b` planners; `gpt-4o-mini` workers on shared OpenRouter connection |
 
-See `ai/thoughts/tickets/eng-sample-htn-skill-tree-gallery.md`.
+#### What the LLM decides vs what is fixed
+
+| Level | Fixed (YAML/Java) | LLM freedom |
+| --- | --- | --- |
+| L1 `planTrip` | Specialists only; evidence requires prefs + transport + stay + assemble | Order of planning; when to assemble |
+| L2 transport | Search + rank tools only | Which searches to run; which option to prefer after rank |
+| L2 stay | Hotel + perks tools only | Which hotel/perks to prefer given prefs |
+| L2 understand/assemble | Schemas + prompts | Preference extraction; narrative itinerary; open questions |
+| L3 leaves | Fake catalogs + deterministic rank | None |
+
+#### Evidence contract rules (root)
+
+- Claim evidence lists are **AND-all**.
+- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
+- Parent `tool_evidence` keys are **L2 only** (`understandPreferences`, `planTransport`, `planStay`, `assembleItinerary`) — never L3 catalog methods.
+- Successful plans must cover: understand + transport + stay + assemble (all four evidence tags: `trip_preferences`, `transport_digest`, `stay_digest`, `itinerary_draft`).
+- Mid-level planners have **no** `evidence_contract` (structured digests only).
+- Teaching point: evidence is useful even on a “fun” sample — not only ops/compliance.
+
+#### Scenario plumbing
+
+Pass `scenario` on root input and forward it on every leaf that accepts it. Prefer `GET /travel/plan-scenario?name=...` so the model does not invent the key. Soft budget is a **preference** only (no Java hard rejector in v1).
+
+| Scenario key | Request gist | Catalog bias |
+| --- | --- | --- |
+| `budget-nyc-weekend` | NYC weekend, ~$400 all-in, OK with trains | Cheap trains + budget hotel; expensive nonstop as dominated-for-budget |
+| `loyalty-points-max` | Prefer Marriott, gold tier, maximize perks | Chain hotels + strong gold perks even if pricier |
+| `fastest-sfo-sea` | Morning meeting SFO→SEA, minimize time | Nonstop flights; slow multi-stop dominated for speed |
+| `underspecified` | “Somewhere warm in March” | Generic multi-option catalogs; model should surface `openQuestions` |
+
+Fixtures: `src/main/resources/fixtures/travel/`. Leaves return neutral valid multi-option data for unknown scenario keys (no exceptions).
+
+#### Example itinerary shape (illustrative)
+
+```json
+{
+  "summary": "Budget Boston→NYC weekend via train + hostel",
+  "transport": {
+    "mode": "train",
+    "outbound": { "operator": "Northeast Regional", "price": 69.0 },
+    "returnLeg": null
+  },
+  "hotel": { "name": "Downtown Hostel Bunk", "nightlyRate": 49.0 },
+  "estimatedTotal": 187.0,
+  "rationale": "Cost-first priorities favor regional rail over the expensive nonstop flight.",
+  "openQuestions": []
+}
+```
+
+#### Model setup
+
+Reuses the same OpenRouter connection and aliases as incident/insurance/support — **not** `granite4-tiny` / Ollama-only.
+
+| Role | Framework alias | OpenRouter provider model | Skills |
+| --- | --- | --- | --- |
+| Planner | `qwen3-35b` | `qwen/qwen3.6-35b-a3b` | `planTrip`, `planTransport`, `planStay` |
+| Worker | `gpt-4o-mini` | `openai/gpt-4o-mini` | `understandPreferences`, `assembleItinerary` |
+
+#### Reading the execution journal
+
+Look for specialist nested missions and **search → rank → pick** under transport:
+
+```
+MISSION planTrip
+  PLANNING ...
+  TOOL understandPreferences
+  TOOL planTransport
+    MISSION planTransport
+      PLANNING ...
+      TOOL searchTrains
+      TOOL rankTransportOptions
+  TOOL planStay
+    MISSION planStay
+      PLANNING ...
+      TOOL searchHotels
+  TOOL assembleItinerary
+```
+
+Root evidence-related plan/tool events show **L2** names only. Root `max_steps: 10`; mid-level `max_steps: 6`. Nested transport + stay runs are slower/costlier than single-shot invoice samples.
+
+#### Contrast with siblings
+
+| Sample | Levels | Evidence | Branching story |
+| --- | --- | --- | --- |
+| `handleIncident` | 3 | Light root; either investigation branch can satisfy | Ops: classify → selective network/app → draft |
+| `processClaim` | 3 | **Strong** root; all four L2 specialists required | Risk / compliance |
+| `resolveSupportCase` | 3 | Understand + ≥1 handle* + compose | Multi-intent CRM + customer reply |
+| `planTrip` | 3 | Light root; **all four** L2 required (prefs + transport + stay + assemble) | **Gateway / fun** training demo: multi-option catalogs + ranker |
+
+#### 2-minute demo script (talks)
+
+1. `GET /travel/scenarios` — show four fixture keys.
+2. `GET /travel/plan-scenario?name=budget-nyc-weekend` — wait for nested plan.
+3. Open `executionJournal`: point at `planTransport` / `planStay` nested frames, multi-option catalog calls, optional `rankTransportOptions`.
+4. Read `result` itinerary: train-leaning options, rationale, soft budget language.
+5. Optional: `underspecified` to show non-empty `openQuestions` instead of invented airports.
 
 ## HTTP API
 
@@ -571,6 +695,9 @@ Base URL: `http://localhost:8081`
 | `GET` | `/support/scenarios` | — | Lists five support fixture keys + descriptions |
 | `GET` | `/support/resolve-scenario?name=...` | `resolveSupportCase` | Preferred live demo: fixture + `scenario` + static `customerId` |
 | `POST` | `/support/resolve` | `resolveSupportCase` | JSON: `emailText` + optional `customerId`, `scenario` (no auto-enrich) |
+| `GET` | `/travel/scenarios` | — | Lists four travel fixture keys + descriptions |
+| `GET` | `/travel/plan-scenario?name=...` | `planTrip` | Preferred live demo: fixture + `scenario` |
+| `POST` | `/travel/plan` | `planTrip` | JSON: `requestText` + optional `scenario` |
 
 `/expenses` calls `skillTemplate.invoke("expenseLookup", ...)`. The Java method name and `expenseService#getLatestExpenses` target ID are not public aliases.
 
@@ -629,6 +756,20 @@ $support = @{
   scenario = "mixed-billing-and-crash"
 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri http://localhost:8081/support/resolve -ContentType "application/json" -Body $support
+
+# Travel concierge HTN (requires real OPENROUTER_API_KEY for live model calls)
+Invoke-RestMethod http://localhost:8081/travel/scenarios
+Invoke-RestMethod "http://localhost:8081/travel/plan-scenario?name=budget-nyc-weekend"
+Invoke-RestMethod "http://localhost:8081/travel/plan-scenario?name=fastest-sfo-sea"
+Invoke-RestMethod "http://localhost:8081/travel/plan-scenario?name=loyalty-points-max"
+Invoke-RestMethod "http://localhost:8081/travel/plan-scenario?name=underspecified"
+
+# Free-form travel POST
+$trip = @{
+  requestText = "Cheap weekend in NYC from Boston, about 400 dollars, trains OK"
+  scenario = "budget-nyc-weekend"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8081/travel/plan -ContentType "application/json" -Body $trip
 ```
 
 curl-friendly:
@@ -653,6 +794,13 @@ curl -s "http://localhost:8081/support/resolve-scenario?name=how-to-export"
 curl -s -X POST http://localhost:8081/support/resolve \
   -H "Content-Type: application/json" \
   -d '{"emailText":"Charged twice for March","customerId":"CUST-1001","scenario":"billing-duplicate-charge"}'
+
+curl -s http://localhost:8081/travel/scenarios
+curl -s "http://localhost:8081/travel/plan-scenario?name=budget-nyc-weekend"
+curl -s "http://localhost:8081/travel/plan-scenario?name=underspecified"
+curl -s -X POST http://localhost:8081/travel/plan \
+  -H "Content-Type: application/json" \
+  -d '{"requestText":"Cheap weekend in NYC from Boston","scenario":"budget-nyc-weekend"}'
 ```
 
 ### Response shape
@@ -672,7 +820,7 @@ Endpoints that use the `SkillTemplate` observer return:
 - **`sessionId`** — Bifrost execution session id
 - **`executionJournal`** — step-level execution record for debugging / CLI inspection
 
-`/expenses` returns the skill result object directly (list of expense maps). Incident, claims, and support endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
+`/expenses` returns the skill result object directly (list of expense maps). Incident, claims, support, and travel endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
 
 ## Sample assets
 
@@ -684,6 +832,7 @@ Endpoints that use the `SkillTemplate` observer return:
 | `src/main/resources/fixtures/incidents/*.txt` | Canned incident tickets for HTN demos (`network-dns`, `app-deploy-regression`, `ambiguous-slow`, `firewall-block`) |
 | `src/main/resources/fixtures/insurance/claims/*.txt` | Canned FNOL claim texts (`clear-auto-pay`, `exclusion-flood`, `fraud-velocity`, `ambiguous-liability`, `over-limit`) |
 | `src/main/resources/fixtures/support/*.txt` | Canned support emails (`billing-duplicate-charge`, `tech-crash-on-checkout`, `mixed-billing-and-crash`, `how-to-export`, `angry-goodwill`) |
+| `src/main/resources/fixtures/travel/*.txt` | Canned trip requests (`budget-nyc-weekend`, `loyalty-points-max`, `fastest-sfo-sea`, `underspecified`) |
 
 Fixture content:
 
@@ -725,8 +874,11 @@ String result = skillTemplate.invoke("invoiceParser", Map.of("payload", invoiceT
 | `SupportSkillCatalogTests` | 14 support skills, target isolation, planning graph, root evidence (L2 only; no `checkRefundPolicy` at root), model aliases, locked schemas |
 | `SupportControllerTest` | POST resolve inputs, resolve-scenario fixture+customerId enrichment, scenarios list, unknown/missing rejection, journal envelope |
 | `SupportCrmServiceTest` | Scenario bias (duplicates, goodwill, tickets, help articles), unknown neutrality, deterministic bug tickets |
+| `TravelSkillCatalogTests` | 10 travel skills, target isolation, planning graph, root evidence (L2 only), ranker on transport allow-list, model aliases, locked schemas |
+| `TravelControllerTest` | POST plan inputs, plan-scenario fixture+scenario, scenarios list, unknown/missing rejection, journal envelope |
+| `TravelCatalogServiceTest` | Multi-option catalogs, dominated options, ranker determinism, loyalty perks, unknown neutrality |
 
-These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident/insurance/support skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
+These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident/insurance/support/travel skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
 
 ## Troubleshooting
 
@@ -735,13 +887,14 @@ These tests mock or stub model calls where needed; they validate wiring, not liv
 | Connection errors on invoice / planning skills | The selected named Ollama connection is not running, or its model is not pulled |
 | Startup rejects `provider` or `spring.ai.*` appears ignored | Replace each model's `provider` with `connection`, define the connection, and move transport credentials/settings there |
 | Feedstock endpoints fail with missing API key | `OPENAI_API_KEY` not set in the process environment |
-| Incident handle, claims process, or support resolve endpoints fail at runtime | `OPENROUTER_API_KEY` not set (boot still works with dummy default; live calls need a real key) |
+| Incident handle, claims process, support resolve, or travel plan endpoints fail at runtime | `OPENROUTER_API_KEY` not set (boot still works with dummy default; live calls need a real key) |
 | Skill not found | Skill `name` mismatch, or file not under `classpath:/skills/**/*.yml` |
-| Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design; nested incident/insurance/support planning is slower/costlier than invoice samples |
+| Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design; nested incident/insurance/support/travel planning is slower/costlier than invoice samples |
 | Schema / linter retries in logs | Expected when the model returns non-JSON or incomplete fields; check DEBUG logs |
 | Unknown scenario on `/incidents/handle-scenario` | Use `GET /incidents/scenarios` for valid keys (`network-dns`, `app-deploy-regression`, `ambiguous-slow`, `firewall-block`) |
 | Unknown scenario on `/claims/process-scenario` | Use `GET /claims/scenarios` for valid keys (`clear-auto-pay`, `exclusion-flood`, `fraud-velocity`, `ambiguous-liability`, `over-limit`) |
 | Unknown scenario on `/support/resolve-scenario` | Use `GET /support/scenarios` for valid keys (`billing-duplicate-charge`, `tech-crash-on-checkout`, `mixed-billing-and-crash`, `how-to-export`, `angry-goodwill`) |
+| Unknown scenario on `/travel/plan-scenario` | Use `GET /travel/scenarios` for valid keys (`budget-nyc-weekend`, `loyalty-points-max`, `fastest-sfo-sea`, `underspecified`) |
 
 ## Related modules
 
