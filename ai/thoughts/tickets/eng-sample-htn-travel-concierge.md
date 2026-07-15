@@ -33,7 +33,7 @@ It is a **gateway sample**: lower cognitive load than claims/incidents, still a 
 - Three-level skill stack with nested planners for transport and stay.  
 - Fake inventory leaves with multiple options so the LLM must choose.  
 - Structured itinerary output (legs, hotel, rough cost, rationale).  
-- Ollama-first.  
+- **OpenRouter planner/worker models** matching incident (`qwen3-35b` / `gpt-4o-mini`) — not Ollama-first.  
 - Fixtures: budget trip, loyalty-maximizing trip, ambiguous “romantic weekend,” family constraints.  
 - README section that non-engineers can follow.  
 
@@ -89,18 +89,18 @@ planTrip                                   [L1 planning YAML]
 
 ### Planning skills
 
-| Name | `allowed_skills` | Role |
-| --- | --- | --- |
-| `planTrip` | `understandPreferences`, `planTransport`, `planStay`, `assembleItinerary` | Root |
-| `planTransport` | `searchFlights`, `searchTrains` (+ optional ranker) | Transport specialist |
-| `planStay` | `searchHotels`, `checkLoyaltyPerks` | Lodging specialist |
+| Name | `allowed_skills` | Role | Model |
+| --- | --- | --- | --- |
+| `planTrip` | `understandPreferences`, `planTransport`, `planStay`, `assembleItinerary` | Root | `qwen3-35b` |
+| `planTransport` | `searchFlights`, `searchTrains` (+ optional ranker) | Transport specialist | `qwen3-35b` |
+| `planStay` | `searchHotels`, `checkLoyaltyPerks` | Lodging specialist | `qwen3-35b` |
 
 ### LLM single-shot skills
 
-| Name | Purpose |
-| --- | --- |
-| `understandPreferences` | origin, destination, dates, budget, party size, priorities, constraints |
-| `assembleItinerary` | Final structured itinerary + human-readable summary |
+| Name | Purpose | Model |
+| --- | --- | --- |
+| `understandPreferences` | origin, destination, dates, budget, party size, priorities, constraints | `gpt-4o-mini` |
+| `assembleItinerary` | Final structured itinerary + human-readable summary | `gpt-4o-mini` |
 
 ### Java leaves
 
@@ -115,6 +115,23 @@ Suggested service: `TravelCatalogService`.
 | `rankTransportOptions` | optional deterministic sort by price or duration for teaching “Java ranks, LLM picks” |
 
 Leaves should key off structured fields (`origin`, `destination`, `date`, `scenario`) passed by planners—not re-parse the original essay inside Java.
+
+## Models (locked — match incident commander)
+
+| Role | Framework alias | OpenRouter provider model | Skills |
+| --- | --- | --- | --- |
+| **Planner** | `qwen3-35b` | `qwen/qwen3.6-35b-a3b` | `planTrip`, `planTransport`, `planStay` |
+| **Worker** | `gpt-4o-mini` | `openai/gpt-4o-mini` | `understandPreferences`, `assembleItinerary` |
+
+| Layer | Value |
+| --- | --- |
+| Connection | Existing `openrouter` (`driver: openai`) — **reuse** incident wiring; no new connection keys |
+| Credential | `${OPENROUTER_API_KEY:test-openrouter-api-key}` — dummy default for boot/CI; live demos need real key |
+| Mapped leaves | Omit `model` |
+
+**Why not Ollama-first / `granite4-tiny`:** Nested transport/stay planning needs a capable planner; same rationale as incident. Ticket originally proposed Ollama-first; **superseded 2026-07-15**.
+
+**CI / tests:** Catalog, controller, and leaf tests must not call the live API. Live smoke is manual with a real `OPENROUTER_API_KEY`.
 
 ## Mission input / output
 
@@ -228,8 +245,9 @@ bifrost-sample/src/main/
 - [ ] Leaves return multi-option catalogs (not a single forced answer).  
 - [ ] Root output includes rationale and openQuestions.  
 - [ ] At least three fixtures documented.  
-- [ ] Ollama-only runnable.  
-- [ ] README section written for a non-expert reader.  
+- [ ] Planners use `qwen3-35b`; single-shot workers use `gpt-4o-mini` (OpenRouter; reuse incident connection).  
+- [ ] CI / sample boot succeeds without a real OpenRouter key; tests do not call the live API.  
+- [ ] README section written for a non-expert reader (includes model setup).  
 - [ ] Journal shows specialist delegation (not one flat mega-plan only).
 
 ## Open design questions
@@ -260,4 +278,4 @@ _(Use this section during ticket review.)_
 - Owner: TBD  
 - Reviewers: TBD  
 - Decisions log:  
-  - (pending)
+  - **2026-07-15:** Models locked to match incident commander — shared OpenRouter connection; planner `qwen3-35b` → `qwen/qwen3.6-35b-a3b`; worker `gpt-4o-mini` → `openai/gpt-4o-mini`. Supersedes original Ollama-first goal. Mapped leaves omit `model`. Other design questions still open.

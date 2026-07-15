@@ -33,7 +33,7 @@ Pairs well with existing invoice skills if we choose to **reuse** `invoiceParser
 - Three-level skill stack: root planner → domain planners → Java leaves.  
 - Multi-intent routing (billing, technical, how-to, or mixed).  
 - Structured case outcome + draft customer reply.  
-- Ollama-first; no OpenAI required.  
+- **OpenRouter planner/worker models** matching incident (`qwen3-35b` / `gpt-4o-mini`) — not Ollama-first.  
 - Fixtures covering single-intent and multi-intent emails.  
 - README section with tree, examples, and journal reading tips.  
 - Clear separation of `description` (tool selection) vs `prompt` (policy/behavior).
@@ -96,20 +96,20 @@ resolveSupportCase                         [L1 planning YAML]
 
 ### Planning skills
 
-| Name | `allowed_skills` | Role |
-| --- | --- | --- |
-| `resolveSupportCase` | `understandIntent`, `handleBilling`, `handleTechnical`, `handleHowTo`, `composeReply` | Root |
-| `handleBilling` | `lookupCustomer`, `lookupInvoices`, `checkRefundPolicy` (+ optional `invoiceParser`) | Billing specialist |
-| `handleTechnical` | `lookupAccountStatus`, `searchKnownIssues`, `createBugTicket` | Tech specialist |
-| `handleHowTo` | `searchHelpCenter` | Optional thin planner or single-shot |
+| Name | `allowed_skills` | Role | Model |
+| --- | --- | --- | --- |
+| `resolveSupportCase` | `understandIntent`, `handleBilling`, `handleTechnical`, `handleHowTo`, `composeReply` | Root | `qwen3-35b` |
+| `handleBilling` | `lookupCustomer`, `lookupInvoices`, `checkRefundPolicy` (+ optional `invoiceParser`) | Billing specialist | `qwen3-35b` |
+| `handleTechnical` | `lookupAccountStatus`, `searchKnownIssues`, `createBugTicket` | Tech specialist | `qwen3-35b` |
+| `handleHowTo` | `searchHelpCenter` | Optional thin planner or single-shot | `qwen3-35b` if planning; `gpt-4o-mini` if single-shot |
 
 ### LLM single-shot skills
 
-| Name | Purpose |
-| --- | --- |
-| `understandIntent` | Extract intents, sentiment, entities (order id, amount, product) |
-| `composeReply` | Customer-facing email draft grounded in gathered facts |
-| `checkRefundPolicy` | Optional LLM skill if policy is fuzzy; else Java returns structured policy rules |
+| Name | Purpose | Model |
+| --- | --- | --- |
+| `understandIntent` | Extract intents, sentiment, entities (order id, amount, product) | `gpt-4o-mini` |
+| `composeReply` | Customer-facing email draft grounded in gathered facts | `gpt-4o-mini` |
+| `checkRefundPolicy` | Optional LLM skill if policy is fuzzy; else Java returns structured policy rules | `gpt-4o-mini` if LLM; omit `model` if Java-mapped |
 
 ### Java leaves
 
@@ -124,6 +124,23 @@ Suggested service: `SupportCrmService`.
 | `searchKnownIssues` | matching KB / incident ids |
 | `createBugTicket` | returns fake ticket id |
 | `searchHelpCenter` | top help articles |
+
+## Models (locked — match incident commander)
+
+| Role | Framework alias | OpenRouter provider model | Skills |
+| --- | --- | --- | --- |
+| **Planner** | `qwen3-35b` | `qwen/qwen3.6-35b-a3b` | `resolveSupportCase`, `handleBilling`, `handleTechnical` (+ `handleHowTo` if planning) |
+| **Worker** | `gpt-4o-mini` | `openai/gpt-4o-mini` | `understandIntent`, `composeReply` (+ `checkRefundPolicy` if LLM) |
+
+| Layer | Value |
+| --- | --- |
+| Connection | Existing `openrouter` (`driver: openai`) — **reuse** incident wiring; no new connection keys |
+| Credential | `${OPENROUTER_API_KEY:test-openrouter-api-key}` — dummy default for boot/CI; live demos need real key |
+| Mapped leaves | Omit `model` |
+
+**Why not Ollama-first / `granite4-tiny`:** Nested multi-intent support routing needs a capable planner; same rationale as incident. Ticket originally proposed Ollama-first; **superseded 2026-07-15**.
+
+**CI / tests:** Catalog, controller, and leaf tests must not call the live API. Live smoke is manual with a real `OPENROUTER_API_KEY`.
 
 ## Mission input / output
 
@@ -235,8 +252,9 @@ Exact tag names TBD in design review.
 - [ ] At least one multi-intent fixture documented.  
 - [ ] At least one how-to path that does **not** create a bug ticket or refund.  
 - [ ] HTTP endpoint returns journal metadata.  
-- [ ] Ollama-only runnable.  
-- [ ] README section complete.  
+- [ ] Planners use `qwen3-35b`; single-shot workers use `gpt-4o-mini` (OpenRouter; reuse incident connection).  
+- [ ] CI / sample boot succeeds without a real OpenRouter key; tests do not call the live API.  
+- [ ] README section complete (includes model setup).  
 - [ ] Policy guidance lives in skill `prompt` / structured policy tool, not only in root description.
 
 ## Open design questions
@@ -267,4 +285,4 @@ _(Use this section during ticket review.)_
 - Owner: TBD  
 - Reviewers: TBD  
 - Decisions log:  
-  - (pending)
+  - **2026-07-15:** Models locked to match incident commander — shared OpenRouter connection; planner `qwen3-35b` → `qwen/qwen3.6-35b-a3b`; worker `gpt-4o-mini` → `openai/gpt-4o-mini`. Supersedes original Ollama-first goal. Mapped leaves omit `model`. Other design questions still open.

@@ -3,7 +3,6 @@
 **Status:** Design  
 **Priority:** P1 (organizational)  
 **Module:** `bifrost-sample`  
-**Framework prerequisites:** Complete `eng-separate-public-skills-from-java-targets.md`, then `eng-simplify-mapped-yaml-skill-manifests.md`, before implementing new gallery trees.  
 **Child tickets:**  
 1. `eng-sample-htn-incident-commander.md` — **build first**  
 2. `eng-sample-htn-support-case-resolver.md`  
@@ -43,7 +42,7 @@ Every skill-tree sample should:
 
 - Be at least **three skill-stack levels** (root planner → mid specialist → leaf).  
 - Use **`allowed_skills`** to show governed tool visibility.  
-- Prefer **Ollama-first** (OpenAI only if a domain truly needs vision later).  
+- Use the **shared sample model convention** (OpenRouter planner + worker aliases; see [Shared conventions](#shared-conventions-propose-once-reuse)). Nested trees are not defaulted to tiny local models.  
 - Return **`sessionId` + `executionJournal`** from HTTP demos.  
 - Ship **fixtures/scenarios** with documented *branch bias*, not brittle golden LLM output.  
 - Live under `resources/skills/<domain>/` and `.../sample/<domain>/` Java packages.  
@@ -110,6 +109,13 @@ Decide during the first implementation (Incident) and copy forward:
 ## Design discussion notes
 
 _(Epic-level decisions only; domain decisions go in child tickets.)_
+
+- Organization approach: **epic + 4 tickets** (confirmed with stakeholders).  
+- Build first: **Incident Commander** (proposed).  
+- Decisions log:  
+  - **2026-07-12:** Thin sample reorg before implementing trees. Keepers moved under `bifrost-sample/src/main/resources/skills/{basics,vision}/`; empty `incidents|support|insurance|travel` folders reserved. Skill YAML `name` values unchanged. Discovery still `classpath:/skills/**/*.yml`.
+  - **2026-07-15:** Sample model convention aligned with Incident Commander — shared OpenRouter connection; planner `qwen3-35b` / worker `gpt-4o-mini`; dropped Ollama-first default for nested HTN trees.
+  - (pending further)
 
 - Organization approach: **epic + 4 tickets** (confirmed with stakeholders).  
 - Build first: **Incident Commander** (proposed).  
