@@ -1,7 +1,8 @@
 package com.lokiscale.bifrost.runtime.usage;
 
-import com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.core.BifrostSession;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
 import com.lokiscale.bifrost.runtime.BifrostQuotaExceededException;
@@ -11,10 +12,10 @@ import java.util.function.UnaryOperator;
 
 public class DefaultSessionUsageService implements SessionUsageService
 {
-    private final BifrostSessionProperties.Quotas quotas;
+    private final BifrostProperties.Session.Quotas quotas;
     private final UsageMetricsRecorder usageMetricsRecorder;
 
-    public DefaultSessionUsageService(BifrostSessionProperties.Quotas quotas, UsageMetricsRecorder usageMetricsRecorder)
+    public DefaultSessionUsageService(BifrostProperties.Session.Quotas quotas, UsageMetricsRecorder usageMetricsRecorder)
     {
         this.quotas = Objects.requireNonNull(quotas, "quotas must not be null");
         this.usageMetricsRecorder = Objects.requireNonNull(usageMetricsRecorder, "usageMetricsRecorder must not be null");
@@ -37,11 +38,12 @@ public class DefaultSessionUsageService implements SessionUsageService
     }
 
     @Override
-    public void recordModelResponse(BifrostSession session, String skillName, ModelUsageRecord usageRecord)
+    public void recordModelResponse(BifrostSession session, String skillName, ModelExecutionIdentity identity,
+            ModelUsageRecord usageRecord)
     {
         Objects.requireNonNull(session, "session must not be null");
         SessionUsageSnapshot updated = update(session, snapshot -> snapshot.recordModelUsage(Objects.requireNonNull(usageRecord, "usageRecord must not be null")));
-        usageMetricsRecorder.recordModelUsage(skillName, usageRecord);
+        usageMetricsRecorder.recordModelUsage(skillName, Objects.requireNonNull(identity, "identity must not be null"), usageRecord);
         enforce(session, skillName, GuardrailType.MAX_MODEL_CALLS, quotas.getMaxModelCalls(), updated.modelCalls());
         enforce(session, skillName, GuardrailType.MAX_USAGE_UNITS, quotas.getMaxUsageUnits(), updated.usageUnits());
     }

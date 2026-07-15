@@ -127,7 +127,7 @@ class YamlSkillCapabilityRegistrarTests {
                     assertThat(capabilityRegistry.getCapability("mapped" + ".method.skill")).isNull();
                     assertThat(metadata.skillExecution().configured()).isFalse();
                     assertThat(metadata.skillExecution().frameworkModel()).isNull();
-                    assertThat(metadata.skillExecution().provider()).isNull();
+                    assertThat(metadata.skillExecution().driver()).isNull();
                     assertThat(metadata.skillExecution().providerModel()).isNull();
                     assertThat(metadata.skillExecution().thinkingLevel()).isNull();
                     assertThat(metadata.kind()).isEqualTo(com.lokiscale.bifrost.core.CapabilityKind.YAML_SKILL);

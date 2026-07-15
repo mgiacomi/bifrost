@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.runtime.attachment;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
@@ -177,7 +177,7 @@ class DefaultMissionInputMaterializerTest
         return new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
-                new EffectiveSkillExecutionConfiguration("model", AiProvider.OPENAI, "gpt-4.1-mini", null));
+                new EffectiveSkillExecutionConfiguration("model", "test-connection", AiDriver.OPENAI, "gpt-4.1-mini", null));
     }
 
     private byte[] jpegBytes()

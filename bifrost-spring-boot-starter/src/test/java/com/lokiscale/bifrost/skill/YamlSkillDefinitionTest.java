@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.skill;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class YamlSkillDefinitionTest
 {
     private static final EffectiveSkillExecutionConfiguration CONFIGURATION =
-            new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
+            new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
 
     @Test
     void preservesDeclaredFieldsAcrossDefinitionDefensiveCopies()

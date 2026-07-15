@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.core;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
@@ -58,7 +58,7 @@ class ExecutionCoordinatorLinterIntegrationTest {
     void retriesLintedYamlSkillThroughAdvisorAndRecordsOutcome() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = new YamlSkillManifest();
@@ -158,8 +158,8 @@ class ExecutionCoordinatorLinterIntegrationTest {
         private final Map<String, YamlSkillDefinition> definitions;
 
         StubYamlSkillCatalog(YamlSkillDefinition... definitions) {
-            super(new com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties(),
-                    new com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties());
+            super(new com.lokiscale.bifrost.autoconfigure.BifrostProperties(),
+                    new com.lokiscale.bifrost.autoconfigure.BifrostProperties.Skills());
             this.definitions = java.util.Arrays.stream(definitions)
                     .collect(java.util.stream.Collectors.toMap(definition -> definition.manifest().getName(), definition -> definition));
         }

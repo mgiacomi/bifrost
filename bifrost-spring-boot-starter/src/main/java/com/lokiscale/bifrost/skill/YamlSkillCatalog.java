@@ -6,8 +6,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
-import com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,25 +46,45 @@ public class YamlSkillCatalog implements InitializingBean
     private static final int OUTPUT_SCHEMA_WARNING_REQUIRED = 8;
     private static final String PUBLIC_SKILL_NAME_REGEX = "^[A-Za-z_][A-Za-z0-9_]{0,63}$";
     private static final Pattern PUBLIC_SKILL_NAME_PATTERN = Pattern.compile(PUBLIC_SKILL_NAME_REGEX);
-    private final BifrostModelsProperties modelsProperties;
-    private final BifrostSkillProperties skillProperties;
+    private final BifrostProperties modelsProperties;
+    private final BifrostProperties.Skills skillProperties;
     private final ResourcePatternResolver resourcePatternResolver;
     private final ObjectMapper yamlObjectMapper;
     private final Map<String, YamlSkillDefinition> skillsByName = new LinkedHashMap<>();
     private final Map<Resource, String> diagnosticSkillNames = new LinkedHashMap<>();
 
-    public YamlSkillCatalog(BifrostModelsProperties modelsProperties, BifrostSkillProperties skillProperties)
+    public YamlSkillCatalog(BifrostProperties properties)
     {
-        this(modelsProperties, skillProperties, new PathMatchingResourcePatternResolver(), defaultYamlObjectMapper());
+        this(properties, new PathMatchingResourcePatternResolver(), defaultYamlObjectMapper());
     }
 
-    YamlSkillCatalog(BifrostModelsProperties modelsProperties,
-            BifrostSkillProperties skillProperties,
+    public YamlSkillCatalog(BifrostProperties properties, BifrostProperties.Skills skills)
+    {
+        properties.setSkills(skills);
+        this.modelsProperties = Objects.requireNonNull(properties, "properties must not be null");
+        this.skillProperties = properties.getSkills();
+        this.resourcePatternResolver = new PathMatchingResourcePatternResolver();
+        this.yamlObjectMapper = defaultYamlObjectMapper();
+    }
+
+    YamlSkillCatalog(BifrostProperties properties,
+            BifrostProperties.Skills skills,
             ResourcePatternResolver resourcePatternResolver,
             ObjectMapper yamlObjectMapper)
     {
-        this.modelsProperties = Objects.requireNonNull(modelsProperties, "modelsProperties must not be null");
-        this.skillProperties = Objects.requireNonNull(skillProperties, "skillProperties must not be null");
+        properties.setSkills(skills);
+        this.modelsProperties = Objects.requireNonNull(properties, "properties must not be null");
+        this.skillProperties = properties.getSkills();
+        this.resourcePatternResolver = Objects.requireNonNull(resourcePatternResolver, "resourcePatternResolver must not be null");
+        this.yamlObjectMapper = Objects.requireNonNull(yamlObjectMapper, "yamlObjectMapper must not be null");
+    }
+
+    YamlSkillCatalog(BifrostProperties properties,
+            ResourcePatternResolver resourcePatternResolver,
+            ObjectMapper yamlObjectMapper)
+    {
+        this.modelsProperties = Objects.requireNonNull(properties, "properties must not be null");
+        this.skillProperties = properties.getSkills();
         this.resourcePatternResolver = Objects.requireNonNull(resourcePatternResolver, "resourcePatternResolver must not be null");
         this.yamlObjectMapper = Objects.requireNonNull(yamlObjectMapper, "yamlObjectMapper must not be null");
     }
@@ -154,7 +173,7 @@ public class YamlSkillCatalog implements InitializingBean
         validateEvidenceContract(resource, manifest);
         validateLinter(resource, manifest);
 
-        BifrostModelsProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
+        BifrostProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
         String effectiveThinkingLevel = resolveEffectiveThinkingLevel(manifest, catalogEntry);
 
         if (!catalogEntry.supportsThinkingLevel(effectiveThinkingLevel))
@@ -165,7 +184,8 @@ public class YamlSkillCatalog implements InitializingBean
 
         EffectiveSkillExecutionConfiguration effectiveConfiguration = new EffectiveSkillExecutionConfiguration(
                 manifest.getModel(),
-                catalogEntry.getProvider(),
+                catalogEntry.getConnection(),
+                modelsProperties.getConnections().get(catalogEntry.getConnection()).getDriver(),
                 catalogEntry.getProviderModel(),
                 effectiveThinkingLevel);
 
@@ -213,9 +233,9 @@ public class YamlSkillCatalog implements InitializingBean
         };
     }
 
-    private BifrostModelsProperties.ModelCatalogEntry resolveModelCatalogEntry(Resource resource, YamlSkillManifest manifest)
+    private BifrostProperties.ModelCatalogEntry resolveModelCatalogEntry(Resource resource, YamlSkillManifest manifest)
     {
-        BifrostModelsProperties.ModelCatalogEntry catalogEntry = modelsProperties.getModels().get(manifest.getModel());
+        BifrostProperties.ModelCatalogEntry catalogEntry = modelsProperties.getModels().get(manifest.getModel());
         if (catalogEntry == null)
         {
             throw invalidNamedSkill(resource, manifest, "model",
@@ -225,7 +245,7 @@ public class YamlSkillCatalog implements InitializingBean
     }
 
     private String resolveEffectiveThinkingLevel(YamlSkillManifest manifest,
-            BifrostModelsProperties.ModelCatalogEntry catalogEntry)
+            BifrostProperties.ModelCatalogEntry catalogEntry)
     {
         if (StringUtils.hasText(manifest.getThinkingLevel()))
         {

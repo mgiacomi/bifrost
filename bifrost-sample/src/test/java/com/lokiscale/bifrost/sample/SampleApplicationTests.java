@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.sample;
 
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
-import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
@@ -12,10 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(
-        classes = SampleApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = "spring.ai.openai.api-key=test-openai-api-key")
+@SpringBootTest(classes = SampleApplication.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class SampleApplicationTests {
 
     @Autowired
@@ -31,7 +28,7 @@ class SampleApplicationTests {
     private YamlSkillCatalog yamlSkillCatalog;
 
     @Autowired
-    private BifrostModelsProperties modelsProperties;
+    private BifrostProperties bifrostProperties;
 
     @Test
     void contextLoads() {
@@ -69,6 +66,10 @@ class SampleApplicationTests {
         assertThat(definition.outputSchema().getProperties().values())
                 .allSatisfy(field -> assertThat(field.getNullable()).isTrue());
         assertThat(definition.linter()).isNotNull();
-        assertThat(modelsProperties.getModels().get("openai-gpt-5-mini").getProviderModel()).isEqualTo("gpt-5-mini");
+        assertThat(bifrostProperties.getModels().get("openai-gpt-5-mini").getConnection()).isEqualTo("openai-main");
+        assertThat(bifrostProperties.getConnections().get("ollama-main").getDriver().name()).isEqualTo("OLLAMA");
+        assertThat(bifrostProperties.getConnections().get("ollama-secondary").getDriver().name()).isEqualTo("OLLAMA");
+        assertThat(bifrostProperties.getConnections().get("ollama-main").getBaseUrl())
+                .isNotEqualTo(bifrostProperties.getConnections().get("ollama-secondary").getBaseUrl());
     }
 }

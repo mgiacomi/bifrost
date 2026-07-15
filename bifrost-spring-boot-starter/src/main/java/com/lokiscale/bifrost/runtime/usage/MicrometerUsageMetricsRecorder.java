@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.runtime.usage;
 
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import java.util.Locale;
@@ -22,14 +23,20 @@ public class MicrometerUsageMetricsRecorder implements UsageMetricsRecorder
     }
 
     @Override
-    public void recordModelUsage(String skillName, ModelUsageRecord usageRecord)
+    public void recordModelUsage(String skillName, ModelExecutionIdentity identity, ModelUsageRecord usageRecord)
     {
         Objects.requireNonNull(usageRecord, "usageRecord must not be null");
+        Objects.requireNonNull(identity, "identity must not be null");
+        String[] identityTags = {
+                "skill", normalize(skillName),
+                "connection", normalize(identity.connection()),
+                "driver", normalize(identity.driver().name())
+        };
 
-        meterRegistry.counter("bifrost.model.calls", "skill", normalize(skillName), "precision", usageRecord.precision().name()).increment();
-        meterRegistry.counter("bifrost.model.prompt.units", "skill", normalize(skillName)).increment(usageRecord.promptUnits());
-        meterRegistry.counter("bifrost.model.completion.units", "skill", normalize(skillName)).increment(usageRecord.completionUnits());
-        meterRegistry.counter("bifrost.model.usage.units", "skill", normalize(skillName), "precision", usageRecord.precision().name()).increment(usageRecord.totalUnits());
+        meterRegistry.counter("bifrost.model.calls", append(identityTags, "precision", usageRecord.precision().name())).increment();
+        meterRegistry.counter("bifrost.model.prompt.units", identityTags).increment(usageRecord.promptUnits());
+        meterRegistry.counter("bifrost.model.completion.units", identityTags).increment(usageRecord.completionUnits());
+        meterRegistry.counter("bifrost.model.usage.units", append(identityTags, "precision", usageRecord.precision().name())).increment(usageRecord.totalUnits());
     }
 
     @Override
@@ -80,5 +87,13 @@ public class MicrometerUsageMetricsRecorder implements UsageMetricsRecorder
             return "unknown";
         }
         return value.toLowerCase(Locale.ROOT);
+    }
+
+    private String[] append(String[] tags, String key, String value)
+    {
+        String[] result = java.util.Arrays.copyOf(tags, tags.length + 2);
+        result[tags.length] = key;
+        result[tags.length + 1] = value;
+        return result;
     }
 }

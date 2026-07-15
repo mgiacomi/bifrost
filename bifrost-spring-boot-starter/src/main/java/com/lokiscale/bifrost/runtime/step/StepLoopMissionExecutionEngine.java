@@ -10,11 +10,13 @@ import com.lokiscale.bifrost.core.CapabilityRegistry;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceContext;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
 import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceFailureMetadata;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
@@ -561,22 +563,19 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             int stepNumber,
             Map<String, Object> promptTraceMetadata)
     {
+        ModelExecutionIdentity modelIdentity = ModelExecutionIdentity.from(executionConfiguration);
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.MODEL_CALL,
                 skillName + "#step-" + stepNumber + "-model",
-                Map.of(
-                        "provider", executionConfiguration.provider().name(),
-                        "providerModel", executionConfiguration.providerModel(),
-                        "segment", "step-" + stepNumber));
+                modelIdentity.metadata("segment", "step-" + stepNumber));
 
         String modelFrameStatus = "completed";
         Throwable modelFailure = null;
         try
         {
             ModelTraceContext modelTraceContext = new ModelTraceContext(
-                    executionConfiguration.provider().name(),
-                    executionConfiguration.providerModel(),
+                    modelIdentity,
                     skillName,
                     "step-" + stepNumber);
 
@@ -615,6 +614,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                         sessionUsageService.recordModelResponse(
                                 session,
                                 skillName,
+                                modelIdentity,
                                 modelUsageExtractor.extract(chatResponse, renderedInput.userText(), stepPrompt, responseContent));
 
                         return ModelTraceResult.of(
@@ -697,15 +697,15 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             executionStateService.recordStepEvent(session, stepFrame, TraceRecordType.STEP_COMPLETED,
                     Map.of("stepAction", "CALL_TOOL", "stepNumber", stepNumber,
                             "taskId", action.taskId(), "toolName", action.toolName(), "status", "failed"),
-                    Map.of("error", truncate(ex.getMessage(), 200)));
+                    Map.of("error", "Tool execution failed"));
 
             RuntimeException unwrapped = unwrapMissionFailure(ex);
             if (unwrapped instanceof BifrostStackOverflowException || unwrapped instanceof BifrostMissionTimeoutException)
             {
                 throw unwrapped;
             }
-            throw new IllegalStateException("Step %d tool '%s' failed for task '%s': %s"
-                    .formatted(stepNumber, action.toolName(), action.taskId(), ex.getMessage()), ex);
+            throw new IllegalStateException("Step %d tool '%s' failed for task '%s'"
+                    .formatted(stepNumber, action.toolName(), action.taskId()), ex);
         }
 
         String summaryLine = "Step %d: Called %s for task %s -> %s".formatted(
@@ -1184,11 +1184,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
         metadata.put("status", Thread.currentThread().isInterrupted() ? "aborted" : status);
         if (failure != null)
         {
-            metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank())
-            {
-                metadata.put("message", failure.getMessage());
-            }
+            TraceFailureMetadata.addTo(metadata, failure, "Step execution failed");
         }
         return metadata;
     }

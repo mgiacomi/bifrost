@@ -1,6 +1,10 @@
 package com.lokiscale.bifrost.chat;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.AdvisorTraceRecorder;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
@@ -9,6 +13,7 @@ import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.chat.client.ChatClient;
@@ -20,7 +25,6 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.core.io.ByteArrayResource;
 
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -37,30 +41,59 @@ import static org.mockito.Mockito.when;
 class SpringAiSkillChatClientFactoryTests {
 
     @Test
+    void debugLogsDistinguishSameDriverConnectionsWithoutTransportDetails() {
+        Logger logger = (Logger) LoggerFactory.getLogger(SpringAiSkillChatClientFactory.class);
+        Level previousLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+        try {
+            ChatModel first = mock(ChatModel.class);
+            ChatModel second = mock(ChatModel.class);
+            SkillChatModelResolver resolver = resolver(Map.of("openai-main", first, "openrouter", second));
+            captureFactoryInvocation(definition(new EffectiveSkillExecutionConfiguration(
+                    "native", "openai-main", AiDriver.OPENAI, "gpt-5", null)),
+                    new NoOpSkillAdvisorResolver(), resolver);
+            captureFactoryInvocation(definition(new EffectiveSkillExecutionConfiguration(
+                    "routed", "openrouter", AiDriver.OPENAI, "anthropic/sonnet", null)),
+                    new NoOpSkillAdvisorResolver(), resolver);
+
+            String logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList().toString();
+            assertThat(logs)
+                    .contains("connection=openai-main", "connection=openrouter", "driver=OPENAI")
+                    .doesNotContain("api-key", "Authorization", "base-url", "http://", "https://");
+        }
+        finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+            appender.stop();
+        }
+    }
+
+    @Test
     void selectsChatModelFromResolvedProvider() {
         ChatModel ollamaChatModel = mock(ChatModel.class);
         SkillChatModelResolver chatModelResolver = mock(SkillChatModelResolver.class);
-        when(chatModelResolver.resolve("test.skill", AiProvider.OLLAMA)).thenReturn(ollamaChatModel);
+        EffectiveSkillExecutionConfiguration configuration = new EffectiveSkillExecutionConfiguration(
+                "ollama-llama3", "test-connection", AiDriver.OLLAMA, "llama3.2", null);
+        when(chatModelResolver.resolve("test.skill", configuration)).thenReturn(ollamaChatModel);
 
         CapturedFactoryResult result = captureFactoryInvocation(
-                definition(new EffectiveSkillExecutionConfiguration(
-                        "ollama-llama3",
-                        AiProvider.OLLAMA,
-                        "llama3.2",
-                        null)),
+                definition(configuration),
                 new NoOpSkillAdvisorResolver(),
                 chatModelResolver);
 
         assertThat(result.resolvedChatModel()).isSameAs(ollamaChatModel);
         assertThat(result.options()).isInstanceOf(OllamaChatOptions.class);
-        verify(chatModelResolver).resolve("test.skill", AiProvider.OLLAMA);
+        verify(chatModelResolver).resolve("test.skill", configuration);
     }
 
     @Test
     void createsClientWithProviderModelAndNoThinkingOptionWhenThinkingIsNull() {
         FactoryClient created = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
                 "ollama-llama3",
-                AiProvider.OLLAMA,
+                "test-connection", AiDriver.OLLAMA,
                 "llama3.2",
                 null)));
 
@@ -74,11 +107,11 @@ class SpringAiSkillChatClientFactoryTests {
         CapturedFactoryResult result = captureFactoryInvocation(
                 definition(new EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        AiProvider.OPENAI,
+                        "test-connection", AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 new NoOpSkillAdvisorResolver(),
-                resolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))));
+                resolver(Map.of("test-connection", mock(ChatModel.class))));
 
         assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
         OpenAiChatOptions options = (OpenAiChatOptions) result.options();
@@ -92,11 +125,11 @@ class SpringAiSkillChatClientFactoryTests {
         CapturedFactoryResult result = captureFactoryInvocation(
                 definition(new EffectiveSkillExecutionConfiguration(
                         "openai-gpt-5-mini",
-                        AiProvider.OPENAI,
+                        "test-connection", AiDriver.OPENAI,
                         "gpt-5-mini",
                         null)),
                 new NoOpSkillAdvisorResolver(),
-                resolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))));
+                resolver(Map.of("test-connection", mock(ChatModel.class))));
 
         assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
         OpenAiChatOptions options = (OpenAiChatOptions) result.options();
@@ -108,7 +141,7 @@ class SpringAiSkillChatClientFactoryTests {
     void createsClientWithResolvedAdvisorsAndProviderOptions() {
         YamlSkillDefinition definition = definition(new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium"));
         Advisor advisor = mock(Advisor.class);
@@ -126,7 +159,7 @@ class SpringAiSkillChatClientFactoryTests {
     void doesNotAttachAdvisorsWhenResolverReturnsEmptyList() {
         YamlSkillDefinition definition = definition(new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium"));
 
@@ -142,13 +175,13 @@ class SpringAiSkillChatClientFactoryTests {
     void createForStepExecutionOmitsResolvedAdvisors() {
         YamlSkillDefinition definition = definition(new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium"));
         Advisor passthroughAdvisor = mock(Advisor.class);
         RecordingBuilderFactory builderFactory = new RecordingBuilderFactory();
         SpringAiSkillChatClientFactory factory = new SpringAiSkillChatClientFactory(
-                resolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))),
+                resolver(Map.of("test-connection", mock(ChatModel.class))),
                 SpringAiSkillChatClientFactory.defaultAdapters(),
                 ignored -> List.of(
                         passthroughAdvisor,
@@ -168,7 +201,7 @@ class SpringAiSkillChatClientFactoryTests {
     void dispatchesToProviderSpecificAdapter() {
         ChatOptions openAi = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium"))).options();
         assertThat(openAi).isInstanceOf(OpenAiChatOptions.class);
@@ -176,7 +209,7 @@ class SpringAiSkillChatClientFactoryTests {
 
         ChatOptions anthropic = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
                 "claude-sonnet",
-                AiProvider.ANTHROPIC,
+                "test-connection", AiDriver.ANTHROPIC,
                 "anthropic/claude-sonnet-4",
                 "medium"))).options();
         assertThat(anthropic).isInstanceOf(AnthropicChatOptions.class);
@@ -185,7 +218,7 @@ class SpringAiSkillChatClientFactoryTests {
 
         ChatOptions gemini = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
                 "gemini-pro",
-                AiProvider.GEMINI,
+                "test-connection", AiDriver.GEMINI,
                 "google/gemini-2.5-pro",
                 "medium"))).options();
         assertThat(gemini).isInstanceOf(GoogleGenAiChatOptions.class);
@@ -194,7 +227,7 @@ class SpringAiSkillChatClientFactoryTests {
 
         ChatOptions ollama = createFactoryBackedClient(definition(new EffectiveSkillExecutionConfiguration(
                 "ollama-llama3",
-                AiProvider.OLLAMA,
+                "test-connection", AiDriver.OLLAMA,
                 "llama3.2",
                 null))).options();
         assertThat(ollama).isInstanceOf(OllamaChatOptions.class);
@@ -204,17 +237,19 @@ class SpringAiSkillChatClientFactoryTests {
     @Test
     void throwsExecutionTimeErrorForUnavailableProvider() {
         SpringAiSkillChatClientFactory factory = new SpringAiSkillChatClientFactory(
-                new DefaultSkillChatModelResolver(Map.of(AiProvider.OPENAI, mock(ChatModel.class))),
+                new DefaultSkillChatModelResolver(Map.of("openai-main", mock(ChatModel.class))),
                 SpringAiSkillChatClientFactory.defaultAdapters(),
                 new NoOpSkillAdvisorResolver());
 
         assertThatThrownBy(() -> factory.create(definition(new EffectiveSkillExecutionConfiguration(
                 "ollama-llama3",
-                AiProvider.OLLAMA,
+                "test-connection", AiDriver.OLLAMA,
                 "llama3.2",
                 null))))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("No ChatModel configured for provider OLLAMA required by skill 'test.skill'");
+                .hasMessageContaining("test-connection")
+                .hasMessageContaining("OLLAMA")
+                .hasMessageContaining("test.skill");
     }
 
     private FactoryClient createFactoryBackedClient(YamlSkillDefinition definition) {
@@ -226,7 +261,7 @@ class SpringAiSkillChatClientFactoryTests {
         return captureFactoryInvocation(
                 definition,
                 skillAdvisorResolver,
-                resolver(Map.of(executionConfiguration.provider(), mock(ChatModel.class))));
+                resolver(Map.of(executionConfiguration.connection(), mock(ChatModel.class))));
     }
 
     private CapturedFactoryResult captureFactoryInvocation(YamlSkillDefinition definition,
@@ -243,8 +278,8 @@ class SpringAiSkillChatClientFactoryTests {
         return builderFactory.result(created);
     }
 
-    private SkillChatModelResolver resolver(Map<AiProvider, ChatModel> modelsByProvider) {
-        return new DefaultSkillChatModelResolver(new EnumMap<>(modelsByProvider));
+    private SkillChatModelResolver resolver(Map<String, ChatModel> modelsByConnection) {
+        return new DefaultSkillChatModelResolver(modelsByConnection);
     }
 
     private YamlSkillDefinition definition(EffectiveSkillExecutionConfiguration configuration) {

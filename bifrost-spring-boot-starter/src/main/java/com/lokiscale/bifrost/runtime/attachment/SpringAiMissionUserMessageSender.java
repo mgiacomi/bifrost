@@ -51,10 +51,12 @@ public class SpringAiMissionUserMessageSender implements MissionUserMessageSende
             String mediaDetails = renderedInput.attachments().stream()
                     .map(attachment -> attachment.mediaType() + "/" + attachment.contentType())
                     .collect(Collectors.joining(", "));
-            throw new IllegalStateException("Model call for skill '" + skillName + "' using provider "
-                    + executionConfiguration.provider().name() + " model '" + executionConfiguration.providerModel()
-                    + "' failed with " + renderedInput.attachments().size() + " attachment(s) [" + mediaDetails
-                    + "]. Use a model/provider that supports the declared attachment media.", ex);
+            throw new IllegalStateException("Model call for skill '" + skillName + "' using framework model '"
+                    + executionConfiguration.frameworkModel() + "' through connection '" + executionConfiguration.connection()
+                    + "' (driver " + executionConfiguration.driver().name() + ", provider model '"
+                    + executionConfiguration.providerModel() + "') failed with " + renderedInput.attachments().size()
+                    + " attachment(s) [" + mediaDetails
+                    + "]. Use a model/driver that supports the declared attachment media.", ex);
         }
     }
 }

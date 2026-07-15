@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.skill;
 
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.annotation.SkillMethod;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DynamicTest;
@@ -258,10 +258,11 @@ class YamlSkillCatalogTests {
                     assertThat(catalog.getSkill("thinkingDefaultSkill").executionConfiguration())
                             .extracting(
                                     EffectiveSkillExecutionConfiguration::frameworkModel,
-                                    EffectiveSkillExecutionConfiguration::provider,
+                                    EffectiveSkillExecutionConfiguration::connection,
+                                    EffectiveSkillExecutionConfiguration::driver,
                                     EffectiveSkillExecutionConfiguration::providerModel,
                                     EffectiveSkillExecutionConfiguration::thinkingLevel)
-                            .containsExactly("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
+                            .containsExactly("gpt-5", "openai-main", AiDriver.OPENAI, "openai/gpt-5", "medium");
                 });
     }
 

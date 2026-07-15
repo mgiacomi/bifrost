@@ -17,6 +17,7 @@ import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.runtime.input.SkillInputValidator;
 import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
+import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.skill.YamlSkillCatalog;
 import com.lokiscale.bifrost.skillapi.SkillTemplate;
 import com.lokiscale.bifrost.vfs.RefResolver;
@@ -94,11 +95,10 @@ class BifrostAutoConfigurationTests {
                 .run(context -> {
                     assertThat(context).hasSingleBean(BifrostSessionRunner.class);
                     assertThat(context).hasSingleBean(BifrostExceptionTransformer.class);
-                    assertThat(context).hasSingleBean(BifrostSessionProperties.class);
                     assertThat(context).hasSingleBean(ExecutionTraceProperties.class);
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
                     assertThat(context).hasSingleBean(SkillImplementationTargetRegistry.class);
-                    assertThat(context).hasSingleBean(BifrostModelsProperties.class);
+                    assertThat(context).hasSingleBean(BifrostProperties.class);
                     assertThat(context).hasSingleBean(YamlSkillCatalog.class);
                     assertThat(context).hasSingleBean(SkillVisibilityResolver.class);
                     assertThat(context).hasSingleBean(VirtualFileSystem.class);
@@ -107,7 +107,7 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(SkillInputContractResolver.class);
                     assertThat(context).hasSingleBean(SkillInputValidator.class);
                     assertThat(context).hasSingleBean(SkillTemplate.class);
-                    assertThat(context.getBean(BifrostSessionProperties.class).getMaxDepth()).isEqualTo(5);
+                    assertThat(context.getBean(BifrostProperties.class).getSession().getMaxDepth()).isEqualTo(5);
                 });
     }
 
@@ -188,17 +188,34 @@ class BifrostAutoConfigurationTests {
     }
 
     @Test
+    void customChatModelResolverBacksOffDefaultConnectionConstruction() {
+        SkillChatModelResolver customResolver = (skillName, configuration) -> Mockito.mock(ChatModel.class);
+
+        modelFreeContextRunner
+                .withBean(SkillChatModelResolver.class, () -> customResolver)
+                .withPropertyValues(
+                        "bifrost.skills.locations=classpath:/skills/none/**/*.yaml",
+                        "bifrost.connections.local.driver=ollama",
+                        "bifrost.connections.local.base-url=http://unused.example")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SkillChatModelResolver.class);
+                    assertThat(context).doesNotHaveBean(NamedAiConnectionRegistry.class);
+                    assertThat(context.getBean(SkillChatModelResolver.class)).isSameAs(customResolver);
+                });
+    }
+
+    @Test
     void bindsProviderAwareModelCatalogFromApplicationTestYaml() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> {
-                    BifrostModelsProperties properties = context.getBean(BifrostModelsProperties.class);
+                    BifrostProperties properties = context.getBean(BifrostProperties.class);
 
                     assertThat(properties.getModels()).containsKeys("gpt-5", "claude-sonnet", "gemini-pro", "ollama-llama3");
-                    assertThat(properties.getModels().get("gpt-5").getProvider()).isEqualTo(AiProvider.OPENAI);
-                    assertThat(properties.getModels().get("claude-sonnet").getProvider()).isEqualTo(AiProvider.ANTHROPIC);
-                    assertThat(properties.getModels().get("gemini-pro").getProvider()).isEqualTo(AiProvider.GEMINI);
-                    assertThat(properties.getModels().get("ollama-llama3").getProvider()).isEqualTo(AiProvider.OLLAMA);
+                    assertThat(properties.getConnections().get(properties.getModels().get("gpt-5").getConnection()).getDriver()).isEqualTo(AiDriver.OPENAI);
+                    assertThat(properties.getConnections().get(properties.getModels().get("claude-sonnet").getConnection()).getDriver()).isEqualTo(AiDriver.ANTHROPIC);
+                    assertThat(properties.getConnections().get(properties.getModels().get("gemini-pro").getConnection()).getDriver()).isEqualTo(AiDriver.GEMINI);
+                    assertThat(properties.getConnections().get(properties.getModels().get("ollama-llama3").getConnection()).getDriver()).isEqualTo(AiDriver.OLLAMA);
                     assertThat(properties.getModels().get("gpt-5").getProviderModel()).isEqualTo("openai/gpt-5");
                     assertThat(properties.getModels().get("claude-sonnet").getThinkingLevels()).containsExactlyInAnyOrder("low", "medium", "high");
                     assertThat(properties.getModels().get("ollama-llama3").getThinkingLevels()).isEmpty();
@@ -217,8 +234,12 @@ class BifrostAutoConfigurationTests {
                 .run(context -> {
                     SkillChatModelResolver resolver = context.getBean(SkillChatModelResolver.class);
 
-                    assertThat(resolver.resolve("openaiSkill", AiProvider.OPENAI)).isSameAs(openAiChatModel);
-                    assertThat(resolver.resolve("ollamaSkill", AiProvider.OLLAMA)).isSameAs(ollamaChatModel);
+                    assertThat(resolver.resolve("openaiSkill", new EffectiveSkillExecutionConfiguration(
+                            "gpt-5", "openai-main", AiDriver.OPENAI, "openai/gpt-5", "medium")))
+                            .isInstanceOf(OpenAiChatModel.class);
+                    assertThat(resolver.resolve("ollamaSkill", new EffectiveSkillExecutionConfiguration(
+                            "ollama-llama3", "ollama-main", AiDriver.OLLAMA, "llama3.2", null)))
+                            .isInstanceOf(OllamaChatModel.class);
                 });
     }
 
@@ -247,7 +268,7 @@ class BifrostAutoConfigurationTests {
                     assertThat(metadata).isNotNull();
                     assertThat(metadata.skillExecution().configured()).isTrue();
                     assertThat(metadata.skillExecution().frameworkModel()).isEqualTo("gpt-5");
-                    assertThat(metadata.skillExecution().provider()).isEqualTo(AiProvider.OPENAI);
+                    assertThat(metadata.skillExecution().driver()).isEqualTo(AiDriver.OPENAI);
                     assertThat(metadata.skillExecution().providerModel()).isEqualTo("openai/gpt-5");
                     assertThat(metadata.skillExecution().thinkingLevel()).isEqualTo("medium");
                 });

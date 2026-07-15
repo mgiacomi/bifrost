@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.core;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.springframework.lang.Nullable;
 
@@ -8,13 +8,14 @@ import java.util.Objects;
 
 public record SkillExecutionDescriptor(
         @Nullable String frameworkModel,
-        @Nullable AiProvider provider,
+        @Nullable String connection,
+        @Nullable AiDriver driver,
         @Nullable String providerModel,
         @Nullable String thinkingLevel)
 {
     public static SkillExecutionDescriptor none()
     {
-        return new SkillExecutionDescriptor(null, null, null, null);
+        return new SkillExecutionDescriptor(null, null, null, null, null);
     }
 
     public static SkillExecutionDescriptor from(EffectiveSkillExecutionConfiguration configuration)
@@ -22,7 +23,8 @@ public record SkillExecutionDescriptor(
         Objects.requireNonNull(configuration, "configuration must not be null");
         return new SkillExecutionDescriptor(
                 configuration.frameworkModel(),
-                configuration.provider(),
+                configuration.connection(),
+                configuration.driver(),
                 configuration.providerModel(),
                 configuration.thinkingLevel());
     }

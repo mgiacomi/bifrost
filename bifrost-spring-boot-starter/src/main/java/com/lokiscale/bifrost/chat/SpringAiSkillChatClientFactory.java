@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.chat;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContractCallAdvisor;
@@ -33,7 +33,7 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
 
     private final SkillChatModelResolver chatModelResolver;
     private final ChatClientBuilderFactory chatClientBuilderFactory;
-    private final Map<AiProvider, SkillChatOptionsAdapter> adaptersByProvider;
+    private final Map<AiDriver, SkillChatOptionsAdapter> adaptersByDriver;
     private final SkillAdvisorResolver skillAdvisorResolver;
 
     public SpringAiSkillChatClientFactory(SkillChatModelResolver chatModelResolver,
@@ -52,10 +52,10 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
         Objects.requireNonNull(adapters, "adapters must not be null");
         this.skillAdvisorResolver = Objects.requireNonNull(skillAdvisorResolver, "skillAdvisorResolver must not be null");
         this.chatClientBuilderFactory = Objects.requireNonNull(chatClientBuilderFactory, "chatClientBuilderFactory must not be null");
-        this.adaptersByProvider = new EnumMap<>(AiProvider.class);
+        this.adaptersByDriver = new EnumMap<>(AiDriver.class);
         for (SkillChatOptionsAdapter adapter : adapters)
         {
-            this.adaptersByProvider.put(adapter.provider(), adapter);
+            this.adaptersByDriver.put(adapter.driver(), adapter);
         }
     }
 
@@ -76,12 +76,12 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
         Objects.requireNonNull(definition, "definition must not be null");
         EffectiveSkillExecutionConfiguration executionConfiguration = definition.requireExecutionConfiguration();
         String skillName = definition.manifest().getName();
-        SkillChatOptionsAdapter adapter = adaptersByProvider.get(executionConfiguration.provider());
+        SkillChatOptionsAdapter adapter = adaptersByDriver.get(executionConfiguration.driver());
         if (adapter == null)
         {
-            throw new IllegalStateException("No ChatOptions adapter configured for provider " + executionConfiguration.provider());
+            throw new IllegalStateException("No ChatOptions adapter configured for driver " + executionConfiguration.driver());
         }
-        ChatModel chatModel = chatModelResolver.resolve(skillName, executionConfiguration.provider());
+        ChatModel chatModel = chatModelResolver.resolve(skillName, executionConfiguration);
         ChatOptions options = adapter.createOptions(executionConfiguration);
         List<Advisor> advisors = resolvedAdvisors(skillAdvisorResolver.resolve(definition), includeFinalResponseValidators);
         ChatClient.Builder builder = chatClientBuilderFactory.create(chatModel);
@@ -92,9 +92,11 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
         }
         ChatClient delegate = builder.build();
         log.debug(
-                "Created skill ChatClient for skill '{}' provider={} chatModelType={} delegateType={} advisors={}",
+                "Created skill ChatClient for skill '{}' frameworkModel={} connection={} driver={} chatModelType={} delegateType={} advisors={}",
                 skillName,
-                executionConfiguration.provider(),
+                executionConfiguration.frameworkModel(),
+                executionConfiguration.connection(),
+                executionConfiguration.driver(),
                 chatModel.getClass().getName(),
                 delegate.getClass().getName(),
                 includeFinalResponseValidators ? advisorNames(advisors) : advisorNames(advisors) + " (step execution)");
@@ -144,9 +146,9 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
     private static final class OpenAiOptionsAdapter implements SkillChatOptionsAdapter
     {
         @Override
-        public AiProvider provider()
+        public AiDriver driver()
         {
-            return AiProvider.OPENAI;
+            return AiDriver.OPENAI;
         }
 
         @Override
@@ -180,9 +182,9 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
     private static final class AnthropicOptionsAdapter implements SkillChatOptionsAdapter
     {
         @Override
-        public AiProvider provider()
+        public AiDriver driver()
         {
-            return AiProvider.ANTHROPIC;
+            return AiDriver.ANTHROPIC;
         }
 
         @Override
@@ -201,9 +203,9 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
     private static final class GeminiOptionsAdapter implements SkillChatOptionsAdapter
     {
         @Override
-        public AiProvider provider()
+        public AiDriver driver()
         {
-            return AiProvider.GEMINI;
+            return AiDriver.GEMINI;
         }
 
         @Override
@@ -223,9 +225,9 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
     private static final class OllamaOptionsAdapter implements SkillChatOptionsAdapter
     {
         @Override
-        public AiProvider provider()
+        public AiDriver driver()
         {
-            return AiProvider.OLLAMA;
+            return AiDriver.OLLAMA;
         }
 
         @Override

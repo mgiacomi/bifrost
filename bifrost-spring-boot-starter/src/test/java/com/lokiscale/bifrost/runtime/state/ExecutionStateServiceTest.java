@@ -144,11 +144,13 @@ class ExecutionStateServiceTest {
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-trace", 3);
 
         ExecutionFrame rootFrame = stateService.openMissionFrame(session, "rootVisibleSkill", Map.of("objective", "hello"));
-        ExecutionFrame frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "rootVisibleSkill#model", Map.of("provider", "openai"));
+        ExecutionFrame frame = stateService.openFrame(session, TraceFrameType.MODEL_CALL, "rootVisibleSkill#model", Map.of("driver", "openai"));
         stateService.recordModelRequestPrepared(
                 session,
                 frame,
-                new ModelTraceContext("openai", "openai/gpt-5", "rootVisibleSkill", "unit"),
+                new ModelTraceContext(new com.lokiscale.bifrost.core.ModelExecutionIdentity(
+                        "gpt-5", "openai-main", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
+                        "openai/gpt-5"), "rootVisibleSkill", "unit"),
                 Map.of("user", "hello"));
         stateService.logToolCall(session, TaskExecutionEvent.linked("allowedVisibleSkill", "task-1", Map.of("arguments", Map.of("value", "hello")), null));
         stateService.closeFrame(session, frame, Map.of("status", "completed"));

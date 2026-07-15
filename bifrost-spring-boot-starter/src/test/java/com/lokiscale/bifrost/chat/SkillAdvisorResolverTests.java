@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.chat;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.core.BifrostSessionRunner;
 import com.lokiscale.bifrost.linter.LinterCallAdvisor;
@@ -137,7 +137,7 @@ class SkillAdvisorResolverTests {
         return new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
-                new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"),
+                new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium"),
                 EvidenceContract.fromManifest(manifest.getEvidenceContract(), manifest.getOutputSchema()));
     }
 

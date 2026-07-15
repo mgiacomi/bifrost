@@ -12,6 +12,7 @@ import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceContext;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.core.PlanStatus;
@@ -19,6 +20,7 @@ import com.lokiscale.bifrost.core.PlanTask;
 import com.lokiscale.bifrost.core.PlanTaskLinker;
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceFailureMetadata;
 import com.lokiscale.bifrost.core.TraceRecordType;
 import com.lokiscale.bifrost.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
@@ -135,13 +137,12 @@ public class DefaultPlanningService implements PlanningService
                 chatClient.getClass().getName(),
                 visibleTools == null ? 0 : visibleTools.size());
 
+        ModelExecutionIdentity modelIdentity = ModelExecutionIdentity.from(executionConfiguration);
         ExecutionFrame planningFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.PLANNING,
                 capabilityName + "#planning",
-                Map.of(
-                        "provider", executionConfiguration.provider().name(),
-                        "providerModel", executionConfiguration.providerModel()));
+                modelIdentity.metadata());
 
         String planningFrameStatus = "completed";
         Throwable planningFailure = null;
@@ -314,6 +315,7 @@ public class DefaultPlanningService implements PlanningService
             sessionUsageService.recordModelResponse(
                     session,
                     capabilityName,
+                    ModelExecutionIdentity.from(executionConfiguration),
                     modelUsageExtractor.extract(
                             attemptResult.chatResponse(),
                             attemptResult.userMessage(),
@@ -404,14 +406,12 @@ public class DefaultPlanningService implements PlanningService
             @Nullable EvidenceContract evidenceContract)
     {
         String capabilityName = definition.manifest().getName();
+        ModelExecutionIdentity modelIdentity = ModelExecutionIdentity.from(executionConfiguration);
         ExecutionFrame modelFrame = executionStateService.openFrame(
                 session,
                 TraceFrameType.MODEL_CALL,
                 capabilityName + "#planning-model",
-                Map.of(
-                        "provider", executionConfiguration.provider().name(),
-                        "providerModel", executionConfiguration.providerModel(),
-                        "segment", "planning"));
+                modelIdentity.metadata("segment", "planning"));
 
         String modelFrameStatus = "completed";
         Throwable modelFailure = null;
@@ -424,8 +424,7 @@ public class DefaultPlanningService implements PlanningService
         try
         {
             ModelTraceContext modelTraceContext = new ModelTraceContext(
-                    executionConfiguration.provider().name(),
-                    executionConfiguration.providerModel(),
+                    modelIdentity,
                     capabilityName,
                     "planning");
 
@@ -653,11 +652,7 @@ public class DefaultPlanningService implements PlanningService
 
         if (failure != null)
         {
-            metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank())
-            {
-                metadata.put("message", failure.getMessage());
-            }
+            TraceFailureMetadata.addTo(metadata, failure, "Planning model invocation failed");
         }
 
         return metadata;

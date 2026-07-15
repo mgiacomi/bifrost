@@ -179,11 +179,7 @@ public class ExecutionCoordinator
         metadata.put("status", failure == null ? "completed" : (Thread.currentThread().isInterrupted() ? "aborted" : "failed"));
         if (failure != null)
         {
-            metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank())
-            {
-                metadata.put("message", failure.getMessage());
-            }
+            TraceFailureMetadata.addTo(metadata, failure, "Mission execution failed");
         }
         return metadata;
     }
@@ -193,10 +189,7 @@ public class ExecutionCoordinator
         LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         payload.put("skillName", skillName);
         payload.put("objective", objective);
-        payload.put("message", failure.getMessage() == null || failure.getMessage().isBlank()
-                ? "Mission execution failed"
-                : failure.getMessage());
-        payload.put("exceptionType", failure.getClass().getName());
+        TraceFailureMetadata.addTo(payload, failure, "Mission execution failed");
         return payload;
     }
 

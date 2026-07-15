@@ -130,11 +130,7 @@ public class BifrostSessionRunner
         metadata.put("status", failure == null ? "completed" : "failed");
         if (failure != null)
         {
-            metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank())
-            {
-                metadata.put("message", failure.getMessage());
-            }
+            TraceFailureMetadata.addTo(metadata, failure, "Session execution failed");
         }
 
         session.finalizeTrace(Map.copyOf(metadata));

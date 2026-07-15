@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.core;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.chat.SkillChatClientFactory;
 import com.lokiscale.bifrost.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
@@ -56,7 +56,7 @@ class ExecutionCoordinatorTest {
     void deniesRestrictedRootSkillBeforePlanningOrModelExecution() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -123,7 +123,7 @@ class ExecutionCoordinatorTest {
     void clearsStaleSessionAuthenticationBeforeUnauthenticatedRootExecution() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -195,7 +195,7 @@ class ExecutionCoordinatorTest {
     void usesValidatedYamlExecutionConfigAndUpdatesPlanThroughToolInvocation() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -295,7 +295,7 @@ class ExecutionCoordinatorTest {
     void skipsPlanningPromptWhenSkillDisablesPlanningMode() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -365,7 +365,7 @@ class ExecutionCoordinatorTest {
     void usesStepExecutionChatClientWhenStepLoopEngineIsSelected() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
@@ -420,7 +420,7 @@ class ExecutionCoordinatorTest {
     void doesNotSelectStepLoopWhenPlanningModeIsNotExplicitlyEnabled() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
@@ -474,7 +474,7 @@ class ExecutionCoordinatorTest {
     void clearsInheritedEvidenceBeforeNestedSkillExecution() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
@@ -527,7 +527,7 @@ class ExecutionCoordinatorTest {
     void failsFastWhenStepLoopFactoryDoesNotImplementStepExecutionClientCreation() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
@@ -576,7 +576,7 @@ class ExecutionCoordinatorTest {
     void marksTopLevelTraceErroredWhenMissionExecutionThrows() throws Exception {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
@@ -631,7 +631,7 @@ class ExecutionCoordinatorTest {
     void recordsTopLevelMissionFrameClosureStatusInTrace() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
@@ -676,7 +676,7 @@ class ExecutionCoordinatorTest {
     void redactsDeclaredAttachmentInputBeforeOpeningMissionFrame() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
@@ -730,7 +730,7 @@ class ExecutionCoordinatorTest {
     void preservesMissionFailureWhenCleanupAlsoFails() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         StubYamlSkillCatalog catalog = new StubYamlSkillCatalog(new YamlSkillDefinition(
@@ -801,7 +801,7 @@ class ExecutionCoordinatorTest {
     void clearsStalePlanBeforeStartingPlanningDisabledMission() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -874,7 +874,7 @@ class ExecutionCoordinatorTest {
     void marksMatchingTaskBlockedAndJournalsErrorWhenToolInvocationFails() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -949,12 +949,12 @@ class ExecutionCoordinatorTest {
     void routesUnmappedYamlSkillsBackThroughCoordinatorAndRestoresParentPlan() {
         EffectiveSkillExecutionConfiguration rootExecutionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         EffectiveSkillExecutionConfiguration childExecutionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "claude-sonnet",
-                AiProvider.ANTHROPIC,
+                "test-connection", AiDriver.ANTHROPIC,
                 "anthropic/claude-sonnet-4",
                 "medium");
         YamlSkillManifest rootManifest = plannedManifest("rootVisibleSkill", List.of("child.llm.skill"));
@@ -1089,7 +1089,7 @@ class ExecutionCoordinatorTest {
     void deniesRestrictedToolInvocationAtExecutionTimeWhenAuthenticationLacksRole() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -1156,12 +1156,12 @@ class ExecutionCoordinatorTest {
     void authorizesProtectedChildYamlSkillFromSessionFallback() {
         EffectiveSkillExecutionConfiguration rootExecutionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         EffectiveSkillExecutionConfiguration childExecutionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5-mini",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5-mini",
                 "low");
         YamlSkillManifest rootManifest = plannedManifest("rootVisibleSkill", List.of("child.llm.skill"));
@@ -1282,7 +1282,7 @@ class ExecutionCoordinatorTest {
     void closesMissionFramesWhenMissionExecutionTimesOut() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = manifest("rootVisibleSkill", List.of());
@@ -1341,7 +1341,7 @@ class ExecutionCoordinatorTest {
     void usesMappedSkillToolSchemaInsteadOfGenericMapSchema() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         String methodSchema = "{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}}}";
@@ -1373,7 +1373,7 @@ class ExecutionCoordinatorTest {
     void journalsUnplannedExecutionWithoutMutatingAmbiguousTasks() {
         EffectiveSkillExecutionConfiguration executionConfiguration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5",
-                AiProvider.OPENAI,
+                "test-connection", AiDriver.OPENAI,
                 "openai/gpt-5",
                 "medium");
         YamlSkillManifest manifest = plannedManifest("rootVisibleSkill", List.of("allowedVisibleSkill"));
@@ -1667,8 +1667,8 @@ class ExecutionCoordinatorTest {
         private final java.util.Map<String, YamlSkillDefinition> definitions;
 
         StubYamlSkillCatalog(YamlSkillDefinition... definitions) {
-            super(new com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties(),
-                    new com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties());
+            super(new com.lokiscale.bifrost.autoconfigure.BifrostProperties(),
+                    new com.lokiscale.bifrost.autoconfigure.BifrostProperties.Skills());
             this.definitions = java.util.Arrays.stream(definitions)
                     .collect(java.util.stream.Collectors.toMap(definition -> definition.manifest().getName(), definition -> definition));
         }

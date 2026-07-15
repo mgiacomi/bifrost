@@ -1,0 +1,110 @@
+{
+  "properties": [
+    {
+      "name": "bifrost.connections",
+      "type": "java.util.Map<java.lang.String,com.lokiscale.bifrost.autoconfigure.BifrostProperties$ConnectionProperties>",
+      "description": "Application-owned named AI connections. Values do not inherit or merge spring.ai.* properties."
+    },
+    {
+      "name": "bifrost.connections.*.driver",
+      "type": "com.lokiscale.bifrost.autoconfigure.AiDriver",
+      "description": "Spring AI protocol/client driver used by this concrete connection."
+    },
+    {
+      "name": "bifrost.connections.*.api-key",
+      "type": "java.lang.String",
+      "description": "Sensitive credential. Supply it through an environment or external property placeholder."
+    },
+    {
+      "name": "bifrost.connections.*.base-url",
+      "type": "java.lang.String",
+      "description": "Optional driver endpoint override; required for Ollama. OpenAI URLs ending in /v1 use /chat/completions; unversioned URLs use /v1/chat/completions. Values are not emitted in Bifrost diagnostics."
+    },
+    {
+      "name": "bifrost.connections.*.headers",
+      "type": "java.util.Map<java.lang.String,java.lang.String>",
+      "description": "Sensitive static headers supported only for the OpenAI driver."
+    },
+    {
+      "name": "bifrost.connections.*.openai.organization-id",
+      "type": "java.lang.String",
+      "description": "OpenAI-only organization header value."
+    },
+    {
+      "name": "bifrost.connections.*.openai.project-id",
+      "type": "java.lang.String",
+      "description": "OpenAI-only project header value."
+    },
+    {
+      "name": "bifrost.connections.*.openai.chat-completions-path",
+      "type": "java.lang.String",
+      "description": "OpenAI-only chat-completions path override."
+    },
+    {
+      "name": "bifrost.connections.*.anthropic.completions-path",
+      "type": "java.lang.String",
+      "description": "Anthropic-only messages/completions path override."
+    },
+    {
+      "name": "bifrost.connections.*.anthropic.version",
+      "type": "java.lang.String",
+      "description": "Anthropic-only API version override."
+    },
+    {
+      "name": "bifrost.connections.*.anthropic.beta-version",
+      "type": "java.lang.String",
+      "description": "Anthropic-only beta features header value."
+    },
+    {
+      "name": "bifrost.connections.*.gemini.vertex-ai",
+      "type": "java.lang.Boolean",
+      "description": "Enables Gemini Vertex AI mode; mutually exclusive with api-key mode."
+    },
+    {
+      "name": "bifrost.connections.*.gemini.project-id",
+      "type": "java.lang.String",
+      "description": "Required Google Cloud project in Gemini Vertex AI mode."
+    },
+    {
+      "name": "bifrost.connections.*.gemini.location",
+      "type": "java.lang.String",
+      "description": "Required Google Cloud location in Gemini Vertex AI mode."
+    },
+    {
+      "name": "bifrost.connections.*.gemini.credentials-uri",
+      "type": "java.lang.String",
+      "description": "Optional Spring resource URI for credentials in Gemini Vertex AI mode."
+    },
+    {
+      "name": "bifrost.models",
+      "type": "java.util.Map<java.lang.String,com.lokiscale.bifrost.autoconfigure.BifrostProperties$ModelCatalogEntry>",
+      "description": "Framework model aliases referenced by YAML skills."
+    },
+    {
+      "name": "bifrost.models.*.connection",
+      "type": "java.lang.String",
+      "description": "Required name of an entry in bifrost.connections."
+    },
+    {
+      "name": "bifrost.models.*.provider-model",
+      "type": "java.lang.String",
+      "description": "Provider model ID applied to each request through the selected connection."
+    },
+    {
+      "name": "bifrost.models.*.thinking-levels",
+      "type": "java.util.Set<java.lang.String>",
+      "description": "Thinking levels that skills selecting this model alias may request."
+    }
+  ],
+  "hints": [
+    {
+      "name": "bifrost.connections.*.driver",
+      "values": [
+        { "value": "openai" },
+        { "value": "anthropic" },
+        { "value": "gemini" },
+        { "value": "ollama" }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Bifrost Sample
 
-A runnable Spring Boot application that demonstrates Bifrost skills end to end: public YAML skill discovery, internal Java `@SkillMethod` targets, multi-provider model routing, HTN planning, vision/attachment inputs, and HTTP invocation via `SkillTemplate`.
+A runnable Spring Boot application that demonstrates Bifrost skills end to end: public YAML skill discovery, internal Java `@SkillMethod` targets, named-connection model routing, HTN planning, vision/attachment inputs, and HTTP invocation via `SkillTemplate`.
 
 Use this module as a reference implementation when integrating `bifrost-spring-boot-starter` into your own app.
 
@@ -12,7 +12,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 | Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` |
 | Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` |
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
-| Named multi-provider models (`ollama` + `openai`) | `application.yml` → `bifrost.models` |
+| Named connections and model aliases (`ollama` + `openai`) | `application.yml` → `bifrost.connections` / `bifrost.models` |
 | HTTP API that invokes skills and returns execution metadata | `SampleController` |
 | Execution journal / session id via `SkillTemplate` observer | invoice and feedstock endpoints |
 
@@ -25,7 +25,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
   - optionally `gemma4:e2b`, `gemma4:e4b`, `gemma4:26b`
 - **OpenAI API key** for feedstock vision demos:
   - set `OPENAI_API_KEY` in the environment (preferred)
-  - or `openai.api.key` / Spring AI `spring.ai.openai.api-key`
+  - Bifrost reads it through `bifrost.connections.openai-main.api-key`; `spring.ai.*` is not inherited
 
 PowerShell:
 
@@ -69,7 +69,7 @@ bifrost-sample/
     │   │   ├── ExpenseService.java                 # @SkillMethod (deterministic data)
     │   │   └── FeedstockFormExtractionService.java # @SkillMethod (OpenAI vision HTTP)
     │   └── resources/
-    │       ├── application.yml                     # Spring AI + bifrost config
+    │       ├── application.yml                     # Named AI connections + Bifrost config
     │       ├── forms/                              # Sample weigh ticket image/PDF
     │       └── skills/
     │           ├── basics/                         # Mapped leaf, LLM parse, 2-level plan
@@ -97,16 +97,18 @@ bifrost:
       - classpath:/skills/**/*.yaml
 ```
 
+Named Bifrost connections are `ollama-main`, `ollama-secondary`, and `openai-main`. The two Ollama connections demonstrate independent endpoints using the same driver; override them with `OLLAMA_BASE_URL` and `OLLAMA_SECONDARY_BASE_URL`.
+
 Named Bifrost models (each LLM-backed YAML skill must set `model` to one of these keys; mapped YAML wrappers omit it):
 
-| Key | Provider | Provider model |
+| Key | Connection | Provider model |
 | --- | --- | --- |
-| `granite4-tiny` | ollama | `ibm/granite4:tiny-h` |
-| `gemma4-e2b` | ollama | `gemma4:e2b` |
-| `gemma4-e4b` | ollama | `gemma4:e4b` |
-| `gemma4-26b` | ollama | `gemma4:26b` |
-| `default-model` | ollama | `ibm/granite4:tiny-h` |
-| `openai-gpt-5-mini` | openai | `gpt-5-mini` |
+| `granite4-tiny` | `ollama-main` | `ibm/granite4:tiny-h` |
+| `gemma4-e2b` | `ollama-secondary` | `gemma4:e2b` |
+| `gemma4-e4b` | `ollama-secondary` | `gemma4:e4b` |
+| `gemma4-26b` | `ollama-main` | `gemma4:26b` |
+| `default-model` | `ollama-main` | `ibm/granite4:tiny-h` |
+| `openai-gpt-5-mini` | `openai-main` | `gpt-5-mini` |
 
 Notes:
 
@@ -268,7 +270,7 @@ Date: 03/30/2026
 1. Spring Boot starts `SampleApplication`; Bifrost publishes YAML skills and discovers `@SkillMethod` methods in a separate internal target registry.
 2. `SampleController` injects `SkillTemplate`.
 3. Controllers call `skillTemplate.invoke(yamlSkillName, inputs)` or the overload with a `Consumer<SkillExecutionView>` observer. Raw Java method names and `beanName#methodName` target IDs are not invocation aliases.
-4. Bifrost resolves the skill, then either selects the named model provider for LLM-backed execution or routes a mapped skill directly to its Java target, and returns text (plus optional journal).
+4. Bifrost resolves the skill, then either selects its model alias and named connection for LLM-backed execution or routes a mapped skill directly to its Java target, and returns text (plus optional journal).
 
 Minimal pattern used throughout the sample:
 
@@ -291,7 +293,8 @@ These tests mock or stub model calls where needed; they validate wiring, not liv
 
 | Symptom | Likely cause |
 | --- | --- |
-| Connection errors on invoice / planning skills | Ollama not running, or model not pulled |
+| Connection errors on invoice / planning skills | The selected named Ollama connection is not running, or its model is not pulled |
+| Startup rejects `provider` or `spring.ai.*` appears ignored | Replace each model's `provider` with `connection`, define the connection, and move transport credentials/settings there |
 | Feedstock endpoints fail with missing API key | `OPENAI_API_KEY` not set in the process environment |
 | Skill not found | Skill `name` mismatch, or file not under `classpath:/skills/**/*.yml` |
 | Long hangs | Vision/planning can take minutes; mission timeout is `6000s` by design |

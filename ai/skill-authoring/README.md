@@ -36,6 +36,7 @@ Read [source-verification.md](source-verification.md) before performing a source
 | Understand Bifrost skill trees | [mental-model.md](mental-model.md) | Relevant topic documents below |
 | Design or review a new tree | [checklists/evaluate-a-skill-design.md](checklists/evaluate-a-skill-design.md) | [mental-model.md](mental-model.md) |
 | Add evidence-backed output claims | [evidence-contracts.md](evidence-contracts.md) | [mental-model.md](mental-model.md) |
+| Select a model or configure its connection | [model-selection-and-connections.md](model-selection-and-connections.md) | [mental-model.md](mental-model.md) |
 | Resolve ambiguity or an edge case | [source-verification.md](source-verification.md) | The topic's implementation anchors |
 
 Do not load every document by default. Start with the routing entry most relevant to the developer's goal and expand only when the task crosses another documented concern.
@@ -56,7 +57,7 @@ Do not load every document by default. Start with the routing entry most relevan
 | Planning and nested planning | Foundational | The mental model covers choosing direct versus step-based execution; complete planning, retry, and cost semantics are not yet documented |
 | Capability visibility and RBAC | Not yet documented | The mental model contains only foundational behavior |
 | Attachments and virtual files | Not yet documented | Requires separate source verification |
-| Model selection and thinking levels | Not yet documented | Requires separate source verification |
+| Model selection and connections | Initial, source-verified | Framework model aliases, named connections, drivers, thinking levels, migration, and diagnostics |
 | Execution limits and quotas | Not yet documented | Requires separate source verification |
 | Traces and debugging | Not yet documented | Evidence documentation identifies relevant trace behavior only |
 | Testing skill trees | Not yet documented | The design checklist gives initial review prompts only |

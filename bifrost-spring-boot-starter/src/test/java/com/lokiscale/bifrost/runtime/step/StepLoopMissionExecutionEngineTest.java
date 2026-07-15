@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.runtime.step;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.DefaultPlanTaskLinker;
 import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
@@ -67,7 +67,7 @@ class StepLoopMissionExecutionEngineTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
     private static final EffectiveSkillExecutionConfiguration EXECUTION_CONFIGURATION =
-            new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
+            new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
 
     @Test
     void executesNewlyUnblockedTasksAcrossMultipleSteps() {
@@ -1333,8 +1333,8 @@ class StepLoopMissionExecutionEngineTest {
         private final YamlSkillDefinition definition;
 
         private StubYamlSkillCatalog(YamlSkillDefinition definition) {
-            super(new com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties(),
-                    new com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties());
+            super(new com.lokiscale.bifrost.autoconfigure.BifrostProperties(),
+                    new com.lokiscale.bifrost.autoconfigure.BifrostProperties.Skills());
             this.definition = definition;
         }
 

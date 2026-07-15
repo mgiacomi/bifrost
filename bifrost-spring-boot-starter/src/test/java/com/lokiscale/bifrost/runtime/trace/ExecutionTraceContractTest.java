@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.runtime.trace;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.DefaultPlanTaskLinker;
 import com.lokiscale.bifrost.core.ExecutionPlan;
@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,7 +37,7 @@ class ExecutionTraceContractTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
     private static final EffectiveSkillExecutionConfiguration EXECUTION_CONFIGURATION =
-            new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
+            new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
 
     @Test
     void modelEventsAreSemanticallyEquivalentAcrossPlanningAndMission() {
@@ -90,6 +91,64 @@ class ExecutionTraceContractTest {
         assertEquivalentEnvelope(planningModelRecords.get(2), missionModelRecords.get(2));
         assertThat(planningModelRecords).allMatch(record -> "planning".equals(record.metadata().get("segment")));
         assertThat(missionModelRecords).allMatch(record -> "mission".equals(record.metadata().get("segment")));
+    }
+
+    @Test
+    void providerFailureMessagesAreRedactedFromPlanningAndMissionTraces() {
+        String endpointSentinel = "http://127.0.0.1:1/SENTINEL-BASE";
+        RuntimeException providerFailure = new IllegalStateException(
+                "I/O error on POST request for \"" + endpointSentinel + "/v1/chat/completions\"");
+        DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
+
+        BifrostSession planningSession = com.lokiscale.bifrost.core.TestBifrostSessions.withId(
+                "planning-provider-failure", 3);
+        DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
+
+        assertThatThrownBy(() -> planningService.initializePlan(
+                planningSession,
+                "hello",
+                null,
+                rootDefinition(),
+                new SequencePlanningChatClient(providerFailure),
+                List.of()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertSafeFailureRecords(readRecords(planningSession), endpointSentinel, "Planning model invocation failed");
+
+        BifrostSession missionSession = com.lokiscale.bifrost.core.TestBifrostSessions.withId(
+                "mission-provider-failure", 3);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DefaultMissionExecutionEngine engine = new DefaultMissionExecutionEngine(
+                    new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService),
+                    stateService,
+                    Duration.ofSeconds(5),
+                    executor);
+
+            assertThatThrownBy(() -> engine.executeMission(
+                    missionSession,
+                    rootDefinition(),
+                    "hello",
+                    null,
+                    new SequencePlanningChatClient(providerFailure),
+                    List.of(),
+                    false,
+                    null))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        assertSafeFailureRecords(readRecords(missionSession), endpointSentinel, "Model invocation failed");
+    }
+
+    private static void assertSafeFailureRecords(List<TraceRecord> records, String sentinel, String safeMessage) {
+        assertThat(records.toString()).doesNotContain(sentinel);
+        assertThat(records)
+                .filteredOn(record -> record.recordType() == TraceRecordType.FRAME_CLOSED
+                        && "failed".equals(record.metadata().get("status")))
+                .isNotEmpty()
+                .allSatisfy(record -> {
+                    assertThat(record.metadata()).containsEntry("exceptionType", IllegalStateException.class.getName());
+                    assertThat(record.metadata()).containsEntry("message", safeMessage);
+                });
     }
 
     @Test
@@ -176,8 +235,12 @@ class ExecutionTraceContractTest {
 
     private static void assertEquivalentEnvelope(TraceRecord planningRecord, TraceRecord missionRecord) {
         assertThat(planningRecord.metadata().keySet()).containsExactlyElementsOf(missionRecord.metadata().keySet());
-        assertThat(planningRecord.metadata()).containsEntry("provider", AiProvider.OPENAI.name());
-        assertThat(missionRecord.metadata()).containsEntry("provider", AiProvider.OPENAI.name());
+        assertThat(planningRecord.metadata()).containsEntry("frameworkModel", "gpt-5");
+        assertThat(missionRecord.metadata()).containsEntry("frameworkModel", "gpt-5");
+        assertThat(planningRecord.metadata()).containsEntry("connection", "test-connection");
+        assertThat(missionRecord.metadata()).containsEntry("connection", "test-connection");
+        assertThat(planningRecord.metadata()).containsEntry("driver", AiDriver.OPENAI.name());
+        assertThat(missionRecord.metadata()).containsEntry("driver", AiDriver.OPENAI.name());
         assertThat(planningRecord.metadata()).containsEntry("providerModel", "openai/gpt-5");
         assertThat(missionRecord.metadata()).containsEntry("providerModel", "openai/gpt-5");
         assertThat(planningRecord.metadata()).containsEntry("skillName", "rootVisibleSkill");
@@ -269,9 +332,15 @@ class ExecutionTraceContractTest {
     private static final class SequencePlanningChatClient implements org.springframework.ai.chat.client.ChatClient {
 
         private final Deque<String> responses = new ArrayDeque<>();
+        private final RuntimeException failure;
 
         private SequencePlanningChatClient(String... responses) {
+            this.failure = null;
             this.responses.addAll(List.of(responses));
+        }
+
+        private SequencePlanningChatClient(RuntimeException failure) {
+            this.failure = failure;
         }
 
         @Override
@@ -408,6 +477,9 @@ class ExecutionTraceContractTest {
 
             @Override
             public CallResponseSpec call() {
+                if (failure != null) {
+                    throw failure;
+                }
                 String next = responses.pollFirst();
                 if (next == null) {
                     throw new IllegalStateException("No more queued chat responses");

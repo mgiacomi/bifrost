@@ -7,6 +7,7 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.core.ToolTraceContext;
+import com.lokiscale.bifrost.core.TraceFailureMetadata;
 import com.lokiscale.bifrost.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
@@ -172,12 +173,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory
             {
                 failureMetadata.put("linkedTaskId", linkedTaskId);
             }
-            if (ex.getMessage() != null)
-            {
-                failureMetadata.put("message", ex.getMessage());
-            }
-
-            failureMetadata.put("exceptionType", ex.getClass().getName());
+            TraceFailureMetadata.addTo(failureMetadata, ex, "Tool execution failed");
 
             executionStateService.logToolFailure(
                     session,
@@ -191,12 +187,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory
             {
                 errorPayload.put("linkedTaskId", linkedTaskId);
             }
-            if (ex.getMessage() != null)
-            {
-                errorPayload.put("message", ex.getMessage());
-            }
-
-            errorPayload.put("exceptionType", ex.getClass().getName());
+            TraceFailureMetadata.addTo(errorPayload, ex, "Tool execution failed");
             executionStateService.logError(session, errorPayload);
             throw ex;
         }
@@ -236,11 +227,7 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory
         metadata.put("status", Thread.currentThread().isInterrupted() ? "aborted" : status);
         if (failure != null)
         {
-            metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank())
-            {
-                metadata.put("message", failure.getMessage());
-            }
+            TraceFailureMetadata.addTo(metadata, failure, "Tool execution failed");
         }
         return metadata;
     }

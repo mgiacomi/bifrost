@@ -1,19 +1,6 @@
 spring:
   application:
     name: bifrost-sample
-  ai:
-    ollama:
-      enabled: true
-      base-url: http://localhost:11434
-      #base-url: http://192.168.4.83:11434
-      chat:
-        options:
-          model: ibm/granite4:tiny-h
-          #model: gemma4:26b
-          #model: gemma4:e4b
-          temperature: 0.7
-    openai:
-      api-key: ${OPENAI_API_KEY}
 
 server:
   port: 8081
@@ -28,6 +15,16 @@ logging:
     org.springframework.ai.chat.client: DEBUG
 
 bifrost:
+  connections:
+    ollama-main:
+      driver: ollama
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    ollama-secondary:
+      driver: ollama
+      base-url: ${OLLAMA_SECONDARY_BASE_URL:http://localhost:11435}
+    openai-main:
+      driver: openai
+      api-key: ${OPENAI_API_KEY:test-openai-api-key}
   session:
     mission-timeout: 6000s
   skills:
@@ -36,22 +33,22 @@ bifrost:
       - classpath:/skills/**/*.yaml
   models:
     granite4-tiny:
-      provider: ollama
+      connection: ollama-main
       provider-model: ibm/granite4:tiny-h
     gemma4-e2b:
-      provider: ollama
+      connection: ollama-secondary
       provider-model: gemma4:e2b
     gemma4-26b:
-      provider: ollama
+      connection: ollama-main
       provider-model: gemma4:26b
     gemma4-e4b:
-      provider: ollama
+      connection: ollama-secondary
       provider-model: gemma4:e4b
     default-model:
-      provider: ollama
+      connection: ollama-main
       provider-model: ibm/granite4:tiny-h
     openai-gpt-5-mini:
-      provider: openai
+      connection: openai-main
       provider-model: gpt-5-mini
 
 execution-trace:

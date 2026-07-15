@@ -1,35 +1,33 @@
 package com.lokiscale.bifrost.chat;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.springframework.ai.chat.model.ChatModel;
 
-import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
 
 public class DefaultSkillChatModelResolver implements SkillChatModelResolver
 {
-    private final Map<AiProvider, ChatModel> modelsByProvider;
+    private final Map<String, ChatModel> modelsByConnection;
 
-    public DefaultSkillChatModelResolver(Map<AiProvider, ChatModel> modelsByProvider)
+    public DefaultSkillChatModelResolver(Map<String, ChatModel> modelsByConnection)
     {
-        Objects.requireNonNull(modelsByProvider, "modelsByProvider must not be null");
-        EnumMap<AiProvider, ChatModel> resolvedModels = new EnumMap<>(AiProvider.class);
-        resolvedModels.putAll(modelsByProvider);
-        this.modelsByProvider = Map.copyOf(resolvedModels);
+        Objects.requireNonNull(modelsByConnection, "modelsByConnection must not be null");
+        this.modelsByConnection = Map.copyOf(modelsByConnection);
     }
 
     @Override
-    public ChatModel resolve(String skillName, AiProvider provider)
+    public ChatModel resolve(String skillName, EffectiveSkillExecutionConfiguration configuration)
     {
         Objects.requireNonNull(skillName, "skillName must not be null");
-        Objects.requireNonNull(provider, "provider must not be null");
-        ChatModel chatModel = modelsByProvider.get(provider);
+        Objects.requireNonNull(configuration, "configuration must not be null");
+        ChatModel chatModel = modelsByConnection.get(configuration.connection());
 
         if (chatModel == null)
         {
-            throw new IllegalStateException(
-                    "No ChatModel configured for provider " + provider + " required by skill '" + skillName + "'");
+            throw new IllegalStateException("No ChatModel configured for connection '" + configuration.connection()
+                    + "' (driver " + configuration.driver() + ", framework model '" + configuration.frameworkModel()
+                    + "') required by skill '" + skillName + "'");
         }
         return chatModel;
     }

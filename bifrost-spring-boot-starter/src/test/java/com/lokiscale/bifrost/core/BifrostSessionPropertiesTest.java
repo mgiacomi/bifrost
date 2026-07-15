@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.core;
 
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
-import com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.autoconfigure.ExecutionTraceProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -25,7 +25,7 @@ class BifrostSessionPropertiesTest {
     @Test
     void bindsDefaultAndOverriddenSessionProperties() {
         contextRunner.run(context -> {
-            BifrostSessionProperties properties = context.getBean(BifrostSessionProperties.class);
+            BifrostProperties.Session properties = context.getBean(BifrostProperties.class).getSession();
             assertThat(properties.getMaxDepth()).isEqualTo(32);
             assertThat(properties.getMissionTimeout()).isEqualTo(Duration.ofSeconds(60));
             assertThat(properties.getQuotas().getMaxSkillInvocations()).isEqualTo(64);
@@ -47,7 +47,7 @@ class BifrostSessionPropertiesTest {
                         "bifrost.session.quotas.max-usage-units=1234",
                         "execution-trace.persistence=always")
                 .run(context -> {
-                    BifrostSessionProperties properties = context.getBean(BifrostSessionProperties.class);
+                    BifrostProperties.Session properties = context.getBean(BifrostProperties.class).getSession();
                     ExecutionTraceProperties executionTraceProperties = context.getBean(ExecutionTraceProperties.class);
                     BifrostSessionRunner runner = context.getBean(BifrostSessionRunner.class);
 
@@ -87,7 +87,7 @@ class BifrostSessionPropertiesTest {
                 .withPropertyValues("bifrost.session.quotas.max-model-calls=0")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context.getBean(BifrostSessionProperties.class).getQuotas().getMaxModelCalls()).isZero();
+                    assertThat(context.getBean(BifrostProperties.class).getSession().getQuotas().getMaxModelCalls()).isZero();
                 });
 
         contextRunner

@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.skill;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.PlanTask;
@@ -47,7 +47,7 @@ class MissionExecutionEngineTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
     private static final EffectiveSkillExecutionConfiguration EXECUTION_CONFIGURATION =
-            new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
+            new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
 
     @Test
     void executesPlanningEnabledMissionLoop() {

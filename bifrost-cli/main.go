@@ -847,7 +847,8 @@ func smartInfo(r TraceRecord) string {
 
 	case "MODEL_REQUEST_PREPARED", "MODEL_REQUEST_SENT":
 		if meta != nil {
-			info := strVal(meta["provider"]) + "/" + strVal(meta["providerModel"])
+			info := strVal(meta["frameworkModel"]) + " -> " + strVal(meta["connection"]) + " (" +
+				strVal(meta["driver"]) + "/" + strVal(meta["providerModel"]) + ")"
 			if sn := strVal(meta["skillName"]); sn != "" {
 				info += "  " + sn
 			}

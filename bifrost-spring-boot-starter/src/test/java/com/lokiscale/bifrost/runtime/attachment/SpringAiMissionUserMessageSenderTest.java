@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.runtime.attachment;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.runtime.SimpleChatClient;
 import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.junit.jupiter.api.Test;
@@ -63,6 +63,6 @@ class SpringAiMissionUserMessageSenderTest
 
     private EffectiveSkillExecutionConfiguration config()
     {
-        return new EffectiveSkillExecutionConfiguration("model", AiProvider.OPENAI, "gpt-4.1-mini", null);
+        return new EffectiveSkillExecutionConfiguration("model", "test-connection", AiDriver.OPENAI, "gpt-4.1-mini", null);
     }
 }

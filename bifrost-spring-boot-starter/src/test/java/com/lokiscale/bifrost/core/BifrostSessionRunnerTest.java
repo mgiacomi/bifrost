@@ -107,7 +107,8 @@ class BifrostSessionRunnerTest {
                     .containsEntry("errored", true)
                     .containsEntry("status", "failed")
                     .containsEntry("exceptionType", IllegalArgumentException.class.getName())
-                    .containsEntry("message", "boom");
+                    .containsEntry("message", "Session execution failed")
+                    .doesNotContainValue("boom");
         }
         finally {
             Files.deleteIfExists(tracePath);

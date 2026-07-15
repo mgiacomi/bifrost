@@ -43,7 +43,7 @@ class CapabilityExecutionRouterTest {
                 "child",
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "test-connection", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 java.util.Set.of(),
@@ -82,7 +82,7 @@ class CapabilityExecutionRouterTest {
                 "child",
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "test-connection", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 java.util.Set.of("ROLE_ALLOWED"),
@@ -125,7 +125,7 @@ class CapabilityExecutionRouterTest {
                 "child",
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "test-connection", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 java.util.Set.of("ROLE_ALLOWED"),
@@ -160,7 +160,7 @@ class CapabilityExecutionRouterTest {
                 "child",
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "test-connection", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 java.util.Set.of(),
@@ -180,7 +180,7 @@ class CapabilityExecutionRouterTest {
                 manifest,
                 new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "test-connection", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium"));
         com.lokiscale.bifrost.skill.YamlSkillCatalog catalog = mock(com.lokiscale.bifrost.skill.YamlSkillCatalog.class);
@@ -240,7 +240,7 @@ class CapabilityExecutionRouterTest {
                 "child",
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        com.lokiscale.bifrost.autoconfigure.AiProvider.OPENAI,
+                        "test-connection", com.lokiscale.bifrost.autoconfigure.AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 java.util.Set.of(),

@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.chat;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
+import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 
@@ -13,21 +14,60 @@ import static org.mockito.Mockito.mock;
 class DefaultSkillChatModelResolverTests {
 
     @Test
-    void resolvesConfiguredProviderModel() {
-        ChatModel ollamaChatModel = mock(ChatModel.class);
+    void resolvesDistinctModelsForTwoConnectionsUsingSameDriver() {
+        ChatModel nativeOpenAi = mock(ChatModel.class);
+        ChatModel openRouter = mock(ChatModel.class);
         DefaultSkillChatModelResolver resolver = new DefaultSkillChatModelResolver(Map.of(
-                AiProvider.OLLAMA, ollamaChatModel));
+                "openai-main", nativeOpenAi,
+                "openrouter", openRouter));
 
-        assertThat(resolver.resolve("invoiceParser", AiProvider.OLLAMA)).isSameAs(ollamaChatModel);
+        EffectiveSkillExecutionConfiguration nativeConfiguration = new EffectiveSkillExecutionConfiguration(
+                "fast", "openai-main", AiDriver.OPENAI, "gpt-fast", null);
+        EffectiveSkillExecutionConfiguration routedConfiguration = new EffectiveSkillExecutionConfiguration(
+                "routed", "openrouter", AiDriver.OPENAI, "anthropic/sonnet", null);
+
+        assertThat(resolver.resolve("fastSkill", nativeConfiguration)).isSameAs(nativeOpenAi);
+        assertThat(resolver.resolve("routedSkill", routedConfiguration)).isSameAs(openRouter);
     }
 
     @Test
-    void failsClearlyWhenProviderIsUnavailable() {
-        DefaultSkillChatModelResolver resolver = new DefaultSkillChatModelResolver(Map.of(
-                AiProvider.OPENAI, mock(ChatModel.class)));
+    void reusesOneConnectionModelForAliasesWithDifferentProviderModelIds() {
+        ChatModel shared = mock(ChatModel.class);
+        DefaultSkillChatModelResolver resolver = new DefaultSkillChatModelResolver(Map.of("openai-main", shared));
 
-        assertThatThrownBy(() -> resolver.resolve("invoiceParser", AiProvider.OLLAMA))
+        assertThat(resolver.resolve("fastSkill", new EffectiveSkillExecutionConfiguration(
+                "fast", "openai-main", AiDriver.OPENAI, "gpt-fast", null))).isSameAs(shared);
+        assertThat(resolver.resolve("deepSkill", new EffectiveSkillExecutionConfiguration(
+                "deep", "openai-main", AiDriver.OPENAI, "gpt-deep", "high"))).isSameAs(shared);
+    }
+
+    @Test
+    void nestedChildResolutionUsesTheChildConnectionRatherThanTheParentConnection() {
+        ChatModel parent = mock(ChatModel.class);
+        ChatModel child = mock(ChatModel.class);
+        DefaultSkillChatModelResolver resolver = new DefaultSkillChatModelResolver(Map.of(
+                "parent-connection", parent, "child-connection", child));
+        EffectiveSkillExecutionConfiguration parentConfiguration = new EffectiveSkillExecutionConfiguration(
+                "parent-model", "parent-connection", AiDriver.OPENAI, "gpt-parent", null);
+        EffectiveSkillExecutionConfiguration childConfiguration = new EffectiveSkillExecutionConfiguration(
+                "child-model", "child-connection", AiDriver.OPENAI, "gpt-child", null);
+
+        assertThat(resolver.resolve("parentSkill", parentConfiguration)).isSameAs(parent);
+        assertThat(resolver.resolve("nestedChildSkill", childConfiguration)).isSameAs(child).isNotSameAs(parent);
+    }
+
+    @Test
+    void failsClearlyWhenConnectionIsUnavailable() {
+        DefaultSkillChatModelResolver resolver = new DefaultSkillChatModelResolver(Map.of(
+                "openai-main", mock(ChatModel.class)));
+        EffectiveSkillExecutionConfiguration configuration = new EffectiveSkillExecutionConfiguration(
+                "local", "ollama-east", AiDriver.OLLAMA, "qwen3", null);
+
+        assertThatThrownBy(() -> resolver.resolve("invoiceParser", configuration))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("No ChatModel configured for provider OLLAMA required by skill 'invoiceParser'");
+                .hasMessageContaining("invoiceParser")
+                .hasMessageContaining("local")
+                .hasMessageContaining("ollama-east")
+                .hasMessageContaining("OLLAMA");
     }
 }

@@ -54,11 +54,6 @@ import com.lokiscale.bifrost.vfs.RefResolver;
 import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
 import com.lokiscale.bifrost.vfs.VirtualFileSystem;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.ai.anthropic.AnthropicChatModel;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
-import org.springframework.ai.ollama.OllamaChatModel;
-import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -67,22 +62,19 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Role;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Paths;
 import java.time.Clock;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @AutoConfiguration
 @EnableConfigurationProperties({
-        BifrostSessionProperties.class,
         ExecutionTraceProperties.class,
-        BifrostModelsProperties.class,
-        BifrostSkillProperties.class
+        BifrostProperties.class
 })
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 public class BifrostAutoConfiguration
@@ -130,12 +122,12 @@ public class BifrostAutoConfiguration
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public BifrostSessionRunner bifrostSessionRunner(BifrostSessionProperties sessionProperties,
+    public BifrostSessionRunner bifrostSessionRunner(BifrostProperties properties,
             Clock bifrostClock,
             ExecutionTraceProperties executionTraceProperties)
     {
         return new BifrostSessionRunner(
-                sessionProperties.getMaxDepth(),
+                properties.getSession().getMaxDepth(),
                 executionTraceProperties.getPersistence(),
                 bifrostClock);
     }
@@ -143,11 +135,10 @@ public class BifrostAutoConfiguration
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public YamlSkillCatalog yamlSkillCatalog(BifrostModelsProperties modelsProperties,
-            BifrostSkillProperties skillProperties)
+    public YamlSkillCatalog yamlSkillCatalog(BifrostProperties properties)
     {
         // The catalog is the YAML discovery/loading boundary that downstream runtime beans build on.
-        return new YamlSkillCatalog(modelsProperties, skillProperties);
+        return new YamlSkillCatalog(properties);
     }
 
     @Bean
@@ -220,12 +211,12 @@ public class BifrostAutoConfiguration
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public MissionInputMaterializer missionInputMaterializer(RefResolver refResolver,
             SkillInputContractResolver skillInputContractResolver,
-            BifrostSessionProperties sessionProperties)
+            BifrostProperties properties)
     {
         return new DefaultMissionInputMaterializer(
                 refResolver,
                 skillInputContractResolver,
-                sessionProperties.getAttachments().getMaxSize());
+                properties.getSession().getAttachments().getMaxSize());
     }
 
     @Bean
@@ -314,10 +305,10 @@ public class BifrostAutoConfiguration
     @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SessionUsageService sessionUsageService(BifrostSessionProperties sessionProperties,
+    public SessionUsageService sessionUsageService(BifrostProperties properties,
             UsageMetricsRecorder usageMetricsRecorder)
     {
-        return new DefaultSessionUsageService(sessionProperties.getQuotas(), usageMetricsRecorder);
+        return new DefaultSessionUsageService(properties.getSession().getQuotas(), usageMetricsRecorder);
     }
 
     @Bean
@@ -378,7 +369,7 @@ public class BifrostAutoConfiguration
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
             ExecutionStateService executionStateService,
-            BifrostSessionProperties sessionProperties,
+            BifrostProperties properties,
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor,
             MissionInputMaterializer missionInputMaterializer,
@@ -388,7 +379,7 @@ public class BifrostAutoConfiguration
         return new DefaultMissionExecutionEngine(
                 planningService,
                 executionStateService,
-                sessionProperties.getMissionTimeout(),
+                properties.getSession().getMissionTimeout(),
                 bifrostMissionExecutor,
                 sessionUsageService,
                 modelUsageExtractor,
@@ -397,19 +388,24 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
+    @ConditionalOnMissingBean(SkillChatModelResolver.class)
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    NamedAiConnectionRegistry namedAiConnectionRegistry(BifrostProperties properties,
+            ResourceLoader resourceLoader)
+    {
+        return new NamedAiConnectionRegistry(properties.getConnections(), List.of(
+                new OpenAiConnectionChatModelFactory(),
+                new AnthropicConnectionChatModelFactory(),
+                new GeminiConnectionChatModelFactory(resourceLoader),
+                new OllamaConnectionChatModelFactory()));
+    }
+
+    @Bean
     @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatModelResolver skillChatModelResolver(ObjectProvider<OpenAiChatModel> openAiChatModelProvider,
-            ObjectProvider<AnthropicChatModel> anthropicChatModelProvider,
-            ObjectProvider<GoogleGenAiChatModel> googleGenAiChatModelProvider,
-            ObjectProvider<OllamaChatModel> ollamaChatModelProvider)
+    SkillChatModelResolver skillChatModelResolver(NamedAiConnectionRegistry registry)
     {
-        Map<AiProvider, ChatModel> modelsByProvider = new EnumMap<>(AiProvider.class);
-        registerChatModel(modelsByProvider, AiProvider.OPENAI, openAiChatModelProvider.getIfAvailable());
-        registerChatModel(modelsByProvider, AiProvider.ANTHROPIC, anthropicChatModelProvider.getIfAvailable());
-        registerChatModel(modelsByProvider, AiProvider.GEMINI, googleGenAiChatModelProvider.getIfAvailable());
-        registerChatModel(modelsByProvider, AiProvider.OLLAMA, ollamaChatModelProvider.getIfAvailable());
-        return new DefaultSkillChatModelResolver(modelsByProvider);
+        return new DefaultSkillChatModelResolver(registry.asMap());
     }
 
     @Bean
@@ -471,7 +467,7 @@ public class BifrostAutoConfiguration
             ExecutionStateService executionStateService,
             CapabilityRegistry capabilityRegistry,
             YamlSkillCatalog yamlSkillCatalog,
-            BifrostSessionProperties sessionProperties,
+            BifrostProperties properties,
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor,
             MissionInputMaterializer missionInputMaterializer,
@@ -483,7 +479,7 @@ public class BifrostAutoConfiguration
                 executionStateService,
                 capabilityRegistry,
                 yamlSkillCatalog,
-                sessionProperties.getMissionTimeout(),
+                properties.getSession().getMissionTimeout(),
                 bifrostMissionExecutor,
                 sessionUsageService,
                 modelUsageExtractor,
@@ -517,13 +513,4 @@ public class BifrostAutoConfiguration
                 accessGuard);
     }
 
-    private static void registerChatModel(Map<AiProvider, ChatModel> modelsByProvider,
-            AiProvider provider,
-            ChatModel chatModel)
-    {
-        if (chatModel != null)
-        {
-            modelsByProvider.put(provider, chatModel);
-        }
-    }
 }

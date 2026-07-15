@@ -3,10 +3,10 @@ package com.lokiscale.bifrost.skill;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
-import com.lokiscale.bifrost.autoconfigure.BifrostModelsProperties;
-import com.lokiscale.bifrost.autoconfigure.BifrostSkillProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
 import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
 import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
@@ -120,14 +120,18 @@ class SkillVisibilityResolverTest {
     }
 
     private static YamlSkillCatalog catalog(String location) {
-        BifrostModelsProperties models = new BifrostModelsProperties();
-        BifrostModelsProperties.ModelCatalogEntry entry = new BifrostModelsProperties.ModelCatalogEntry();
-        entry.setProvider(AiProvider.OPENAI);
+        BifrostProperties models = new BifrostProperties();
+        BifrostProperties.ConnectionProperties connection = new BifrostProperties.ConnectionProperties();
+        connection.setDriver(AiDriver.OPENAI);
+        connection.setApiKey("test-key");
+        models.setConnections(Map.of("openai-main", connection));
+        BifrostProperties.ModelCatalogEntry entry = new BifrostProperties.ModelCatalogEntry();
+        entry.setConnection("openai-main");
         entry.setProviderModel("openai/gpt-5");
         entry.setThinkingLevels(Set.of("low", "medium", "high"));
         models.setModels(Map.of("gpt-5", entry));
 
-        BifrostSkillProperties skills = new BifrostSkillProperties();
+        BifrostProperties.Skills skills = new BifrostProperties.Skills();
         skills.setLocations(List.of(location));
 
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());

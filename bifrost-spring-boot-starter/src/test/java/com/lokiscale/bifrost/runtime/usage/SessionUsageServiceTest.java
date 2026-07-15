@@ -1,9 +1,11 @@
 package com.lokiscale.bifrost.runtime.usage;
 
-import com.lokiscale.bifrost.autoconfigure.BifrostSessionProperties;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.OperationType;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.core.TraceFrameType;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 import com.lokiscale.bifrost.linter.LinterOutcomeStatus;
@@ -18,15 +20,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SessionUsageServiceTest {
 
+    private static final ModelExecutionIdentity IDENTITY =
+            new ModelExecutionIdentity("test-model", "test-connection", AiDriver.OPENAI, "provider-model");
+
     @Test
     void throwsWhenModelCallQuotaExceeded() {
         DefaultSessionUsageService service = new DefaultSessionUsageService(quotas(10, 10, 10, 1, 100), new NoOpUsageMetricsRecorder());
         BifrostSession session = com.lokiscale.bifrost.core.TestBifrostSessions.withId("session-1", 3);
 
         service.recordMissionStart(session, "root.skill");
-        service.recordModelResponse(session, "root.skill", new ModelUsageRecord(1, 2, 3, UsagePrecision.EXACT, null));
+        service.recordModelResponse(session, "root.skill", IDENTITY, new ModelUsageRecord(1, 2, 3, UsagePrecision.EXACT, null));
 
-        assertThatThrownBy(() -> service.recordModelResponse(session, "root.skill", new ModelUsageRecord(1, 2, 3, UsagePrecision.EXACT, null)))
+        assertThatThrownBy(() -> service.recordModelResponse(session, "root.skill", IDENTITY, new ModelUsageRecord(1, 2, 3, UsagePrecision.EXACT, null)))
                 .isInstanceOf(BifrostQuotaExceededException.class)
                 .extracting("guardrailType", "limit", "observed")
                 .containsExactly(GuardrailType.MAX_MODEL_CALLS, 1L, 2L);
@@ -65,7 +70,7 @@ class SessionUsageServiceTest {
 
         service.recordMissionStart(session, "root.skill");
         service.recordToolCall(session, "root.skill", "tool.one");
-        service.recordModelResponse(session, "root.skill", new ModelUsageRecord(3, 4, 7, UsagePrecision.HEURISTIC, null));
+        service.recordModelResponse(session, "root.skill", IDENTITY, new ModelUsageRecord(3, 4, 7, UsagePrecision.HEURISTIC, null));
         service.recordLinterOutcome(session, outcome(LinterOutcomeStatus.RETRYING, 0, 1));
 
         assertThat(service.snapshot(session)).isEqualTo(new SessionUsageSnapshot(1, 1, 1, 1, 3, 4, 7, 0, 1, 0));
@@ -80,8 +85,8 @@ class SessionUsageServiceTest {
         service.recordMissionStart(session, "root.skill");
         service.recordToolCall(session, "root.skill", "tool.one");
         service.recordToolCall(session, "root.skill", "tool.two");
-        service.recordModelResponse(session, "root.skill", new ModelUsageRecord(4, 5, 9, UsagePrecision.HEURISTIC, null));
-        service.recordModelResponse(session, "root.skill", new ModelUsageRecord(4, 5, 9, UsagePrecision.HEURISTIC, null));
+        service.recordModelResponse(session, "root.skill", IDENTITY, new ModelUsageRecord(4, 5, 9, UsagePrecision.HEURISTIC, null));
+        service.recordModelResponse(session, "root.skill", IDENTITY, new ModelUsageRecord(4, 5, 9, UsagePrecision.HEURISTIC, null));
         service.recordLinterOutcome(session, outcome(LinterOutcomeStatus.RETRYING, 0, 1));
         service.recordLinterOutcome(session, outcome(LinterOutcomeStatus.RETRYING, 1, 2));
 
@@ -129,8 +134,8 @@ class SessionUsageServiceTest {
         assertThat(recorder.toolAccuracySamples).isEmpty();
     }
 
-    private static BifrostSessionProperties.Quotas quotas(int maxSkills, int maxTools, int maxLinterRetries, int maxModelCalls, int maxUsageUnits) {
-        BifrostSessionProperties.Quotas quotas = new BifrostSessionProperties.Quotas();
+    private static BifrostProperties.Session.Quotas quotas(int maxSkills, int maxTools, int maxLinterRetries, int maxModelCalls, int maxUsageUnits) {
+        BifrostProperties.Session.Quotas quotas = new BifrostProperties.Session.Quotas();
         quotas.setMaxSkillInvocations(maxSkills);
         quotas.setMaxToolInvocations(maxTools);
         quotas.setMaxLinterRetries(maxLinterRetries);
@@ -152,7 +157,7 @@ class SessionUsageServiceTest {
         }
 
         @Override
-        public void recordModelUsage(String skillName, ModelUsageRecord usageRecord) {
+        public void recordModelUsage(String skillName, ModelExecutionIdentity identity, ModelUsageRecord usageRecord) {
         }
 
         @Override

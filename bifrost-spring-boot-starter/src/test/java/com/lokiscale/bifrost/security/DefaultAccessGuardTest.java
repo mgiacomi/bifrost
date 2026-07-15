@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.security;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
@@ -68,7 +68,7 @@ class DefaultAccessGuardTest {
                 "yaml:" + name,
                 name,
                 name,
-                new SkillExecutionDescriptor("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium"),
+                new SkillExecutionDescriptor("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium"),
                 roles,
                 arguments -> "ok",
                 CapabilityKind.YAML_SKILL,

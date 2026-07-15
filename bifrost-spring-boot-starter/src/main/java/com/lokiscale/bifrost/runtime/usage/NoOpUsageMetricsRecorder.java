@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.runtime.usage;
 
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 
 public final class NoOpUsageMetricsRecorder implements UsageMetricsRecorder
 {
@@ -10,7 +11,7 @@ public final class NoOpUsageMetricsRecorder implements UsageMetricsRecorder
     }
 
     @Override
-    public void recordModelUsage(String skillName, ModelUsageRecord usageRecord)
+    public void recordModelUsage(String skillName, ModelExecutionIdentity identity, ModelUsageRecord usageRecord)
     {
     }
 

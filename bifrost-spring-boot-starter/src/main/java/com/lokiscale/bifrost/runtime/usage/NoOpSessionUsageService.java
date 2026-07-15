@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.runtime.usage;
 
 import com.lokiscale.bifrost.core.BifrostSession;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.linter.LinterOutcome;
 
 public final class NoOpSessionUsageService implements SessionUsageService
@@ -17,7 +18,8 @@ public final class NoOpSessionUsageService implements SessionUsageService
     }
 
     @Override
-    public void recordModelResponse(BifrostSession session, String skillName, ModelUsageRecord usageRecord)
+    public void recordModelResponse(BifrostSession session, String skillName, ModelExecutionIdentity identity,
+            ModelUsageRecord usageRecord)
     {
     }
 

@@ -6,6 +6,7 @@ import com.lokiscale.bifrost.core.ExecutionFrame;
 import com.lokiscale.bifrost.core.ExecutionPlan;
 import com.lokiscale.bifrost.core.ModelTraceResult;
 import com.lokiscale.bifrost.core.ModelTraceContext;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.runtime.attachment.DefaultMissionInputMaterializer;
 import com.lokiscale.bifrost.runtime.attachment.MissionInputMaterializer;
 import com.lokiscale.bifrost.runtime.attachment.MissionUserMessageSender;
@@ -14,6 +15,7 @@ import com.lokiscale.bifrost.runtime.attachment.SpringAiMissionUserMessageSender
 import com.lokiscale.bifrost.core.PlanTaskStatus;
 import com.lokiscale.bifrost.core.SessionContextRunner;
 import com.lokiscale.bifrost.core.TraceFrameType;
+import com.lokiscale.bifrost.core.TraceFailureMetadata;
 import com.lokiscale.bifrost.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposer;
 import com.lokiscale.bifrost.runtime.prompt.SkillPromptComposition;
@@ -145,13 +147,12 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                         .orElseGet(() -> SkillPromptComposer.composeDefaultExecutionPrompt(definition));
                 String executionPrompt = promptComposition.systemPrompt();
 
+                ModelExecutionIdentity modelIdentity = ModelExecutionIdentity.from(executionConfiguration);
                 ExecutionFrame modelFrame = executionStateService.openFrame(
                         session,
                         TraceFrameType.MODEL_CALL,
                         skillName + "#mission-model",
-                        Map.of(
-                                "provider", executionConfiguration.provider().name(),
-                                "providerModel", executionConfiguration.providerModel()));
+                        modelIdentity.metadata());
 
                 String modelFrameStatus = "completed";
                 Throwable modelFailure = null;
@@ -159,8 +160,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                 try
                 {
                     ModelTraceContext modelTraceContext = new ModelTraceContext(
-                            executionConfiguration.provider().name(),
-                            executionConfiguration.providerModel(),
+                            modelIdentity,
                             skillName,
                             "mission");
 
@@ -205,6 +205,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                     sessionUsageService.recordModelResponse(
                             session,
                             skillName,
+                            modelIdentity,
                             modelUsageExtractor.extract(missionResult.chatResponse(), userMessage, executionPrompt, content));
 
                     return content;
@@ -346,11 +347,7 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
 
         if (failure != null)
         {
-            metadata.put("exceptionType", failure.getClass().getName());
-            if (failure.getMessage() != null && !failure.getMessage().isBlank())
-            {
-                metadata.put("message", failure.getMessage());
-            }
+            TraceFailureMetadata.addTo(metadata, failure, "Model invocation failed");
         }
 
         return metadata;

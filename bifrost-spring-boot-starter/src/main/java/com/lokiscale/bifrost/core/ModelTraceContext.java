@@ -5,24 +5,20 @@ import java.util.Map;
 import java.util.Objects;
 
 public record ModelTraceContext(
-        String provider,
-        String providerModel,
+        ModelExecutionIdentity identity,
         String skillName,
         String segment)
 {
     public ModelTraceContext
     {
-        provider = requireNonBlank(provider, "provider");
-        providerModel = requireNonBlank(providerModel, "providerModel");
+        identity = Objects.requireNonNull(identity, "identity must not be null");
         skillName = requireNonBlank(skillName, "skillName");
         segment = requireNonBlank(segment, "segment");
     }
 
     public Map<String, Object> metadata()
     {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("provider", provider);
-        metadata.put("providerModel", providerModel);
+        Map<String, Object> metadata = new LinkedHashMap<>(identity.metadata());
         metadata.put("skillName", skillName);
         metadata.put("segment", segment);
         return Map.copyOf(metadata);

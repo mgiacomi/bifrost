@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.runtime.tool;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
 import com.lokiscale.bifrost.core.CapabilityKind;
@@ -208,7 +208,7 @@ class ToolCallbackFactoryTest {
                 manifest,
                 new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        AiProvider.OPENAI,
+                        "test-connection", AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium"),
                 com.lokiscale.bifrost.runtime.evidence.EvidenceContract.fromManifest(contract, null));

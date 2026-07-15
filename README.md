@@ -24,7 +24,7 @@ The result is a hybrid system that combines the structure of HTNs with the adapt
 
 - Java 21 or newer
 - Maven 3.9 or newer (the included Maven wrapper is recommended)
-- A configured Spring AI chat-model provider, such as Ollama, OpenAI, Anthropic, or Google GenAI
+- At least one named Bifrost AI connection using the Ollama, OpenAI, Anthropic, or Gemini driver
 
 ## Project Structure
 
@@ -46,21 +46,9 @@ Add the starter to your application:
 </dependency>
 ```
 
-Configure a Spring AI provider, skill locations, and one or more named Bifrost models in `application.yml`:
+Configure application-owned AI connections, skill locations, and named Bifrost model aliases in `application.yml`:
 
 ```yaml
-spring:
-  application:
-    name: bifrost-sample
-  ai:
-    ollama:
-      enabled: true
-      base-url: http://localhost:11434
-      chat:
-        options:
-          model: ibm/granite4:tiny-h
-          temperature: 0.7
-
 server:
   port: 8081
 
@@ -69,6 +57,13 @@ logging:
     com.lokiscale.bifrost.sample: INFO
 
 bifrost:
+  connections:
+    ollama-main:
+      driver: ollama
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    openai-main:
+      driver: openai
+      api-key: ${OPENAI_API_KEY}
   session:
     mission-timeout: 6000s
   skills:
@@ -77,10 +72,10 @@ bifrost:
       - classpath:/skills/**/*.yaml
   models:
     granite4-tiny:
-      provider: ollama
+      connection: ollama-main
       provider-model: ibm/granite4:tiny-h
     default-model:
-      provider: ollama
+      connection: ollama-main
       provider-model: ibm/granite4:tiny-h
 
 execution-trace:
@@ -88,6 +83,35 @@ execution-trace:
 ```
 
 Every LLM-backed YAML skill must name one of the entries under `bifrost.models`. Mapped YAML skills do not declare a model. `default-model` is an ordinary model key; it is not selected automatically.
+
+A connection is a concrete endpoint/account and chooses a built-in `driver`; a model is a framework alias that chooses a connection and the request-level `provider-model`. Multiple connections may use the same driver. Bifrost does not merge or inherit `spring.ai.*` settings. Keep credentials in environment variables or an external secret store.
+
+The `openai` driver uses the OpenAI chat-completions protocol and supports custom `base-url`, static `headers`, organization/project IDs, and a custom chat-completions path. Use it only for compatible services. A `base-url` that already ends in `/v1` is combined with `/chat/completions`; an unversioned base URL uses `/v1/chat/completions`. Set `openai.chat-completions-path` for a different route. The `ollama` driver uses Ollama's native `/api/chat` protocol. Anthropic supports its native base URL and version/path options. Gemini supports either API-key mode or Vertex AI mode (`project-id` and `location`, with optional credentials resource), but not both on one connection.
+
+Several model aliases can share one connection while choosing different provider model IDs. An OpenAI-compatible gateway is another named connection using `driver: openai`; it does not need a vendor-specific driver:
+
+```yaml
+bifrost:
+  connections:
+    openrouter:
+      driver: openai
+      base-url: https://openrouter.ai/api/v1
+      api-key: ${OPENROUTER_API_KEY}
+      headers:
+        HTTP-Referer: ${OPENROUTER_SITE_URL}
+  models:
+    fast:
+      connection: openai-main
+      provider-model: gpt-4o-mini
+    deep:
+      connection: openai-main
+      provider-model: gpt-5
+    routed-sonnet:
+      connection: openrouter
+      provider-model: anthropic/claude-sonnet-4
+```
+
+Endpoint compatibility is feature-specific: verify tools, media, structured output, reasoning fields, and usage reporting against the selected service.
 
 By default, Bifrost discovers `classpath:/skills/**/*.yaml`. Add the `.yml` pattern, as above, when your application uses that extension.
 
@@ -274,4 +298,4 @@ On Windows PowerShell:
 .\mvnw.cmd -pl bifrost-sample spring-boot:run
 ```
 
-The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures named Ollama and OpenAI models in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).
+The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures named Ollama and OpenAI connections in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).

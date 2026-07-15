@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.runtime.planning;
 
-import com.lokiscale.bifrost.autoconfigure.AiProvider;
+import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.core.CapabilityKind;
 import com.lokiscale.bifrost.core.CapabilityMetadata;
@@ -47,7 +47,7 @@ class PlanningServiceTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
     private static final EffectiveSkillExecutionConfiguration EXECUTION_CONFIGURATION =
-            new EffectiveSkillExecutionConfiguration("gpt-5", AiProvider.OPENAI, "openai/gpt-5", "medium");
+            new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
 
     private static final String YAML_PLAN_WITH_LLM_STATUSES = """
             ---
@@ -201,7 +201,9 @@ class PlanningServiceTest {
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(modelRequest.metadata()).containsEntry("provider", AiProvider.OPENAI.name());
+        assertThat(modelRequest.metadata()).containsEntry("frameworkModel", "gpt-5");
+        assertThat(modelRequest.metadata()).containsEntry("connection", "test-connection");
+        assertThat(modelRequest.metadata()).containsEntry("driver", AiDriver.OPENAI.name());
         assertThat(modelRequest.metadata()).containsEntry("providerModel", "openai/gpt-5");
         assertThat(modelRequest.metadata()).containsEntry("segment", "planning");
         assertThat(modelFrame.parentFrameId()).isEqualTo(planningFrame.frameId());
@@ -849,7 +851,7 @@ class PlanningServiceTest {
                 "child",
                 SkillExecutionDescriptor.from(new com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration(
                         "gpt-5",
-                        AiProvider.OPENAI,
+                        "test-connection", AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium")),
                 java.util.Set.of(),
@@ -975,6 +977,7 @@ class PlanningServiceTest {
         @Override
         public void recordModelResponse(BifrostSession session,
                                         String skillName,
+                                        com.lokiscale.bifrost.core.ModelExecutionIdentity identity,
                                         com.lokiscale.bifrost.runtime.usage.ModelUsageRecord usageRecord) {
             lastSkillName = skillName;
             SessionUsageSnapshot existing = snapshot(session);

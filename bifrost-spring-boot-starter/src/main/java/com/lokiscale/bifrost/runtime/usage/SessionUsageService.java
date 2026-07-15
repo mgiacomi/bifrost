@@ -2,6 +2,7 @@ package com.lokiscale.bifrost.runtime.usage;
 
 import com.lokiscale.bifrost.core.BifrostSession;
 import com.lokiscale.bifrost.linter.LinterOutcome;
+import com.lokiscale.bifrost.core.ModelExecutionIdentity;
 
 public interface SessionUsageService
 {
@@ -9,7 +10,7 @@ public interface SessionUsageService
 
     void recordMissionStart(BifrostSession session, String skillName);
 
-    void recordModelResponse(BifrostSession session, String skillName, ModelUsageRecord usageRecord);
+    void recordModelResponse(BifrostSession session, String skillName, ModelExecutionIdentity identity, ModelUsageRecord usageRecord);
 
     void recordToolCall(BifrostSession session, String skillName, String capabilityName);
 
