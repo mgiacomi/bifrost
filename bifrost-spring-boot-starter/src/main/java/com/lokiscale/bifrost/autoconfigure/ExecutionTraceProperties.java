@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.autoconfigure;
 
-import com.lokiscale.bifrost.core.TracePersistencePolicy;
+import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;

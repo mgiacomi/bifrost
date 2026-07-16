@@ -1,14 +1,15 @@
 package com.lokiscale.bifrost.sample;
 
-import com.lokiscale.bifrost.core.ExecutionJournal;
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionEvent;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
 
 import java.util.Map;
+import java.util.List;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,10 +35,10 @@ class SampleControllerTest {
     void sampleControllerDelegatesFeedstockSampleToSkillTemplate() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(java.util.List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("feedstock-session", journal));
+            observer.accept(new SkillExecutionView("feedstock-session", events));
             return "{\"ticket_no\":\"46843\"}";
         }).when(skillTemplate).invoke(eq("feedstockTicketParser"), any(Map.class), any());
 
@@ -47,17 +48,17 @@ class SampleControllerTest {
         assertThat(response.get("result")).isEqualTo("{\"ticket_no\":\"46843\"}");
         assertThat(response.get("filePath")).isEqualTo("classpath:/forms/feedstock-p1.jpg");
         assertThat(response.get("sessionId")).isEqualTo("feedstock-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
     }
 
     @Test
     void sampleControllerDelegatesToSkillTemplate() throws Exception {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         SampleController controller = new SampleController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(java.util.List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("session-123", journal));
+            observer.accept(new SkillExecutionView("session-123", events));
             return "\"ok\"";
         }).when(skillTemplate).invoke(eq("duplicateInvoiceChecker"), any(Map.class), any());
 
@@ -67,7 +68,7 @@ class SampleControllerTest {
         verify(skillTemplate).invoke(eq("duplicateInvoiceChecker"), any(Map.class), any());
         assertThat(response.get("result")).isEqualTo("\"ok\"");
         assertThat(response.get("sessionId")).isEqualTo("session-123");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
     }
 
     @Test

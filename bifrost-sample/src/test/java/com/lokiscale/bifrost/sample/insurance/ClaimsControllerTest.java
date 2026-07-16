@@ -1,8 +1,8 @@
 package com.lokiscale.bifrost.sample.insurance;
 
-import com.lokiscale.bifrost.core.ExecutionJournal;
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionEvent;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -28,10 +28,10 @@ class ClaimsControllerTest {
     void processDelegatesToProcessClaimWithClaimTextAndOptionalFields() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         ClaimsController controller = new ClaimsController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("claim-session", journal));
+            observer.accept(new SkillExecutionView("claim-session", events));
             return "{\"disposition\":\"pay\"}";
         }).when(skillTemplate).invoke(eq("processClaim"), any(Map.class), any());
 
@@ -49,7 +49,7 @@ class ClaimsControllerTest {
                 .doesNotContainValue(null);
         assertThat(response.get("result")).isEqualTo("{\"disposition\":\"pay\"}");
         assertThat(response.get("sessionId")).isEqualTo("claim-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
     }
 
     @Test
@@ -75,10 +75,10 @@ class ClaimsControllerTest {
     void processScenarioLoadsFixtureSetsScenarioAndEnrichesClearAutoPay() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         ClaimsController controller = new ClaimsController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("scenario-session", journal));
+            observer.accept(new SkillExecutionView("scenario-session", events));
             return "{\"disposition\":\"partial_pay\"}";
         }).when(skillTemplate).invoke(eq("processClaim"), any(Map.class), any());
 
@@ -94,7 +94,7 @@ class ClaimsControllerTest {
                 .containsIgnoringCase("bumper")
                 .contains("POL-AUTO-1001");
         assertThat(response.get("sessionId")).isEqualTo("scenario-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response.get("result")).isEqualTo("{\"disposition\":\"partial_pay\"}");
     }
 

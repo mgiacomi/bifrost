@@ -1,27 +1,27 @@
 package com.lokiscale.bifrost.autoconfigure;
 
-import com.lokiscale.bifrost.annotation.SkillMethod;
-import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
-import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
-import com.lokiscale.bifrost.chat.SkillChatClientFactory;
-import com.lokiscale.bifrost.chat.SkillChatModelResolver;
-import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
-import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
-import com.lokiscale.bifrost.core.BifrostSessionRunner;
-import com.lokiscale.bifrost.core.CapabilityMetadata;
-import com.lokiscale.bifrost.core.CapabilityRegistry;
-import com.lokiscale.bifrost.core.ExecutionCoordinator;
-import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
-import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
-import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
-import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
-import com.lokiscale.bifrost.runtime.input.SkillInputValidator;
-import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
-import com.lokiscale.bifrost.skill.EffectiveSkillExecutionConfiguration;
-import com.lokiscale.bifrost.skill.YamlSkillCatalog;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
-import com.lokiscale.bifrost.vfs.RefResolver;
-import com.lokiscale.bifrost.vfs.VirtualFileSystem;
+import com.lokiscale.bifrost.api.SkillMethod;
+import com.lokiscale.bifrost.internal.chat.DefaultSkillAdvisorResolver;
+import com.lokiscale.bifrost.internal.chat.SkillAdvisorResolver;
+import com.lokiscale.bifrost.internal.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.internal.chat.SkillChatModelResolver;
+import com.lokiscale.bifrost.internal.chat.SpringAiSkillChatClientFactory;
+import com.lokiscale.bifrost.internal.core.BifrostExceptionTransformer;
+import com.lokiscale.bifrost.internal.core.BifrostSessionRunner;
+import com.lokiscale.bifrost.internal.core.CapabilityMetadata;
+import com.lokiscale.bifrost.internal.core.CapabilityRegistry;
+import com.lokiscale.bifrost.internal.core.ExecutionCoordinator;
+import com.lokiscale.bifrost.internal.core.InMemorySkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.internal.core.SkillMethodBeanPostProcessor;
+import com.lokiscale.bifrost.internal.core.SkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.internal.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidator;
+import com.lokiscale.bifrost.internal.skill.SkillVisibilityResolver;
+import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.internal.skill.YamlSkillCatalog;
+import com.lokiscale.bifrost.api.SkillTemplate;
+import com.lokiscale.bifrost.internal.vfs.RefResolver;
+import com.lokiscale.bifrost.internal.vfs.VirtualFileSystem;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.ai.ollama.OllamaChatModel;
@@ -103,7 +103,6 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(SkillVisibilityResolver.class);
                     assertThat(context).hasSingleBean(VirtualFileSystem.class);
                     assertThat(context).hasSingleBean(RefResolver.class);
-                    assertThat(context).hasSingleBean(Clock.class);
                     assertThat(context).hasSingleBean(SkillInputContractResolver.class);
                     assertThat(context).hasSingleBean(SkillInputValidator.class);
                     assertThat(context).hasSingleBean(SkillTemplate.class);
@@ -151,8 +150,6 @@ class BifrostAutoConfigurationTests {
     @Test
     void autoConfiguresExecutionCoordinatorWhenSkillChatClientFactoryIsAvailable() {
         contextRunner
-                .withBean(SkillChatClientFactory.class,
-                        () -> definition -> Mockito.mock(org.springframework.ai.chat.client.ChatClient.class))
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
                 .run(context -> assertThat(context).hasSingleBean(ExecutionCoordinator.class));
     }
@@ -172,36 +169,13 @@ class BifrostAutoConfigurationTests {
     }
 
     @Test
-    void allowsCustomSkillAdvisorResolverOverride() {
-        SkillAdvisorResolver customResolver = definition -> List.of();
-        OpenAiChatModel openAiChatModel = Mockito.mock(OpenAiChatModel.class);
-
-        contextRunner
-                .withBean(OpenAiChatModel.class, () -> openAiChatModel)
-                .withBean(SkillAdvisorResolver.class, () -> customResolver)
-                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/default-thinking-skill.yaml")
-                .run(context -> {
-                    assertThat(context).hasSingleBean(SkillAdvisorResolver.class);
-                    assertThat(context).hasSingleBean(SkillChatClientFactory.class);
-                    assertThat(context.getBean(SkillAdvisorResolver.class)).isSameAs(customResolver);
-                });
-    }
-
-    @Test
-    void customChatModelResolverBacksOffDefaultConnectionConstruction() {
-        SkillChatModelResolver customResolver = (skillName, configuration) -> Mockito.mock(ChatModel.class);
+    void doesNotBackOffWhenApplicationRegistersInternalModelResolver() {
+        SkillChatModelResolver unsupportedResolver = (skillName, configuration) -> Mockito.mock(ChatModel.class);
 
         modelFreeContextRunner
-                .withBean(SkillChatModelResolver.class, () -> customResolver)
-                .withPropertyValues(
-                        "bifrost.skills.locations=classpath:/skills/none/**/*.yaml",
-                        "bifrost.connections.local.driver=ollama",
-                        "bifrost.connections.local.base-url=http://unused.example")
-                .run(context -> {
-                    assertThat(context).hasSingleBean(SkillChatModelResolver.class);
-                    assertThat(context).doesNotHaveBean(NamedAiConnectionRegistry.class);
-                    assertThat(context.getBean(SkillChatModelResolver.class)).isSameAs(customResolver);
-                });
+                .withBean("unsupportedResolver", SkillChatModelResolver.class, () -> unsupportedResolver)
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
+                .run(context -> assertThat(context).hasFailed());
     }
 
     @Test
@@ -286,20 +260,6 @@ class BifrostAutoConfigurationTests {
                     assertThat(capabilityRegistry.getCapability("deterministicTarget")).isNull();
                     assertThat(capabilityRegistry.getCapability("mappedMethodSkill")).isNotNull();
                     assertThat(targetRegistry.getTarget("targetBean#deterministicTarget")).isNotNull();
-                });
-    }
-
-    @Test
-    void backsOffWhenApplicationProvidesImplementationTargetRegistry() {
-        SkillImplementationTargetRegistry customRegistry = new InMemorySkillImplementationTargetRegistry();
-
-        contextRunner
-                .withBean(SkillImplementationTargetRegistry.class, () -> customRegistry)
-                .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
-                .run(context -> {
-                    assertThat(context).hasSingleBean(SkillImplementationTargetRegistry.class);
-                    assertThat(context.getBean(SkillImplementationTargetRegistry.class)).isSameAs(customRegistry);
-                    assertThat(context).hasSingleBean(CapabilityRegistry.class);
                 });
     }
 

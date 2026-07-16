@@ -1,8 +1,8 @@
 package com.lokiscale.bifrost.sample.incident;
 
-import com.lokiscale.bifrost.core.ExecutionJournal;
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionEvent;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -28,10 +28,10 @@ class IncidentControllerTest {
     void handleDelegatesToHandleIncidentWithTicketAndScenario() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         IncidentController controller = new IncidentController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("incident-session", journal));
+            observer.accept(new SkillExecutionView("incident-session", events));
             return "{\"severity\":\"SEV2\"}";
         }).when(skillTemplate).invoke(eq("handleIncident"), any(Map.class), any());
 
@@ -46,7 +46,7 @@ class IncidentControllerTest {
                 .doesNotContainValue(null);
         assertThat(response.get("result")).isEqualTo("{\"severity\":\"SEV2\"}");
         assertThat(response.get("sessionId")).isEqualTo("incident-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response).doesNotContainKey("filePath");
     }
 
@@ -71,10 +71,10 @@ class IncidentControllerTest {
     void handleScenarioLoadsFixtureAndSetsScenarioKey() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         IncidentController controller = new IncidentController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("scenario-session", journal));
+            observer.accept(new SkillExecutionView("scenario-session", events));
             return "{\"category\":\"network\"}";
         }).when(skillTemplate).invoke(eq("handleIncident"), any(Map.class), any());
 
@@ -88,7 +88,7 @@ class IncidentControllerTest {
                 .contains("api.example.com")
                 .containsIgnoringCase("EU");
         assertThat(response.get("sessionId")).isEqualTo("scenario-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response.get("result")).isEqualTo("{\"category\":\"network\"}");
     }
 

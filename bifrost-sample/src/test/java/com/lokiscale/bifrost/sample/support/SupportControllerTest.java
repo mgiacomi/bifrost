@@ -1,8 +1,8 @@
 package com.lokiscale.bifrost.sample.support;
 
-import com.lokiscale.bifrost.core.ExecutionJournal;
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionEvent;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -28,10 +28,10 @@ class SupportControllerTest {
     void resolveDelegatesWithEmailScenarioAndCustomerId() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         SupportController controller = new SupportController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("support-session", journal));
+            observer.accept(new SkillExecutionView("support-session", events));
             return "{\"disposition\":\"refund_offered\"}";
         }).when(skillTemplate).invoke(eq("resolveSupportCase"), any(Map.class), any());
 
@@ -48,7 +48,7 @@ class SupportControllerTest {
                 .doesNotContainValue(null);
         assertThat(response.get("result")).isEqualTo("{\"disposition\":\"refund_offered\"}");
         assertThat(response.get("sessionId")).isEqualTo("support-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response).doesNotContainKey("filePath");
     }
 
@@ -74,10 +74,10 @@ class SupportControllerTest {
     void resolveScenarioLoadsFixtureSetsScenarioAndEnrichesCustomerId() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         SupportController controller = new SupportController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("scenario-session", journal));
+            observer.accept(new SkillExecutionView("scenario-session", events));
             return "{\"disposition\":\"how_to_answered\"}";
         }).when(skillTemplate).invoke(eq("resolveSupportCase"), any(Map.class), any());
 
@@ -92,7 +92,7 @@ class SupportControllerTest {
                 .containsIgnoringCase("CSV")
                 .containsIgnoringCase("export");
         assertThat(response.get("sessionId")).isEqualTo("scenario-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response.get("result")).isEqualTo("{\"disposition\":\"how_to_answered\"}");
     }
 

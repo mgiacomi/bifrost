@@ -15,7 +15,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
 | Named connections and model aliases (`ollama` + `openai` + OpenRouter) | `application.yml` → `bifrost.connections` / `bifrost.models` |
 | HTTP API that invokes skills and returns execution metadata | `SampleController`, `IncidentController`, `ClaimsController`, `SupportController`, `TravelController` |
-| Execution journal / session id via `SkillTemplate` observer | invoice, feedstock, incident, claims, support, and travel endpoints |
+| Current execution events / session id via `SkillTemplate` observer | invoice, feedstock, incident, claims, support, and travel endpoints |
 
 ## Prerequisites
 
@@ -684,7 +684,7 @@ Root evidence-related plan/tool events show **L2** names only. Root `max_steps: 
 
 1. `GET /travel/scenarios` — show four fixture keys.
 2. `GET /travel/plan-scenario?name=budget-nyc-weekend` — wait for nested plan.
-3. Open `executionJournal`: point at `planTransport` / `planStay` nested frames, multi-option catalog calls, optional `rankTransportOptions`.
+3. Open `executionEvents`: point at `planTransport` / `planStay` nested frames, multi-option catalog calls, optional `rankTransportOptions`.
 4. Read `result` itinerary: train-leaning options, rationale, soft budget language.
 5. Optional: `underspecified` to show non-empty `openQuestions` instead of invented airports.
 
@@ -825,15 +825,15 @@ Endpoints that use the `SkillTemplate` observer return:
   "result": "...",
   "filePath": "...",
   "sessionId": "...",
-  "executionJournal": { }
+  "executionEvents": []
 }
 ```
 
 - **`result`** — skill output (often a JSON string when `output_schema` is used)
 - **`sessionId`** — Bifrost execution session id
-- **`executionJournal`** — step-level execution record for debugging / CLI inspection
+- **`executionEvents`** — immutable current-version events for trusted development/debugging; values may contain application business data
 
-`/expenses` returns the skill result object directly (list of expense maps). Incident, claims, support, and travel endpoints omit `filePath` and return `result` / `sessionId` / `executionJournal` only.
+`/expenses` returns the skill result object directly (list of expense maps). Incident, claims, support, and travel endpoints omit `filePath` and return `result` / `sessionId` / `executionEvents` only.
 
 ## Sample assets
 
@@ -861,13 +861,13 @@ Date: 03/30/2026
 1. Spring Boot starts `SampleApplication`; Bifrost publishes YAML skills and discovers `@SkillMethod` methods in a separate internal target registry.
 2. `SampleController` injects `SkillTemplate`.
 3. Controllers call `skillTemplate.invoke(yamlSkillName, inputs)` or the overload with a `Consumer<SkillExecutionView>` observer. Raw Java method names and `beanName#methodName` target IDs are not invocation aliases.
-4. Bifrost resolves the skill, then either selects its model alias and named connection for LLM-backed execution or routes a mapped skill directly to its Java target, and returns text (plus optional journal).
+4. Bifrost resolves the skill, then either selects its model alias and named connection for LLM-backed execution or routes a mapped skill directly to its Java target, and returns text (plus optional current-version execution events).
 
 Minimal pattern used throughout the sample:
 
 ```java
 String result = skillTemplate.invoke("invoiceParser", Map.of("payload", invoiceText), view -> {
-    // sessionId + executionJournal available on view
+    // sessionId + executionEvents available on view
 });
 ```
 
@@ -875,23 +875,28 @@ String result = skillTemplate.invoke("invoiceParser", Map.of("payload", invoiceT
 
 | Test class | Coverage |
 | --- | --- |
-| `SampleApplicationTests` | Context loads, YAML-only public registry, internal expense target, pure-YAML feedstock skill shape |
+| `SampleApplicationTests` | Context loads and mapped YAML invocation through the supported `SkillTemplate` facade |
+| `SupportedApiUsageArchitectureTest` | Sample production code depends only on `com.lokiscale.bifrost.api` |
+| `SupportedSurfaceIntegrationTest` (starter module) | Full LLM-backed YAML invocation through `SkillTemplate` and standard named-connection configuration, without replacing internal Bifrost beans |
+| `LiveProviderSmokeTest` | Explicitly opt-in OpenAI invocation of the bundled vision skill through the supported facade; skipped during normal builds |
 | `SampleControllerTest` | Controller delegates with public YAML names for expenses, feedstock, and duplicate-invoice paths |
-| `IncidentSkillCatalogTests` | 12 incident skills, target isolation, planning graph, root evidence shape, OpenRouter + model aliases, locked schema fields |
-| `IncidentControllerTest` | POST handle inputs, handle-scenario fixture+scenario, scenarios list, unknown scenario rejection, journal envelope |
+| `IncidentControllerTest` | POST handle inputs, handle-scenario fixture+scenario, scenarios list, unknown scenario rejection, execution-event envelope |
 | `IncidentTelemetryServiceTest` | Known scenario story data, unknown neutrality, optional runbook category |
-| `InsuranceSkillCatalogTests` | 11 insurance skills, target isolation, root evidence (L2 only), mid-level no contract, model aliases, locked schemas |
-| `ClaimsControllerTest` | POST process inputs, process-scenario fixture+enrichment, scenarios list, unknown rejection, journal envelope |
+| `ClaimsControllerTest` | POST process inputs, process-scenario fixture+enrichment, scenarios list, unknown rejection, execution-event envelope |
 | `InsurancePolicyServiceTest` | Payout formula, exclusion matching, unknown neutrality |
 | `ClaimsHistoryServiceTest` | Fraud velocity elevation, clean history, unknown neutrality |
-| `SupportSkillCatalogTests` | 14 support skills, target isolation, planning graph, root evidence (L2 only; no `checkRefundPolicy` at root), model aliases, locked schemas |
-| `SupportControllerTest` | POST resolve inputs, resolve-scenario fixture+customerId enrichment, scenarios list, unknown/missing rejection, journal envelope |
+| `SupportControllerTest` | POST resolve inputs, resolve-scenario fixture+customerId enrichment, scenarios list, unknown/missing rejection, execution-event envelope |
 | `SupportCrmServiceTest` | Scenario bias (duplicates, goodwill, tickets, help articles), unknown neutrality, deterministic bug tickets |
-| `TravelSkillCatalogTests` | 10 travel skills, target isolation, planning graph, root evidence (L2 only), ranker on transport allow-list, model aliases, locked schemas |
-| `TravelControllerTest` | POST plan inputs, plan-scenario fixture+scenario, scenarios list, unknown/missing rejection, journal envelope |
+| `TravelControllerTest` | POST plan inputs, plan-scenario fixture+scenario, scenarios list, unknown/missing rejection, execution-event envelope |
 | `TravelCatalogServiceTest` | Multi-option catalogs, dominated options, ranker determinism, loyalty perks, unknown neutrality |
 
-These tests mock or stub model calls where needed; they validate wiring, not live LLM quality. No test calls OpenRouter or Ollama for incident/insurance/support/travel skills. Live nested-planning quality is a manual smoke step with a real `OPENROUTER_API_KEY`.
+Normal test runs use mapped targets or local protocol stubs and make no provider calls. To run the explicit OpenAI smoke test through the supported facade, set `OPENAI_API_KEY` and run from the repository root:
+
+```powershell
+.\mvnw.cmd -pl bifrost-sample -am '-Dbifrost.live-provider-test=true' '-Dtest=LiveProviderSmokeTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+No test calls OpenRouter or Ollama for incident/insurance/support/travel skills. Live nested-planning quality remains a manual smoke step with a real `OPENROUTER_API_KEY`.
 
 ## Troubleshooting
 

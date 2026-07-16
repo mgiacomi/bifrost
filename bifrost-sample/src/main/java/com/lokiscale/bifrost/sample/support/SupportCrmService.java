@@ -1,6 +1,6 @@
 package com.lokiscale.bifrost.sample.support;
 
-import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.api.SkillMethod;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
 

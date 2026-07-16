@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.sample.incident;
 
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
@@ -130,7 +130,7 @@ public class IncidentController {
         response.put("result", result);
         if (executionView != null) {
             response.put("sessionId", executionView.sessionId());
-            response.put("executionJournal", executionView.executionJournal());
+            response.put("executionEvents", executionView.events());
         }
         return response;
     }

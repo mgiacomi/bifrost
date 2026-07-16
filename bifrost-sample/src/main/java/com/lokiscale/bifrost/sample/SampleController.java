@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.sample;
 
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -108,7 +108,7 @@ public class SampleController {
         response.put("filePath", filePath);
         if (executionView != null) {
             response.put("sessionId", executionView.sessionId());
-            response.put("executionJournal", executionView.executionJournal());
+            response.put("executionEvents", executionView.events());
         }
         return response;
     }

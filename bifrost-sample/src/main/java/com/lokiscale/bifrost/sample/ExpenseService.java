@@ -1,7 +1,7 @@
 package com.lokiscale.bifrost.sample;
 
 import org.springframework.stereotype.Service;
-import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.api.SkillMethod;
 
 import java.util.List;
 import java.util.Map;

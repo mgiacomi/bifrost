@@ -120,7 +120,7 @@ By default, Bifrost discovers `classpath:/skills/**/*.yaml`. Add the `.yml` patt
 Inject `SkillTemplate` and invoke a YAML skill with a map (or an object that can be converted to a map). The result is returned as text; use an `output_schema` when the caller needs a predictable JSON shape.
 
 ```java
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -138,6 +138,12 @@ public class InvoiceWorkflow {
     }
 }
 ```
+
+The supported starter API is closed to these seven types in `com.lokiscale.bifrost.api`: `SkillTemplate`, `SkillExecutionView`, `SkillExecutionEvent`, `SkillMethod`, `SkillException`, `SkillInputValidationException`, and `SkillInputValidationIssue`. `SkillTemplate` is injectable and easy to mock in application tests, but replacing its framework bean or implementing Bifrost internals is unsupported. There are currently no supported Bifrost-specific SPIs or bean overrides; other starter types are internal before 1.0.
+
+For integration testing, configure a real or local protocol-compatible named connection and invoke the YAML skill through `SkillTemplate`. Bifrost's supported-surface integration test follows this pattern: it supplies a local OpenAI-compatible endpoint through `bifrost.connections`, invokes an LLM-backed YAML skill through the public facade, and observes only `SkillExecutionView` values. Tests should not replace internal resolvers, coordinators, chat-client factories, registries, or virtual-file-system beans.
+
+Successful observers receive a session ID and immutable, current-version `SkillExecutionEvent` values. These events are intended for trusted development and debugging, may contain application business data, and are not a durable or comprehensively sanitized trace contract. Invalid caller input raises `SkillInputValidationException`, authorization failures remain Spring Security `AccessDeniedException`, and other runtime failures crossing the facade become a safe `SkillException`.
 
 ## Defining Skills
 
@@ -228,7 +234,7 @@ mapping:
 Use `@SkillMethod` when the implementation should run deterministic Java logic. It registers an internal target, not a public capability or alias. Expose it through a mapped YAML manifest before application code can invoke it or another YAML skill can list it in `allowed_skills`; both surfaces accept YAML names only.
 
 ```java
-import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.api.SkillMethod;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

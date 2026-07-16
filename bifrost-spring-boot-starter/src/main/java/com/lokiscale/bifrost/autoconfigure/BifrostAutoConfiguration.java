@@ -1,64 +1,68 @@
 package com.lokiscale.bifrost.autoconfigure;
 
-import com.lokiscale.bifrost.chat.DefaultSkillAdvisorResolver;
-import com.lokiscale.bifrost.chat.DefaultSkillChatModelResolver;
-import com.lokiscale.bifrost.chat.SkillAdvisorResolver;
-import com.lokiscale.bifrost.chat.SkillChatClientFactory;
-import com.lokiscale.bifrost.chat.SkillChatModelResolver;
-import com.lokiscale.bifrost.chat.SkillChatOptionsAdapter;
-import com.lokiscale.bifrost.chat.SpringAiSkillChatClientFactory;
-import com.lokiscale.bifrost.core.BifrostExceptionTransformer;
-import com.lokiscale.bifrost.core.CapabilityRegistry;
-import com.lokiscale.bifrost.core.BifrostSessionRunner;
-import com.lokiscale.bifrost.core.CapabilityExecutionRouter;
-import com.lokiscale.bifrost.core.DefaultBifrostExceptionTransformer;
-import com.lokiscale.bifrost.core.DefaultPlanTaskLinker;
-import com.lokiscale.bifrost.core.ExecutionCoordinator;
-import com.lokiscale.bifrost.core.InMemoryCapabilityRegistry;
-import com.lokiscale.bifrost.core.InMemorySkillImplementationTargetRegistry;
-import com.lokiscale.bifrost.core.PlanTaskLinker;
-import com.lokiscale.bifrost.core.SkillMethodBeanPostProcessor;
-import com.lokiscale.bifrost.core.SkillImplementationTargetRegistry;
-import com.lokiscale.bifrost.runtime.DefaultMissionExecutionEngine;
-import com.lokiscale.bifrost.runtime.MissionExecutionEngine;
-import com.lokiscale.bifrost.runtime.attachment.DefaultMissionInputMaterializer;
-import com.lokiscale.bifrost.runtime.attachment.MissionInputMaterializer;
-import com.lokiscale.bifrost.runtime.attachment.MissionUserMessageSender;
-import com.lokiscale.bifrost.runtime.attachment.SpringAiMissionUserMessageSender;
-import com.lokiscale.bifrost.runtime.planning.DefaultPlanningService;
-import com.lokiscale.bifrost.runtime.planning.PlanningService;
-import com.lokiscale.bifrost.runtime.input.SkillInputContractResolver;
-import com.lokiscale.bifrost.runtime.input.SkillInputValidator;
-import com.lokiscale.bifrost.runtime.state.DefaultExecutionStateService;
-import com.lokiscale.bifrost.runtime.state.ExecutionStateService;
-import com.lokiscale.bifrost.runtime.tool.DefaultToolCallbackFactory;
-import com.lokiscale.bifrost.runtime.tool.DefaultToolSurfaceService;
-import com.lokiscale.bifrost.runtime.tool.ToolCallbackFactory;
-import com.lokiscale.bifrost.runtime.tool.ToolSurfaceService;
-import com.lokiscale.bifrost.runtime.usage.DefaultSessionUsageService;
-import com.lokiscale.bifrost.runtime.usage.MicrometerUsageMetricsRecorder;
-import com.lokiscale.bifrost.runtime.usage.ModelUsageExtractor;
-import com.lokiscale.bifrost.runtime.usage.NoOpUsageMetricsRecorder;
-import com.lokiscale.bifrost.runtime.usage.SessionUsageService;
-import com.lokiscale.bifrost.runtime.usage.UsageMetricsRecorder;
-import com.lokiscale.bifrost.security.AccessGuard;
-import com.lokiscale.bifrost.security.DefaultAccessGuard;
-import com.lokiscale.bifrost.skill.DefaultSkillVisibilityResolver;
-import com.lokiscale.bifrost.skill.SkillVisibilityResolver;
-import com.lokiscale.bifrost.skill.YamlSkillCapabilityRegistrar;
-import com.lokiscale.bifrost.skill.YamlSkillCatalog;
-import com.lokiscale.bifrost.skillapi.DefaultSkillTemplate;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
-import com.lokiscale.bifrost.vfs.DefaultRefResolver;
-import com.lokiscale.bifrost.vfs.RefResolver;
-import com.lokiscale.bifrost.vfs.SessionLocalVirtualFileSystem;
-import com.lokiscale.bifrost.vfs.VirtualFileSystem;
+import com.lokiscale.bifrost.internal.autoconfigure.AiConnectionChatModelFactory;
+import com.lokiscale.bifrost.internal.autoconfigure.AnthropicConnectionChatModelFactory;
+import com.lokiscale.bifrost.internal.autoconfigure.GeminiConnectionChatModelFactory;
+import com.lokiscale.bifrost.internal.autoconfigure.NamedAiConnectionRegistry;
+import com.lokiscale.bifrost.internal.autoconfigure.OllamaConnectionChatModelFactory;
+import com.lokiscale.bifrost.internal.autoconfigure.OpenAiConnectionChatModelFactory;
+import com.lokiscale.bifrost.internal.chat.DefaultSkillAdvisorResolver;
+import com.lokiscale.bifrost.internal.chat.DefaultSkillChatModelResolver;
+import com.lokiscale.bifrost.internal.chat.SkillAdvisorResolver;
+import com.lokiscale.bifrost.internal.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.internal.chat.SkillChatModelResolver;
+import com.lokiscale.bifrost.internal.chat.SkillChatOptionsAdapter;
+import com.lokiscale.bifrost.internal.chat.SpringAiSkillChatClientFactory;
+import com.lokiscale.bifrost.internal.core.BifrostExceptionTransformer;
+import com.lokiscale.bifrost.internal.core.CapabilityRegistry;
+import com.lokiscale.bifrost.internal.core.BifrostSessionRunner;
+import com.lokiscale.bifrost.internal.core.CapabilityExecutionRouter;
+import com.lokiscale.bifrost.internal.core.DefaultBifrostExceptionTransformer;
+import com.lokiscale.bifrost.internal.core.DefaultPlanTaskLinker;
+import com.lokiscale.bifrost.internal.core.ExecutionCoordinator;
+import com.lokiscale.bifrost.internal.core.InMemoryCapabilityRegistry;
+import com.lokiscale.bifrost.internal.core.InMemorySkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.internal.core.PlanTaskLinker;
+import com.lokiscale.bifrost.internal.core.SkillMethodBeanPostProcessor;
+import com.lokiscale.bifrost.internal.core.SkillImplementationTargetRegistry;
+import com.lokiscale.bifrost.internal.runtime.DefaultMissionExecutionEngine;
+import com.lokiscale.bifrost.internal.runtime.MissionExecutionEngine;
+import com.lokiscale.bifrost.internal.runtime.attachment.DefaultMissionInputMaterializer;
+import com.lokiscale.bifrost.internal.runtime.attachment.MissionInputMaterializer;
+import com.lokiscale.bifrost.internal.runtime.attachment.MissionUserMessageSender;
+import com.lokiscale.bifrost.internal.runtime.attachment.SpringAiMissionUserMessageSender;
+import com.lokiscale.bifrost.internal.runtime.planning.DefaultPlanningService;
+import com.lokiscale.bifrost.internal.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.internal.runtime.input.SkillInputContractResolver;
+import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidator;
+import com.lokiscale.bifrost.internal.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.internal.runtime.tool.DefaultToolCallbackFactory;
+import com.lokiscale.bifrost.internal.runtime.tool.DefaultToolSurfaceService;
+import com.lokiscale.bifrost.internal.runtime.tool.ToolCallbackFactory;
+import com.lokiscale.bifrost.internal.runtime.tool.ToolSurfaceService;
+import com.lokiscale.bifrost.internal.runtime.usage.DefaultSessionUsageService;
+import com.lokiscale.bifrost.internal.runtime.usage.MicrometerUsageMetricsRecorder;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.internal.runtime.usage.NoOpUsageMetricsRecorder;
+import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageService;
+import com.lokiscale.bifrost.internal.runtime.usage.UsageMetricsRecorder;
+import com.lokiscale.bifrost.internal.security.AccessGuard;
+import com.lokiscale.bifrost.internal.security.DefaultAccessGuard;
+import com.lokiscale.bifrost.internal.skill.DefaultSkillVisibilityResolver;
+import com.lokiscale.bifrost.internal.skill.SkillVisibilityResolver;
+import com.lokiscale.bifrost.internal.skill.YamlSkillCapabilityRegistrar;
+import com.lokiscale.bifrost.internal.skill.YamlSkillCatalog;
+import com.lokiscale.bifrost.internal.skillapi.DefaultSkillTemplate;
+import com.lokiscale.bifrost.api.SkillTemplate;
+import com.lokiscale.bifrost.internal.vfs.DefaultRefResolver;
+import com.lokiscale.bifrost.internal.vfs.RefResolver;
+import com.lokiscale.bifrost.internal.vfs.SessionLocalVirtualFileSystem;
+import com.lokiscale.bifrost.internal.vfs.VirtualFileSystem;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Role;
@@ -80,33 +84,29 @@ import java.util.concurrent.Executors;
 public class BifrostAutoConfiguration
 {
     @Bean
-    @ConditionalOnMissingBean(CapabilityRegistry.class)
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public CapabilityRegistry capabilityRegistry()
+    CapabilityRegistry capabilityRegistry()
     {
         return new InMemoryCapabilityRegistry();
     }
 
     @Bean
-    @ConditionalOnMissingBean(SkillImplementationTargetRegistry.class)
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillImplementationTargetRegistry skillImplementationTargetRegistry()
+    SkillImplementationTargetRegistry skillImplementationTargetRegistry()
     {
         return new InMemorySkillImplementationTargetRegistry();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public BifrostExceptionTransformer bifrostExceptionTransformer()
+    BifrostExceptionTransformer bifrostExceptionTransformer()
     {
         return new DefaultBifrostExceptionTransformer();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(
+    static SkillMethodBeanPostProcessor skillMethodBeanPostProcessor(
             SkillImplementationTargetRegistry skillImplementationTargetRegistry,
             ObjectProvider<ObjectMapper> objectMapperProvider,
             BifrostExceptionTransformer bifrostExceptionTransformer,
@@ -120,31 +120,27 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public BifrostSessionRunner bifrostSessionRunner(BifrostProperties properties,
-            Clock bifrostClock,
+    BifrostSessionRunner bifrostSessionRunner(BifrostProperties properties,
             ExecutionTraceProperties executionTraceProperties)
     {
         return new BifrostSessionRunner(
                 properties.getSession().getMaxDepth(),
                 executionTraceProperties.getPersistence(),
-                bifrostClock);
+                Clock.systemUTC());
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public YamlSkillCatalog yamlSkillCatalog(BifrostProperties properties)
+    YamlSkillCatalog yamlSkillCatalog(BifrostProperties properties)
     {
         // The catalog is the YAML discovery/loading boundary that downstream runtime beans build on.
         return new YamlSkillCatalog(properties);
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public YamlSkillCapabilityRegistrar yamlSkillCapabilityRegistrar(CapabilityRegistry capabilityRegistry,
+    YamlSkillCapabilityRegistrar yamlSkillCapabilityRegistrar(CapabilityRegistry capabilityRegistry,
             SkillImplementationTargetRegistry skillImplementationTargetRegistry,
             YamlSkillCatalog yamlSkillCatalog,
             SkillInputContractResolver skillInputContractResolver)
@@ -157,33 +153,29 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillInputContractResolver skillInputContractResolver(ObjectProvider<ObjectMapper> objectMapperProvider)
+    SkillInputContractResolver skillInputContractResolver(ObjectProvider<ObjectMapper> objectMapperProvider)
     {
         return new SkillInputContractResolver(objectMapperProvider.getIfAvailable(ObjectMapper::new));
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillInputValidator skillInputValidator()
+    SkillInputValidator skillInputValidator()
     {
         return new SkillInputValidator();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public AccessGuard accessGuard()
+    AccessGuard accessGuard()
     {
         return new DefaultAccessGuard();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillVisibilityResolver skillVisibilityResolver(YamlSkillCatalog yamlSkillCatalog,
+    SkillVisibilityResolver skillVisibilityResolver(YamlSkillCatalog yamlSkillCatalog,
             CapabilityRegistry capabilityRegistry,
             AccessGuard accessGuard)
     {
@@ -191,25 +183,22 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public VirtualFileSystem virtualFileSystem()
+    VirtualFileSystem virtualFileSystem()
     {
         return new SessionLocalVirtualFileSystem(Paths.get(System.getProperty("java.io.tmpdir"), "bifrost-vfs"));
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public RefResolver refResolver(VirtualFileSystem virtualFileSystem)
+    RefResolver refResolver(VirtualFileSystem virtualFileSystem)
     {
         return new DefaultRefResolver(virtualFileSystem);
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public MissionInputMaterializer missionInputMaterializer(RefResolver refResolver,
+    MissionInputMaterializer missionInputMaterializer(RefResolver refResolver,
             SkillInputContractResolver skillInputContractResolver,
             BifrostProperties properties)
     {
@@ -220,17 +209,15 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public MissionUserMessageSender missionUserMessageSender()
+    MissionUserMessageSender missionUserMessageSender()
     {
         return new SpringAiMissionUserMessageSender();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public CapabilityExecutionRouter capabilityExecutionRouter(RefResolver refResolver,
+    CapabilityExecutionRouter capabilityExecutionRouter(RefResolver refResolver,
             org.springframework.beans.factory.ObjectProvider<ExecutionCoordinator> executionCoordinatorProvider,
             ExecutionStateService executionStateService,
             AccessGuard accessGuard,
@@ -245,9 +232,8 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillTemplate skillTemplate(CapabilityRegistry capabilityRegistry,
+    SkillTemplate skillTemplate(CapabilityRegistry capabilityRegistry,
             CapabilityExecutionRouter capabilityExecutionRouter,
             BifrostSessionRunner bifrostSessionRunner,
             ObjectProvider<ObjectMapper> objectMapperProvider,
@@ -262,68 +248,47 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public Clock bifrostClock()
-    {
-        return Clock.systemUTC();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public PlanTaskLinker planTaskLinker()
+    PlanTaskLinker planTaskLinker()
     {
         return new DefaultPlanTaskLinker();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ModelUsageExtractor modelUsageExtractor()
+    ModelUsageExtractor modelUsageExtractor()
     {
         return new ModelUsageExtractor();
     }
 
     @Bean
-    @ConditionalOnBean(MeterRegistry.class)
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public UsageMetricsRecorder usageMetricsRecorder(MeterRegistry meterRegistry)
+    UsageMetricsRecorder usageMetricsRecorder(ObjectProvider<MeterRegistry> meterRegistryProvider)
     {
-        return new MicrometerUsageMetricsRecorder(meterRegistry);
+        MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
+        return meterRegistry == null
+                ? new NoOpUsageMetricsRecorder()
+                : new MicrometerUsageMetricsRecorder(meterRegistry);
     }
 
     @Bean
-    @ConditionalOnMissingBean(UsageMetricsRecorder.class)
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public UsageMetricsRecorder noOpUsageMetricsRecorder()
-    {
-        return new NoOpUsageMetricsRecorder();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SessionUsageService sessionUsageService(BifrostProperties properties,
+    SessionUsageService sessionUsageService(BifrostProperties properties,
             UsageMetricsRecorder usageMetricsRecorder)
     {
         return new DefaultSessionUsageService(properties.getSession().getQuotas(), usageMetricsRecorder);
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ExecutionStateService executionStateService(Clock bifrostClock,
-            SessionUsageService sessionUsageService)
+    ExecutionStateService executionStateService(SessionUsageService sessionUsageService)
     {
-        return new DefaultExecutionStateService(bifrostClock, sessionUsageService);
+        return new DefaultExecutionStateService(Clock.systemUTC(), sessionUsageService);
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public PlanningService planningService(PlanTaskLinker planTaskLinker,
+    PlanningService planningService(PlanTaskLinker planTaskLinker,
             ExecutionStateService executionStateService,
             SessionUsageService sessionUsageService,
             ModelUsageExtractor modelUsageExtractor)
@@ -332,17 +297,15 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ToolSurfaceService toolSurfaceService(SkillVisibilityResolver skillVisibilityResolver)
+    ToolSurfaceService toolSurfaceService(SkillVisibilityResolver skillVisibilityResolver)
     {
         return new DefaultToolSurfaceService(skillVisibilityResolver);
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ToolCallbackFactory toolCallbackFactory(CapabilityExecutionRouter capabilityExecutionRouter,
+    ToolCallbackFactory toolCallbackFactory(CapabilityExecutionRouter capabilityExecutionRouter,
             PlanningService planningService,
             ExecutionStateService executionStateService,
             SessionUsageService sessionUsageService,
@@ -357,17 +320,15 @@ public class BifrostAutoConfiguration
     }
 
     @Bean(name = "bifrostMissionExecutor", destroyMethod = "close")
-    @ConditionalOnMissingBean(name = "bifrostMissionExecutor")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ExecutorService bifrostMissionExecutor()
+    ExecutorService bifrostMissionExecutor()
     {
         return Executors.newVirtualThreadPerTaskExecutor();
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
+    MissionExecutionEngine missionExecutionEngine(PlanningService planningService,
             ExecutionStateService executionStateService,
             BifrostProperties properties,
             SessionUsageService sessionUsageService,
@@ -388,7 +349,6 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean(SkillChatModelResolver.class)
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     NamedAiConnectionRegistry namedAiConnectionRegistry(BifrostProperties properties,
             ResourceLoader resourceLoader)
@@ -401,7 +361,6 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     SkillChatModelResolver skillChatModelResolver(NamedAiConnectionRegistry registry)
     {
@@ -409,50 +368,43 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean(name = "openAiSkillChatOptionsAdapter")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatOptionsAdapter openAiSkillChatOptionsAdapter()
+    SkillChatOptionsAdapter openAiSkillChatOptionsAdapter()
     {
         return SpringAiSkillChatClientFactory.defaultAdapters().get(0);
     }
 
     @Bean
-    @ConditionalOnMissingBean(name = "anthropicSkillChatOptionsAdapter")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatOptionsAdapter anthropicSkillChatOptionsAdapter()
+    SkillChatOptionsAdapter anthropicSkillChatOptionsAdapter()
     {
         return SpringAiSkillChatClientFactory.defaultAdapters().get(1);
     }
 
     @Bean
-    @ConditionalOnMissingBean(name = "geminiSkillChatOptionsAdapter")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatOptionsAdapter geminiSkillChatOptionsAdapter()
+    SkillChatOptionsAdapter geminiSkillChatOptionsAdapter()
     {
         return SpringAiSkillChatClientFactory.defaultAdapters().get(2);
     }
 
     @Bean
-    @ConditionalOnMissingBean(name = "ollamaSkillChatOptionsAdapter")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatOptionsAdapter ollamaSkillChatOptionsAdapter()
+    SkillChatOptionsAdapter ollamaSkillChatOptionsAdapter()
     {
         return SpringAiSkillChatClientFactory.defaultAdapters().get(3);
     }
 
     @Bean
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillAdvisorResolver skillAdvisorResolver(ExecutionStateService executionStateService)
+    SkillAdvisorResolver skillAdvisorResolver(ExecutionStateService executionStateService)
     {
         return new DefaultSkillAdvisorResolver(executionStateService);
     }
 
     @Bean
-    @ConditionalOnBean(SkillChatModelResolver.class)
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public SkillChatClientFactory skillChatClientFactory(SkillChatModelResolver chatModelResolver,
+    SkillChatClientFactory skillChatClientFactory(SkillChatModelResolver chatModelResolver,
             List<SkillChatOptionsAdapter> adapters,
             SkillAdvisorResolver skillAdvisorResolver)
     {
@@ -460,9 +412,8 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnMissingBean(name = "stepLoopMissionExecutionEngine")
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine stepLoopMissionExecutionEngine(
+    com.lokiscale.bifrost.internal.runtime.step.StepLoopMissionExecutionEngine stepLoopMissionExecutionEngine(
             PlanningService planningService,
             ExecutionStateService executionStateService,
             CapabilityRegistry capabilityRegistry,
@@ -474,7 +425,7 @@ public class BifrostAutoConfiguration
             MissionUserMessageSender missionUserMessageSender,
             @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor)
     {
-        return new com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine(
+        return new com.lokiscale.bifrost.internal.runtime.step.StepLoopMissionExecutionEngine(
                 planningService,
                 executionStateService,
                 capabilityRegistry,
@@ -488,16 +439,14 @@ public class BifrostAutoConfiguration
     }
 
     @Bean
-    @ConditionalOnBean(SkillChatClientFactory.class)
-    @ConditionalOnMissingBean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public ExecutionCoordinator executionCoordinator(YamlSkillCatalog yamlSkillCatalog,
+    ExecutionCoordinator executionCoordinator(YamlSkillCatalog yamlSkillCatalog,
             CapabilityRegistry capabilityRegistry,
             SkillChatClientFactory skillChatClientFactory,
             ToolSurfaceService toolSurfaceService,
             ToolCallbackFactory toolCallbackFactory,
             MissionExecutionEngine missionExecutionEngine,
-            com.lokiscale.bifrost.runtime.step.StepLoopMissionExecutionEngine stepLoopMissionExecutionEngine,
+            com.lokiscale.bifrost.internal.runtime.step.StepLoopMissionExecutionEngine stepLoopMissionExecutionEngine,
             ExecutionStateService executionStateService,
             AccessGuard accessGuard)
     {

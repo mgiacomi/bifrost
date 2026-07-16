@@ -2,7 +2,7 @@ package com.lokiscale.bifrost.sample.travel;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lokiscale.bifrost.annotation.SkillMethod;
+import com.lokiscale.bifrost.api.SkillMethod;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
 

@@ -211,22 +211,24 @@ Do not automatically treat repeated business inputs as runtime metadata. Explici
 
 Use these only when current behavior or an edge case needs verification:
 
-- [`SkillTemplate.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skillapi/SkillTemplate.java) defines the public invocation surface.
-- [`DefaultSkillTemplate.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skillapi/DefaultSkillTemplate.java) validates YAML-only entry invocation and creates sessions.
-- [`YamlSkillManifest.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillManifest.java) defines the accepted manifest object shape.
-- [`YamlSkillCatalog.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillCatalog.java) validates the exact public YAML name before other manifest-specific validation and stores definitions by that identity.
-- [`YamlSkillDefinition.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillDefinition.java) exposes normalized YAML skill settings.
-- [`YamlSkillCapabilityRegistrar.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillCapabilityRegistrar.java) registers pure and mapped YAML capabilities.
-- [`SkillImplementationTarget.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillImplementationTarget.java) defines internal Java target metadata without provider-facing tool identity.
-- [`SkillImplementationTargetRegistry.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillImplementationTargetRegistry.java) defines the internal `beanName#methodName` registry boundary.
-- [`SkillMethodBeanPostProcessor.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/SkillMethodBeanPostProcessor.java) discovers canonical annotated methods and builds proxy-safe target invokers.
-- [`YamlSkillCapabilityRegistrarTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/skill/YamlSkillCapabilityRegistrarTests.java) covers equal YAML/Java names, shared targets, contract inheritance, advice, errors, and public metadata.
-- [`YamlSkillCatalogTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/skill/YamlSkillCatalogTests.java) covers `acceptsProviderPortablePublicSkillNames`, `rejectsNonPortablePublicSkillNames`, required-field ordering, and mapped-manifest validation ordering.
-- [`SkillInputContractResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/input/SkillInputContractResolver.java) selects explicit YAML, inherited Java, or generic input contracts.
-- [`DefaultSkillVisibilityResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/DefaultSkillVisibilityResolver.java) defines the current local YAML child surface and access filtering.
-- [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/CapabilityExecutionRouter.java) distinguishes nested LLM-backed YAML execution from mapped/Java invocation and preserves parent state.
-- [`ExecutionCoordinator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/ExecutionCoordinator.java) selects the execution engine and constructs each YAML mission boundary.
-- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/core/CapabilityExecutionRouterTest.java) covers nested routing, authorization fallback, plan restoration, evidence isolation, and canonical mission input.
+- [`SkillTemplate.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/api/SkillTemplate.java) defines the public invocation surface.
+- [`DefaultSkillTemplate.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skillapi/DefaultSkillTemplate.java) validates YAML-only entry invocation and creates sessions.
+- [`SkillMethod.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/api/SkillMethod.java) defines the deterministic Java target annotation.
+- [`YamlSkillManifest.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillManifest.java) defines the accepted manifest object shape.
+- [`YamlSkillCatalog.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillCatalog.java) validates the exact public YAML name before other manifest-specific validation and stores definitions by that identity.
+- [`YamlSkillDefinition.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillDefinition.java) exposes normalized YAML skill settings.
+- [`YamlSkillCapabilityRegistrar.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillCapabilityRegistrar.java) registers pure and mapped YAML capabilities.
+- [`SkillImplementationTarget.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/SkillImplementationTarget.java) defines internal Java target metadata without provider-facing tool identity.
+- [`SkillImplementationTargetRegistry.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/SkillImplementationTargetRegistry.java) defines the internal `beanName#methodName` registry boundary.
+- [`SkillMethodBeanPostProcessor.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/SkillMethodBeanPostProcessor.java) discovers canonical annotated methods and builds proxy-safe target invokers.
+- [`YamlSkillCapabilityRegistrarTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/skill/YamlSkillCapabilityRegistrarTests.java) covers equal YAML/Java names, shared targets, contract inheritance, advice, errors, and public metadata.
+- [`YamlSkillCatalogTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/skill/YamlSkillCatalogTests.java) covers `acceptsProviderPortablePublicSkillNames`, `rejectsNonPortablePublicSkillNames`, required-field ordering, and mapped-manifest validation ordering.
+- [`SkillInputContractResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/input/SkillInputContractResolver.java) selects explicit YAML, inherited Java, or generic input contracts.
+- [`DefaultSkillVisibilityResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/DefaultSkillVisibilityResolver.java) defines the current local YAML child surface and access filtering.
+- [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouter.java) distinguishes nested LLM-backed YAML execution from mapped/Java invocation and preserves parent state.
+- [`ExecutionCoordinator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/ExecutionCoordinator.java) selects the execution engine and constructs each YAML mission boundary.
+- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouterTest.java) covers nested routing, authorization fallback, plan restoration, evidence isolation, and canonical mission input.
+- [`SupportedSurfaceIntegrationTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/integration/SupportedSurfaceIntegrationTest.java) proves that an LLM-backed YAML entry skill can be configured and invoked through `SkillTemplate` without replacing internal Bifrost infrastructure.
 
 ## Coverage Boundary
 

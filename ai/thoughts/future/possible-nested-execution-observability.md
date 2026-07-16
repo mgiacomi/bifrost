@@ -143,13 +143,13 @@ Small-model unreliability alone is not a trigger unless the same investigation r
 
 ## Implementation Anchors for Research
 
-- [`ExecutionCoordinator.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/ExecutionCoordinator.java) selects direct or step-based execution and creates mission frames.
-- [`DefaultMissionExecutionEngine.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/DefaultMissionExecutionEngine.java) implements direct mission execution.
-- [`StepLoopMissionExecutionEngine.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/step/StepLoopMissionExecutionEngine.java) implements planning-step execution and records several terminal failures.
-- [`DefaultPlanningService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/planning/DefaultPlanningService.java) performs plan generation and quality checks.
-- [`SessionUsageSnapshot.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/usage/SessionUsageSnapshot.java) defines current aggregate session usage.
-- [`DefaultSessionUsageService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/usage/DefaultSessionUsageService.java) records usage and enforces session quotas.
-- [`ExecutionJournalProjector.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/trace/ExecutionJournalProjector.java) defines the current developer-facing journal projection.
+- [`ExecutionCoordinator.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/ExecutionCoordinator.java) selects direct or step-based execution and creates mission frames.
+- [`DefaultMissionExecutionEngine.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/DefaultMissionExecutionEngine.java) implements direct mission execution.
+- [`StepLoopMissionExecutionEngine.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/step/StepLoopMissionExecutionEngine.java) implements planning-step execution and records several terminal failures.
+- [`DefaultPlanningService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/planning/DefaultPlanningService.java) performs plan generation and quality checks.
+- [`SessionUsageSnapshot.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/usage/SessionUsageSnapshot.java) defines current aggregate session usage.
+- [`DefaultSessionUsageService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/usage/DefaultSessionUsageService.java) records usage and enforces session quotas.
+- [`ExecutionJournalProjector.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/trace/ExecutionJournalProjector.java) defines the current developer-facing journal projection.
 
 These anchors identify current research starting points; they are not proposed change locations.
 

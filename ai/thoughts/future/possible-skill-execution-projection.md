@@ -27,7 +27,7 @@ The possible gap is therefore not absence of trace data or absence of a tree ren
 ## Current Behavior to Preserve
 
 - The canonical execution trace remains the authoritative, immutable record of what occurred.
-- Trace records retain technical detail needed for debugging, auditing, and future analysis.
+- Trace records retain technical detail needed to debug and understand executions from the current implementation.
 - The developer journal remains smaller and safer than exposing the complete trace by default.
 - Nested execution uses hierarchical frames rather than a second mutable call tree.
 - Trace persistence remains configurable and is not required merely to execute a skill.
@@ -51,7 +51,7 @@ Investigate a layered model with clear ownership:
 
 ### Canonical execution trace
 
-The complete, versioned forensic record. It should remain suitable for detailed debugging and audit needs, subject to existing capture and redaction rules.
+The current-version execution record. It should remain useful for current-run debugging and execution understanding, subject to existing capture and redaction rules. It is not a durable audit, archival, analytics, or cross-version interchange format.
 
 ### Canonical developer projection
 
@@ -154,12 +154,12 @@ The sample should become operational before the projection is designed, but the 
 
 ## Implementation Anchors for Research
 
-- [`TraceRecord.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/TraceRecord.java) defines the canonical trace record relationships and payloads.
-- [`TraceRecordType.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/TraceRecordType.java) defines the recorded event vocabulary.
-- [`TraceFrameType.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/TraceFrameType.java) defines the technical frame taxonomy.
-- [`DefaultExecutionStateService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/state/DefaultExecutionStateService.java) opens mission frames and records execution state events.
-- [`ExecutionJournalProjector.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/trace/ExecutionJournalProjector.java) defines the current linear developer journal projection.
-- [`DefaultSkillTemplate.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skillapi/DefaultSkillTemplate.java) defines the supported invocation observer surface.
+- [`TraceRecord.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/TraceRecord.java) defines the canonical trace record relationships and payloads.
+- [`TraceRecordType.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/TraceRecordType.java) defines the recorded event vocabulary.
+- [`TraceFrameType.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/TraceFrameType.java) defines the technical frame taxonomy.
+- [`DefaultExecutionStateService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/state/DefaultExecutionStateService.java) opens mission frames and records execution state events.
+- [`ExecutionJournalProjector.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/trace/ExecutionJournalProjector.java) defines the current linear developer journal projection.
+- [`DefaultSkillTemplate.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skillapi/DefaultSkillTemplate.java) defines the supported invocation observer surface.
 - [`main.go`](../../../bifrost-cli/main.go) reconstructs and renders the current CLI technical frame tree.
 
 These anchors identify current research starting points; they are not proposed change locations.

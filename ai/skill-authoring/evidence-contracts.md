@@ -272,27 +272,26 @@ Do not repair a failure by weakening evidence labels until they no longer descri
 
 ### Manifest and startup validation
 
-- [`YamlSkillManifest.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillManifest.java), especially `EvidenceContractManifest`, defines the YAML object shape.
-- [`YamlSkillCatalog.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/skill/YamlSkillCatalog.java), especially `validateEvidenceContract`, defines startup validation.
+- [`YamlSkillManifest.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillManifest.java), especially `EvidenceContractManifest`, defines the YAML object shape.
+- [`YamlSkillCatalog.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillCatalog.java), especially `validateEvidenceContract`, defines startup validation.
 - [`evidence-contract-skill.yaml`](../../bifrost-spring-boot-starter/src/test/resources/skills/valid/evidence-contract-skill.yaml) is a valid focused fixture.
 - The `evidence-contract-*` files under [`skills/invalid`](../../bifrost-spring-boot-starter/src/test/resources/skills/invalid/) demonstrate rejected shapes.
 
 ### Runtime semantics
 
-- [`EvidenceContract.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/evidence/EvidenceContract.java) normalizes claim and producer mappings.
-- [`EvidenceCoverageValidator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/evidence/EvidenceCoverageValidator.java) implements planning and gathered-evidence coverage.
-- [`EvidenceBackedOutputValidator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/evidence/EvidenceBackedOutputValidator.java) determines which present claims require final support.
-- [`EvidenceContractCallAdvisor.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/evidence/EvidenceContractCallAdvisor.java) implements final-response retry and failure behavior.
-- [`DefaultPlanningService.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/planning/DefaultPlanningService.java) applies plan coverage and constructs current planning guidance.
-- [`DefaultToolCallbackFactory.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/runtime/tool/DefaultToolCallbackFactory.java) credits evidence after successful direct tool execution.
-- [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/core/CapabilityExecutionRouter.java) snapshots and restores evidence around nested YAML missions.
+- [`EvidenceContract.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceContract.java) normalizes claim and producer mappings.
+- [`EvidenceCoverageValidator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceCoverageValidator.java) implements planning and gathered-evidence coverage.
+- [`EvidenceBackedOutputValidator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceBackedOutputValidator.java) determines which present claims require final support.
+- [`EvidenceContractCallAdvisor.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceContractCallAdvisor.java) implements final-response retry and failure behavior.
+- [`DefaultPlanningService.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/planning/DefaultPlanningService.java) applies plan coverage and constructs current planning guidance.
+- [`DefaultToolCallbackFactory.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/tool/DefaultToolCallbackFactory.java) credits evidence after successful direct tool execution.
+- [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouter.java) snapshots and restores evidence around nested YAML missions.
 
 ### Behavioral tests and samples
 
-- [`EvidenceContractTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/runtime/evidence/EvidenceContractTests.java) covers normalized lookup and final evidence retry behavior.
-- [`PlanningServiceTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/runtime/planning/PlanningServiceTest.java) covers planning constraints and evidence coverage acceptance and rejection.
-- [`ToolCallbackFactoryTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/runtime/tool/ToolCallbackFactoryTest.java) covers evidence recording on tool completion.
-- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/core/CapabilityExecutionRouterTest.java), especially `nestedYamlDelegationStartsWithFreshEvidenceAndRestoresParentEvidenceAfterward`, protects nested isolation.
+- [`EvidenceContractTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceContractTests.java) covers normalized lookup and final evidence retry behavior.
+- [`PlanningServiceTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/planning/PlanningServiceTest.java) covers planning constraints and evidence coverage acceptance and rejection.
+- [`ToolCallbackFactoryTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/tool/ToolCallbackFactoryTest.java) covers evidence recording on tool completion.
+- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouterTest.java), especially `nestedYamlDelegationStartsWithFreshEvidenceAndRestoresParentEvidenceAfterward`, protects nested isolation.
 - [`duplicate_invoice_checker.yml`](../../bifrost-sample/src/main/resources/skills/basics/duplicate_invoice_checker.yml) demonstrates independent conjunctive evidence.
-- [`eng-sample-htn-incident-commander.md`](../thoughts/tickets/eng-sample-htn-incident-commander.md) contains a planned selective-branching example; treat it as design material until the sample is implemented and tested.
-
+- [`handle_incident.yml`](../../bifrost-sample/src/main/resources/skills/incidents/handle_incident.yml) demonstrates the implemented selective-branching incident workflow and its evidence boundary.

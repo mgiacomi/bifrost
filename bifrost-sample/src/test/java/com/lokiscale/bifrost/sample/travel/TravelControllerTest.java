@@ -1,8 +1,8 @@
 package com.lokiscale.bifrost.sample.travel;
 
-import com.lokiscale.bifrost.core.ExecutionJournal;
-import com.lokiscale.bifrost.skillapi.SkillExecutionView;
-import com.lokiscale.bifrost.skillapi.SkillTemplate;
+import com.lokiscale.bifrost.api.SkillExecutionEvent;
+import com.lokiscale.bifrost.api.SkillExecutionView;
+import com.lokiscale.bifrost.api.SkillTemplate;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -28,10 +28,10 @@ class TravelControllerTest {
     void planDelegatesWithRequestTextAndScenario() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         TravelController controller = new TravelController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("travel-session", journal));
+            observer.accept(new SkillExecutionView("travel-session", events));
             return "{\"summary\":\"weekend trip\"}";
         }).when(skillTemplate).invoke(eq("planTrip"), any(Map.class), any());
 
@@ -46,7 +46,7 @@ class TravelControllerTest {
                 .doesNotContainValue(null);
         assertThat(response.get("result")).isEqualTo("{\"summary\":\"weekend trip\"}");
         assertThat(response.get("sessionId")).isEqualTo("travel-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response).doesNotContainKey("filePath");
     }
 
@@ -71,10 +71,10 @@ class TravelControllerTest {
     void planScenarioLoadsFixtureAndSetsScenario() {
         SkillTemplate skillTemplate = mock(SkillTemplate.class);
         TravelController controller = new TravelController(skillTemplate, new DefaultResourceLoader());
-        ExecutionJournal journal = new ExecutionJournal(List.of());
+        List<SkillExecutionEvent> events = List.of();
         doAnswer(invocation -> {
             Consumer<SkillExecutionView> observer = invocation.getArgument(2);
-            observer.accept(new SkillExecutionView("scenario-session", journal));
+            observer.accept(new SkillExecutionView("scenario-session", events));
             return "{\"summary\":\"budget plan\"}";
         }).when(skillTemplate).invoke(eq("planTrip"), any(Map.class), any());
 
@@ -88,7 +88,7 @@ class TravelControllerTest {
                 .containsIgnoringCase("New York")
                 .containsIgnoringCase("400");
         assertThat(response.get("sessionId")).isEqualTo("scenario-session");
-        assertThat(response.get("executionJournal")).isEqualTo(journal);
+        assertThat(response.get("executionEvents")).isEqualTo(events);
         assertThat(response.get("result")).isEqualTo("{\"summary\":\"budget plan\"}");
     }
 
