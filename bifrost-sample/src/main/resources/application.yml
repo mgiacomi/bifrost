@@ -24,11 +24,11 @@ bifrost:
       base-url: ${OLLAMA_SECONDARY_BASE_URL:http://localhost:11435}
     openai-main:
       driver: openai
-      api-key: ${OPENAI_API_KEY:test-openai-api-key}
+      api-key: ${BIFROST_OPENAI_API_KEY:test-openai-api-key}
     openrouter:
       driver: openai
       base-url: https://openrouter.ai/api/v1
-      api-key: ${OPENROUTER_API_KEY:test-openrouter-api-key}
+      api-key: ${BIFROST_OPENROUTER_API_KEY:test-openrouter-api-key}
   session:
     mission-timeout: 6000s
   skills:
