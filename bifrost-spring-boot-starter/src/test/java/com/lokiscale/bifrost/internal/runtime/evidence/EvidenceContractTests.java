@@ -2,7 +2,6 @@ package com.lokiscale.bifrost.internal.runtime.evidence;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.lokiscale.bifrost.internal.core.BifrostSessionRunner;
-import com.lokiscale.bifrost.internal.skill.YamlSkillManifest;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -46,18 +45,9 @@ class EvidenceContractTests {
 
     @Test
     void normalizesClaimsToolsAndPresentClaimLookups() throws Exception {
-        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
-        schema.setType("object");
-        schema.setProperties(Map.of(
-                "vendorName", scalar("string"),
-                "isDuplicate", scalar("boolean")));
-
-        YamlSkillManifest.EvidenceContractManifest manifest = new YamlSkillManifest.EvidenceContractManifest();
-        manifest.setClaims(Map.of(
+        EvidenceContract contract = TestEvidenceContracts.compiled(Map.of(
                 "vendorName", "invoiceParser",
                 "isDuplicate", "invoiceParser and expenseLookup"));
-
-        EvidenceContract contract = EvidenceContract.fromManifest(manifest, schema);
         EvidenceBackedOutputValidator validator = new EvidenceBackedOutputValidator();
 
         assertThat(contract.canonicalExpressionForClaim("VENDORNAME")).isEqualTo("invoiceParser");
@@ -77,16 +67,9 @@ class EvidenceContractTests {
 
     @Test
     void evidenceAdvisorPreservesExistingSkillPromptOnRetry() {
-        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
-        schema.setType("object");
-        schema.setProperties(Map.of("vendorName", scalar("string")));
-
-        YamlSkillManifest.EvidenceContractManifest manifest = new YamlSkillManifest.EvidenceContractManifest();
-        manifest.setClaims(Map.of("vendorName", "invoiceParser"));
-
         EvidenceContractCallAdvisor advisor = new EvidenceContractCallAdvisor(
                 "evidence.skill",
-                EvidenceContract.fromManifest(manifest, schema),
+                TestEvidenceContracts.compiled(Map.of("vendorName", "invoiceParser")),
                 new EvidenceBackedOutputValidator(),
                 1,
                 result -> {
@@ -113,12 +96,6 @@ class EvidenceContractTests {
                 .startsWith("SKILL_PROMPT_SENTINEL")
                 .contains("Evidence validation failed")
                 .contains("Use only results already gathered");
-    }
-
-    private static YamlSkillManifest.OutputSchemaManifest scalar(String type) {
-        YamlSkillManifest.OutputSchemaManifest manifest = new YamlSkillManifest.OutputSchemaManifest();
-        manifest.setType(type);
-        return manifest;
     }
 
     private static ChatClientRequest request(String userText, String systemText) {

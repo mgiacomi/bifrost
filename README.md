@@ -151,7 +151,7 @@ Successful observers receive a session ID and immutable, current-version `SkillE
 
 An LLM-backed YAML skill omits `mapping`, declares a configured `model`, and may use model execution settings. `prompt` supplies private instructions in addition to the public `description`.
 
-The YAML `name` is the skill's single public identity and must match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: use 1-64 characters, start with an ASCII letter or underscore, and then use only ASCII letters, digits, or underscores. Names are case-sensitive and Bifrost does not trim, sanitize, normalize, truncate, or alias them. Descriptive lowerCamelCase names such as `duplicateInvoiceChecker` and `expenseLookup` are the recommended authoring style, though underscores and uppercase starts are also valid. Use the exact YAML name in `SkillTemplate`, `allowed_skills`, and `evidence_contract.claims` expressions.
+The YAML `name` is the skill's single public identity and must match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: use 1-64 characters, start with an ASCII letter or underscore, and then use only ASCII letters, digits, or underscores. Names are case-sensitive and Bifrost does not trim, sanitize, normalize, truncate, or alias them. Descriptive lowerCamelCase names such as `duplicateInvoiceChecker` and `expenseLookup` are the recommended authoring style, though underscores and uppercase starts are also valid. Use the exact YAML name in `SkillTemplate`, `allowed_skills`, and property-level `evidence` expressions.
 
 This public-name rule does not apply to `mapping.target_id`. That field is internal mapping metadata and intentionally uses separate `beanName#methodName` syntax.
 
@@ -166,30 +166,28 @@ model: granite4-tiny
 planning_mode: true
 max_steps: 10
 allowed_skills: [invoiceParser, expenseLookup]
-evidence_contract:
-  claims:
-    vendorName: invoiceParser
-    invoiceDate: invoiceParser
-    totalAmount: invoiceParser
-    isDuplicate: invoiceParser and expenseLookup
-    reasoning: invoiceParser and expenseLookup
 output_schema:
   type: object
   properties:
     isDuplicate:
       type: boolean
+      evidence: invoiceParser and expenseLookup
       description: True if a matching expense was found in the system
     vendorName:
       type: string
+      evidence: invoiceParser
       description: Vendor name extracted from the invoice
     totalAmount:
       type: number
+      evidence: invoiceParser
       description: Total amount extracted from the invoice
     invoiceDate:
       type: string
+      evidence: invoiceParser
       description: Invoice date in ISO-8601 format (YYYY-MM-DD)
     reasoning:
       type: string
+      evidence: invoiceParser and expenseLookup
       description: Brief explanation of why the invoice was or was not considered a duplicate
   required: [isDuplicate, vendorName, totalAmount, invoiceDate, reasoning]
   additionalProperties: false
@@ -206,7 +204,7 @@ Important execution settings:
 - `input_schema`: validates and describes the expected input. Supported types are `object`, `array`, `string`, `number`, `integer`, `boolean`, and `attachment`.
 - `output_schema`: validates the model response. When present, `output_schema_max_retries` defaults to `2` and accepts values from `0` through `3`.
 - `linter`: currently supports a `regex` linter with `max_retries` from `0` through `3`.
-- `evidence_contract`: maps output claims to Boolean strings over exact direct `allowed_skills` names. Operators `and` and `or` are case-insensitive; skill names remain case-sensitive; `and` binds more tightly than `or`, and parentheses override precedence. Plan validation checks every claim against planned child names; final validation checks only present claims against successfully completed direct children. Nested child internals do not leak upward, and these expressions enforce supportability rather than factual truth or workflow order.
+- `output_schema.properties.<name>.evidence`: attaches a nonblank Boolean expression over exact direct `allowed_skills` names to an immediate root output property. Operators `and` and `or` are case-insensitive; skill names remain case-sensitive; `and` binds more tightly than `or`, and parentheses override precedence. Plan validation checks every annotated property against planned child names; final validation checks only annotated properties present in the candidate against successfully completed direct children. Nested child internals do not leak upward. The annotation is orchestration metadata, not candidate JSON, and enforces supportability rather than factual truth or workflow order. Nested-schema annotations are unsupported.
 - `rbac_roles`: requires the current Spring Security authentication to have one of the listed roles before the skill is visible or executable.
 
 For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf`, `audio`, `video`, or `file`), and permitted `allowed_content_types`. Pass a Spring `Resource` or a `ref://...` virtual-file reference as the input value.
@@ -215,7 +213,7 @@ For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf
 
 YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped wrapper must declare `name`, `description`, and a nonblank `mapping.target_id`; its only optional field is `rbac_roles`.
 
-Declaring `mapping`, even as `null` or an empty block, selects mapped validation and requires a nonblank target. Mapped input and output behavior is owned by the Java target: Bifrost publishes its reflected input contract, and a different public shape requires a separate Java adapter target. Model/runtime fields such as `model`, `prompt`, schemas, planning, tool allowlists, linting, retries, and evidence contracts are rejected on the mapped child. An LLM parent may still list the child in its own `allowed_skills` and direct `evidence_contract.claims` expressions.
+Declaring `mapping`, even as `null` or an empty block, selects mapped validation and requires a nonblank target. Mapped input and output behavior is owned by the Java target: Bifrost publishes its reflected input contract, and a different public shape requires a separate Java adapter target. Model/runtime fields such as `model`, `prompt`, schemas, planning, tool allowlists, linting, retries, and evidence annotations are rejected on the mapped child. An LLM parent may still list the child in its own `allowed_skills` and property-level `evidence` expressions.
 
 The public YAML name may equal the Java method name because public skills and implementation targets use separate namespaces. Multiple mapped YAML skills may also share one Java target. Within a single Spring bean, however, annotated method names must be unique: overloaded `@SkillMethod`s would produce the same `beanName#methodName` target ID and fail startup.
 

@@ -1,0 +1,10 @@
+name: evidenceOperatorSubstringSkill
+description: Valid operator substrings in evidence skill names
+model: gpt-5
+allowed_skills: [androidCheck, orderLookup, candyParser]
+output_schema:
+  type: object
+  properties:
+    result:
+      type: string
+      evidence: androidCheck and (orderLookup or candyParser)

@@ -31,7 +31,6 @@ class YamlSkillDefinitionTest
         manifest.setOutputSchema(null);
         manifest.setLinter(null);
         manifest.setOutputSchemaMaxRetries(0);
-        manifest.setEvidenceContract(null);
         YamlSkillDefinition definition = new YamlSkillDefinition(resource(), manifest, CONFIGURATION);
         YamlSkillManifest firstCopy = definition.manifest();
         YamlSkillManifest secondCopy = definition.manifest();
@@ -52,6 +51,31 @@ class YamlSkillDefinitionTest
         YamlSkillManifest mapped = mappedManifest("mapped.copy.skill", "targetBean#deterministicTarget");
         YamlSkillDefinition mappedDefinition = new YamlSkillDefinition(resource(), mapped, null);
         assertThat(mappedDefinition.manifest().isDeclared(YamlSkillManifest.Field.MAPPING)).isTrue();
+    }
+
+    @Test
+    void preservesEvidenceAndAbsenceAcrossDefinitionDefensiveCopies()
+    {
+        YamlSkillManifest.OutputSchemaManifest annotated = outputSchema("string");
+        annotated.setEvidence("reviewSkill");
+        YamlSkillManifest.OutputSchemaManifest unannotated = outputSchema("array");
+        unannotated.setItems(outputSchema("string"));
+        YamlSkillManifest.OutputSchemaManifest root = outputSchema("object");
+        root.setProperties(Map.of("ResultValue", annotated, "notes", unannotated));
+
+        YamlSkillManifest manifest = manifest("llm.evidence.copy.skill");
+        manifest.setOutputSchema(root);
+        EvidenceContract contract = com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(
+                Map.of("ResultValue", "reviewSkill"));
+        YamlSkillDefinition definition = new YamlSkillDefinition(resource(), manifest, CONFIGURATION, contract);
+
+        YamlSkillManifest.OutputSchemaManifest first = definition.outputSchema();
+        assertThat(first.getProperties().get("ResultValue").getEvidence()).isEqualTo("reviewSkill");
+        assertThat(first.getProperties().get("notes").getEvidence()).isNull();
+        assertThat(first.getProperties().get("notes").getItems().getEvidence()).isNull();
+        first.getProperties().get("ResultValue").setEvidence("mutated");
+        assertThat(definition.outputSchema().getProperties().get("ResultValue").getEvidence())
+                .isEqualTo("reviewSkill");
     }
 
     @Test
@@ -94,9 +118,8 @@ class YamlSkillDefinitionTest
                 .hasMessageContaining("input_schema");
 
         YamlSkillManifest mapped = mappedManifest("mapped.evidence.skill", "targetBean#deterministicTarget");
-        YamlSkillManifest.EvidenceContractManifest evidenceManifest = new YamlSkillManifest.EvidenceContractManifest();
-        evidenceManifest.setClaims(Map.of("claim", "childSkill"));
-        EvidenceContract evidenceContract = EvidenceContract.fromManifest(evidenceManifest, null);
+        EvidenceContract evidenceContract = com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(
+                Map.of("claim", "childSkill"));
         assertThatThrownBy(() -> new YamlSkillDefinition(resource(), mapped, null, evidenceContract))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("evidence contract");
@@ -108,6 +131,13 @@ class YamlSkillDefinitionTest
         manifest.setName(name);
         manifest.setDescription(name);
         return manifest;
+    }
+
+    private static YamlSkillManifest.OutputSchemaManifest outputSchema(String type)
+    {
+        YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
+        schema.setType(type);
+        return schema;
     }
 
     private static YamlSkillManifest mappedManifest(String name, String targetId)

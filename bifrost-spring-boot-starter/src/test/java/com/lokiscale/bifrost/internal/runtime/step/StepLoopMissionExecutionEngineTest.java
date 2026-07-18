@@ -1160,16 +1160,14 @@ class StepLoopMissionExecutionEngineTest {
                 "reasoning", reasoningField));
         schema.setRequired(List.of("result"));
         manifest.setOutputSchema(schema);
-        YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-        contract.setClaims(Map.of(
+        Map<String, String> contract = Map.of(
                 "result", "invoiceParser",
-                "reasoning", "expenseLookup"));
-        manifest.setEvidenceContract(contract);
+                "reasoning", "expenseLookup");
         return new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
                 EXECUTION_CONFIGURATION,
-                EvidenceContract.fromManifest(contract, schema));
+                com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(contract));
     }
 
     private static YamlSkillDefinition definitionWithRegexLinter() {

@@ -199,9 +199,6 @@ class ToolCallbackFactoryTest {
         manifest.setName("rootVisibleSkill");
         manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
-        YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-        contract.setClaims(java.util.Map.of("vendorName", "allowedVisibleSkill"));
-        manifest.setEvidenceContract(contract);
         return new com.lokiscale.bifrost.internal.skill.YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),
                 manifest,
@@ -210,6 +207,7 @@ class ToolCallbackFactoryTest {
                         "test-connection", AiDriver.OPENAI,
                         "openai/gpt-5",
                         "medium"),
-                com.lokiscale.bifrost.internal.runtime.evidence.EvidenceContract.fromManifest(contract, null));
+                com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(
+                        java.util.Map.of("vendorName", "allowedVisibleSkill")));
     }
 }

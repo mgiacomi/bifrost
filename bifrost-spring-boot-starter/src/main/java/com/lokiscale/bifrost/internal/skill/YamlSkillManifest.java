@@ -2,7 +2,10 @@ package com.lokiscale.bifrost.internal.skill;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -34,7 +37,6 @@ public class YamlSkillManifest
         ALLOWED_SKILLS("allowed_skills"),
         LINTER("linter"),
         OUTPUT_SCHEMA_MAX_RETRIES("output_schema_max_retries"),
-        EVIDENCE_CONTRACT("evidence_contract"),
         MAPPING("mapping");
 
         private final String yamlName;
@@ -60,8 +62,7 @@ public class YamlSkillManifest
             Field.MAX_STEPS,
             Field.ALLOWED_SKILLS,
             Field.LINTER,
-            Field.OUTPUT_SCHEMA_MAX_RETRIES,
-            Field.EVIDENCE_CONTRACT);
+            Field.OUTPUT_SCHEMA_MAX_RETRIES);
 
     private final EnumSet<Field> declaredFields = EnumSet.noneOf(Field.class);
     private String name;
@@ -94,9 +95,6 @@ public class YamlSkillManifest
 
     @JsonProperty("output_schema_max_retries")
     private Integer outputSchemaMaxRetries;
-
-    @JsonProperty("evidence_contract")
-    private EvidenceContractManifest evidenceContract;
 
     private MappingManifest mapping = new MappingManifest();
 
@@ -251,17 +249,6 @@ public class YamlSkillManifest
         this.outputSchemaMaxRetries = outputSchemaMaxRetries;
     }
 
-    public EvidenceContractManifest getEvidenceContract()
-    {
-        return evidenceContract;
-    }
-
-    public void setEvidenceContract(EvidenceContractManifest evidenceContract)
-    {
-        declaredFields.add(Field.EVIDENCE_CONTRACT);
-        this.evidenceContract = evidenceContract;
-    }
-
     @JsonIgnore
     boolean isDeclared(Field field)
     {
@@ -369,23 +356,6 @@ public class YamlSkillManifest
         public void setTargetId(String targetId)
         {
             this.targetId = targetId;
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = false)
-    public static class EvidenceContractManifest
-    {
-        @JsonDeserialize(contentUsing = StrictStringScalarDeserializer.class)
-        private Map<String, String> claims = Map.of();
-
-        public Map<String, String> getClaims()
-        {
-            return claims;
-        }
-
-        public void setClaims(Map<String, String> claims)
-        {
-            this.claims = claims == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(claims));
         }
     }
 
@@ -532,6 +502,10 @@ public class YamlSkillManifest
     @JsonIgnoreProperties(ignoreUnknown = false)
     public static class OutputSchemaManifest
     {
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @JsonDeserialize(using = StrictStringScalarDeserializer.class)
+        @JsonSetter(nulls = Nulls.FAIL)
+        private String evidence;
         private String type;
         private Map<String, OutputSchemaManifest> properties = Map.of();
         private List<String> required = List.of();
@@ -544,6 +518,16 @@ public class YamlSkillManifest
         private String description;
         private String format;
         private Boolean nullable;
+
+        public String getEvidence()
+        {
+            return evidence;
+        }
+
+        public void setEvidence(String evidence)
+        {
+            this.evidence = evidence;
+        }
 
         public String getType()
         {

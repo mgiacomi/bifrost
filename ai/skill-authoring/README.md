@@ -47,12 +47,12 @@ Do not load every document by default. Start with the routing entry most relevan
 | --- | --- | --- |
 | Skill-tree mental model | Initial, source-verified | YAML-only public identity, separate Java target registry, mapping, root invocation, visibility, and nesting |
 | Public YAML skill identity | Source-verified | Exact `name` format, case sensitivity, no-rewrite policy, propagation, and separation from `mapping.target_id` |
-| Evidence contracts | Source-verified | Boolean direct-child expressions, exact identity, planning/final truth sets, structured diagnostics, enforcement, and nested isolation |
+| Evidence contracts | Source-verified | Immediate-root property annotations, strict scalar/placement rules, Boolean direct-child expressions, planning/final truth sets, metadata isolation, enforcement, and nested mission isolation |
 | Source verification | Initial | How an LLM should use guide, tests, fixtures, samples, and production code together |
 | Skill-design review | Initial | Cross-cutting questions; not a manifest validator |
 | YAML manifest reference | Not yet documented | Inspect current manifest, catalog validation, tests, and samples when required |
 | Input contracts | Foundational | The mental model covers strict mapped Java contract ownership; complete schema syntax and pure-YAML input behavior are not yet documented |
-| Output contracts | Not yet documented | Evidence documentation covers only its interaction with claims |
+| Output contracts | Not yet documented | Evidence documentation covers only property-level supportability annotations and their interaction with candidate output |
 | Prompts | Not yet documented | Private prompt composition needs a dedicated topic |
 | Planning and nested planning | Foundational | The mental model covers choosing direct versus step-based execution; complete planning, retry, and cost semantics are not yet documented |
 | Capability visibility and RBAC | Not yet documented | The mental model contains only foundational behavior |

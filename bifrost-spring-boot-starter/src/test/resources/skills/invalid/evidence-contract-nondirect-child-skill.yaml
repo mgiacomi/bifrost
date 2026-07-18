@@ -5,7 +5,4 @@ allowed_skills: [investigateNetwork]
 output_schema:
   type: object
   properties:
-    likelyCause: { type: string }
-evidence_contract:
-  claims:
-    likelyCause: checkDns
+    likelyCause: { type: string, evidence: checkDns }

@@ -876,16 +876,14 @@ class PlanningServiceTest {
         schema.setAdditionalProperties(false);
         manifest.setOutputSchema(schema);
         manifest.setOutputSchemaMaxRetries(1);
-        YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-        contract.setClaims(Map.of(
+        Map<String, String> contract = Map.of(
                 "vendorName", "invoiceParser",
-                "isDuplicate", "invoiceParser and expenseLookup"));
-        manifest.setEvidenceContract(contract);
+                "isDuplicate", "invoiceParser and expenseLookup");
         return new YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),
                 manifest,
                 EXECUTION_CONFIGURATION,
-                EvidenceContract.fromManifest(contract, schema));
+                com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(contract));
     }
 
     private static YamlSkillDefinition rootDefinition() {

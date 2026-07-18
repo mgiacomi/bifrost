@@ -139,11 +139,9 @@ class NestedSuccessfulSkillBoundaryTest
         YamlSkillManifest.OutputSchemaManifest value = new YamlSkillManifest.OutputSchemaManifest();
         value.setType("string");
         schema.setProperties(Map.of("likelyCause", value, "internalProbe", value));
-        YamlSkillManifest.EvidenceContractManifest manifest = new YamlSkillManifest.EvidenceContractManifest();
-        manifest.setClaims(Map.of(
+        return com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(Map.of(
                 "likelyCause", "classifyIncident and investigateNetwork",
                 "internalProbe", "checkDns"));
-        return EvidenceContract.fromManifest(manifest, schema);
     }
 
     private record Harness(BifrostSession session, ExecutionFrame parent, ToolCallback callback) { }

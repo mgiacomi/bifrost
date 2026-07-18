@@ -32,13 +32,11 @@ class EvidenceContractAdvisorAdditionalTest
         schema.setType("object");
         schema.setProperties(Map.of("result", scalar("string")));
         schema.setRequired(List.of("result"));
-        YamlSkillManifest.EvidenceContractManifest manifest = new YamlSkillManifest.EvidenceContractManifest();
-        manifest.setClaims(Map.of("result", "classifyIncident and (investigateNetwork or investigateApp)"));
-
         List<EvidenceCoverageResult> failures = new ArrayList<>();
         EvidenceContractCallAdvisor advisor = new EvidenceContractCallAdvisor(
                 "handleIncident",
-                EvidenceContract.fromManifest(manifest, schema),
+                TestEvidenceContracts.compiled(Map.of(
+                        "result", "classifyIncident and (investigateNetwork or investigateApp)")),
                 new EvidenceBackedOutputValidator(),
                 1,
                 ignored -> { },

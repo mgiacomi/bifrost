@@ -1,7 +1,6 @@
 package com.lokiscale.bifrost.internal.runtime.evidence;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.lokiscale.bifrost.internal.skill.YamlSkillManifest;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -27,32 +26,6 @@ public final class EvidenceContract
     public static EvidenceContract empty()
     {
         return EMPTY;
-    }
-
-    public static EvidenceContract fromManifest(YamlSkillManifest.EvidenceContractManifest manifest,
-            YamlSkillManifest.OutputSchemaManifest outputSchema)
-    {
-        if (manifest == null)
-        {
-            return empty();
-        }
-
-        Map<String, String> schemaPropertiesByNormalized = new LinkedHashMap<>();
-        if (outputSchema != null)
-        {
-            outputSchema.getProperties().keySet().forEach(propertyName -> schemaPropertiesByNormalized.put(normalizeKey(propertyName), propertyName));
-        }
-
-        Map<String, EvidenceExpression> expressionsByClaim = new LinkedHashMap<>();
-        Map<String, String> canonicalClaimByNormalized = new LinkedHashMap<>();
-        EvidenceExpressionParser parser = new EvidenceExpressionParser();
-        manifest.getClaims().forEach((claimName, expression) ->
-        {
-            String canonicalClaim = schemaPropertiesByNormalized.getOrDefault(normalizeKey(claimName), claimName);
-            expressionsByClaim.put(canonicalClaim, parser.parse(expression));
-            canonicalClaimByNormalized.put(normalizeKey(canonicalClaim), canonicalClaim);
-        });
-        return compiled(expressionsByClaim, canonicalClaimByNormalized);
     }
 
     public static EvidenceContract compiled(Map<String, EvidenceExpression> expressionsByClaim,

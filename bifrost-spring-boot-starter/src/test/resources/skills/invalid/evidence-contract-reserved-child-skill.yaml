@@ -5,7 +5,4 @@ allowed_skills: [and]
 output_schema:
   type: object
   properties:
-    result: { type: string }
-evidence_contract:
-  claims:
-    result: and
+    result: { type: string, evidence: and }

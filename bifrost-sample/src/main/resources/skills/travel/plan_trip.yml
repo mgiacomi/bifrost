@@ -24,14 +24,6 @@ prompt: |
   specialists listed in allowed_skills. Soft budget: prefer options under budget when
   known; if over, explain in rationale and openQuestions rather than inventing cheaper inventory.
   For underspecified requests, prefer non-empty openQuestions over inventing airports.
-evidence_contract:
-  claims:
-    summary: assembleItinerary
-    transport: planTransport
-    hotel: planStay
-    estimatedTotal: assembleItinerary
-    rationale: understandPreferences and planTransport and planStay and assembleItinerary
-    openQuestions: understandPreferences and assembleItinerary
 input_schema:
   type: object
   properties:
@@ -46,19 +38,31 @@ input_schema:
 output_schema:
   type: object
   properties:
-    summary: { type: string }
+    summary:
+      type: string
+      evidence: assembleItinerary
     transport:
       type: object
+      evidence: planTransport
       properties:
         mode: { type: string }
         outbound: { type: object, additionalProperties: true }
         returnLeg: { type: object, nullable: true, additionalProperties: true }
       additionalProperties: true
-    hotel: { type: object, nullable: true, additionalProperties: true }
-    estimatedTotal: { type: number }
-    rationale: { type: string }
+    hotel:
+      type: object
+      nullable: true
+      additionalProperties: true
+      evidence: planStay
+    estimatedTotal:
+      type: number
+      evidence: assembleItinerary
+    rationale:
+      type: string
+      evidence: understandPreferences and planTransport and planStay and assembleItinerary
     openQuestions:
       type: array
+      evidence: understandPreferences and assembleItinerary
       items: { type: string }
   required: [summary, transport, estimatedTotal, rationale, openQuestions]
   additionalProperties: false

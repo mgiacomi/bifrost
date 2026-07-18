@@ -41,6 +41,7 @@ class YamlSkillEvidenceExpressionCatalogAdditionalTest
             "evidence-contract-list-expression-skill.yaml",
             "evidence-contract-object-expression-skill.yaml",
             "evidence-contract-number-expression-skill.yaml",
+            "evidence-contract-decimal-expression-skill.yaml",
             "evidence-contract-boolean-expression-skill.yaml",
             "evidence-contract-null-expression-skill.yaml"
     })
@@ -51,7 +52,7 @@ class YamlSkillEvidenceExpressionCatalogAdditionalTest
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining(filename)
-                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'"));
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.evidence'"));
     }
 
     @Test
@@ -61,7 +62,7 @@ class YamlSkillEvidenceExpressionCatalogAdditionalTest
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-nondirect-child-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("field 'evidence_contract.claims.likelyCause'")
+                        .hasMessageContaining("field 'output_schema.properties.likelyCause.evidence'")
                         .hasMessageContaining("column 1")
                         .hasMessageContaining("skill 'checkDns' is not a direct allowed child"));
     }
@@ -73,7 +74,7 @@ class YamlSkillEvidenceExpressionCatalogAdditionalTest
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-reserved-child-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("field 'evidence_contract.claims.result'")
+                        .hasMessageContaining("field 'output_schema.properties.result.evidence'")
                         .hasMessageContaining("column 1")
                         .hasMessageContaining("reserved operator 'and'"));
     }
@@ -90,13 +91,52 @@ class YamlSkillEvidenceExpressionCatalogAdditionalTest
     }
 
     @Test
-    void requiresOutputSchemaWhenEvidenceContractIsPresent()
+    void rejectsRemovedTopLevelEvidenceContractAsAnUnknownField()
     {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-missing-output-schema-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("field 'evidence_contract'")
-                        .hasMessageContaining("requires output_schema"));
+                        .hasMessageContaining("unknown field"));
+    }
+
+    @Test
+    void retainsMalformedExpressionDiagnosticsAtPropertyPath()
+    {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-malformed-expression-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.evidence'")
+                        .hasMessageContaining("column 18")
+                        .hasMessageContaining("expected a skill name or '('"));
+    }
+
+    @Test
+    void rejectsTrailingTokensAtPropertyPath()
+    {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-trailing-token-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.evidence'")
+                        .hasMessageContaining("column 15")
+                        .hasMessageContaining("expected 'and', 'or', or end of expression"));
+    }
+
+    @Test
+    void acceptsOperatorSubstringsInExactDirectChildNames()
+    {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/evidence-operator-substring-skill.yaml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(YamlSkillCatalog.class)
+                            .getSkill("evidenceOperatorSubstringSkill")
+                            .evidenceContract()
+                            .canonicalExpressionForClaim("result"))
+                            .isEqualTo("androidCheck and (orderLookup or candyParser)");
+                });
     }
 }

@@ -8,6 +8,4 @@ output_schema:
   properties:
     vendorName:
       type: string
-evidence_contract:
-  claims:
-    vendorName: " "
+      evidence: " "

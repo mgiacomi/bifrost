@@ -79,6 +79,7 @@ Planning depth is not itself a quality goal. Prefer the least complex execution 
 
 - Which top-level output fields are claims about the mission result?
 - Which claims need deterministic supportability enforcement?
+- Is each requirement a nonblank string `evidence` annotation on an immediate root `output_schema` property, never on the root, a nested property, or array items?
 - What minimum Boolean expression over successful direct children supports each claim?
 - Does every reference exactly match a direct `allowed_skills` name, including case?
 - Are conjunctions written with `and`, genuine substitutes with `or`, and mixed precedence made explicit with parentheses?
@@ -87,7 +88,7 @@ Planning depth is not itself a quality goal. Prefer the least complex execution 
 - Are workflow order and multi-intent branch policy kept outside the evidence expression?
 - Are nested child internals kept behind the child capability boundary?
 
-Read [evidence-contracts.md](../evidence-contracts.md) before authoring an evidence contract.
+Read [evidence-contracts.md](../evidence-contracts.md) before authoring property-level evidence requirements.
 
 ## 7. Preserve Production Safeguards
 

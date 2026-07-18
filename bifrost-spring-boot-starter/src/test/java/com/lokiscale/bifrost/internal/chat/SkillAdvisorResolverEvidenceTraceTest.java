@@ -134,6 +134,7 @@ class SkillAdvisorResolverEvidenceTraceTest
 
         YamlSkillManifest.OutputSchemaManifest vendorName = new YamlSkillManifest.OutputSchemaManifest();
         vendorName.setType("string");
+        vendorName.setEvidence("invoiceParser");
         YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
         schema.setType("object");
         schema.setProperties(Map.of("vendorName", vendorName));
@@ -141,16 +142,13 @@ class SkillAdvisorResolverEvidenceTraceTest
         schema.setAdditionalProperties(false);
         manifest.setOutputSchema(schema);
 
-        YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-        contract.setClaims(Map.of("vendorName", "invoiceParser"));
-        manifest.setEvidenceContract(contract);
-
         return new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
                 manifest,
                 new EffectiveSkillExecutionConfiguration(
                         "gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium"),
-                EvidenceContract.fromManifest(contract, schema));
+                com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(
+                        Map.of("vendorName", "invoiceParser")));
     }
 
     private static ChatClientRequest request()

@@ -170,7 +170,7 @@ public class YamlSkillCatalog implements InitializingBean
         }
         validateInputSchema(resource, manifest);
         validateOutputSchema(resource, manifest);
-        EvidenceContract evidenceContract = validateEvidenceContract(resource, manifest);
+        EvidenceContract evidenceContract = compileEvidenceContract(resource, manifest);
         validateLinter(resource, manifest);
 
         BifrostProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
@@ -227,8 +227,6 @@ public class YamlSkillCatalog implements InitializingBean
                     "cannot be declared because a mapped wrapper does not perform nested model tool selection; declare the mapped child on its LLM parent instead";
             case LINTER, OUTPUT_SCHEMA_MAX_RETRIES ->
                     "cannot be declared because model-output validation and retry do not run on direct Java routing; remove the field";
-            case EVIDENCE_CONTRACT ->
-                    "cannot be declared because the mapped child's evidence contract is not evaluated; declare an evidence_contract on an invoking LLM parent instead";
             default -> throw new IllegalArgumentException("No mapped-field explanation for " + field);
         };
     }
@@ -425,7 +423,7 @@ public class YamlSkillCatalog implements InitializingBean
                     "must be between 0 and " + MAX_OUTPUT_SCHEMA_RETRIES);
         }
 
-        validateSchemaNode(resource, outputSchema, "output_schema", true, 1);
+        validateSchemaNode(resource, outputSchema, "output_schema", SchemaPlacement.ROOT, 1);
     }
 
     private void validateInputSchema(Resource resource, YamlSkillManifest manifest)
@@ -438,63 +436,42 @@ public class YamlSkillCatalog implements InitializingBean
         validateInputSchemaNode(resource, inputSchema, "input_schema", true, 1);
     }
 
-    private EvidenceContract validateEvidenceContract(Resource resource, YamlSkillManifest manifest)
+    private EvidenceContract compileEvidenceContract(Resource resource, YamlSkillManifest manifest)
     {
-        YamlSkillManifest.EvidenceContractManifest contract = manifest.getEvidenceContract();
-        if (contract == null)
+        if (manifest.getOutputSchema() == null)
         {
             return EvidenceContract.empty();
         }
-        if (manifest.getOutputSchema() == null)
-        {
-            throw invalidSkill(resource, "evidence_contract", "requires output_schema so claim names can be validated");
-        }
-
-        Map<String, String> schemaPropertiesByNormalized = new LinkedHashMap<>();
-        manifest.getOutputSchema().getProperties().keySet()
-                .forEach(propertyName -> schemaPropertiesByNormalized.put(propertyName.toLowerCase(Locale.ROOT), propertyName));
-        Map<String, String> canonicalByNormalized = new LinkedHashMap<>();
         Map<String, com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression> compiled = new LinkedHashMap<>();
         com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpressionParser parser =
                 new com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpressionParser();
         Set<String> directChildren = new LinkedHashSet<>(manifest.getAllowedSkills());
 
-        for (Map.Entry<String, String> entry : contract.getClaims().entrySet())
+        for (Map.Entry<String, YamlSkillManifest.OutputSchemaManifest> entry
+                : manifest.getOutputSchema().getProperties().entrySet())
         {
             String claimName = entry.getKey();
-            if (!StringUtils.hasText(claimName))
+            String evidence = entry.getValue().getEvidence();
+            if (evidence == null)
             {
-                throw invalidSkill(resource, "evidence_contract.claims", "claim names must not be blank");
+                continue;
             }
-            String normalizedClaim = claimName.trim().toLowerCase(Locale.ROOT);
-            String previous = canonicalByNormalized.putIfAbsent(normalizedClaim, claimName);
-            if (previous != null)
+            String fieldPath = "output_schema.properties." + claimName + ".evidence";
+            if (!StringUtils.hasText(evidence))
             {
-                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
-                        "duplicates claim '" + previous + "' when compared case-insensitively");
-            }
-            String canonicalClaim = schemaPropertiesByNormalized.get(claimName.toLowerCase(Locale.ROOT));
-            if (canonicalClaim == null)
-            {
-                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
-                        "references unknown output_schema property '" + claimName + "'");
-            }
-            if (!StringUtils.hasText(entry.getValue()))
-            {
-                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
+                throw invalidSkill(resource, fieldPath,
                         "expression must be a nonblank YAML string");
             }
 
             com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression expression;
             try
             {
-                expression = parser.parse(entry.getValue());
+                expression = parser.parse(evidence);
             }
             catch (com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpressionParser.ParseException ex)
             {
-                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
-                        "invalid evidence expression for claim '" + claimName + "' at column "
-                                + ex.column() + ": " + ex.getMessage());
+                throw invalidSkill(resource, fieldPath,
+                        "invalid evidence expression at column " + ex.column() + ": " + ex.getMessage());
             }
 
             for (String reference : expression.referencedSkills())
@@ -507,12 +484,12 @@ public class YamlSkillCatalog implements InitializingBean
                         .filter(child -> child.equalsIgnoreCase(reference))
                         .toList();
                 String suggestion = caseMatches.size() == 1 ? "; did you mean '" + caseMatches.getFirst() + "'?" : "";
-                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
-                        "invalid evidence expression for claim '" + claimName + "' at column "
-                                + referenceColumn(expression, reference) + ": skill '" + reference
+                throw invalidSkill(resource, fieldPath,
+                        "invalid evidence expression at column " + referenceColumn(expression, reference)
+                                + ": skill '" + reference
                                 + "' is not a direct allowed child of '" + manifest.getName() + "'" + suggestion);
             }
-            compiled.put(canonicalClaim, expression);
+            compiled.put(claimName, expression);
         }
 
         Map<String, String> normalizedClaims = new LinkedHashMap<>();
@@ -541,7 +518,7 @@ public class YamlSkillCatalog implements InitializingBean
     private void validateSchemaNode(Resource resource,
             YamlSkillManifest.OutputSchemaManifest schema,
             String fieldPath,
-            boolean root,
+            SchemaPlacement placement,
             int depth)
     {
         if (schema == null)
@@ -559,7 +536,12 @@ public class YamlSkillCatalog implements InitializingBean
         {
             throw invalidSkill(resource, fieldPath + ".enum", "is only supported for string schemas in the MVP");
         }
-        if (root && !"object".equals(schema.getType()))
+        if (schema.getEvidence() != null && placement != SchemaPlacement.IMMEDIATE_ROOT_PROPERTY)
+        {
+            throw invalidSkill(resource, fieldPath + ".evidence",
+                    "evidence is currently supported only on immediate root output properties");
+        }
+        if (placement == SchemaPlacement.ROOT && !"object".equals(schema.getType()))
         {
             throw invalidSkill(resource, fieldPath + ".type", "root " + fieldPath + " type must be 'object'");
         }
@@ -568,7 +550,7 @@ public class YamlSkillCatalog implements InitializingBean
 
         switch (schema.getType())
         {
-            case "object" -> validateObjectSchema(resource, schema, fieldPath, depth);
+            case "object" -> validateObjectSchema(resource, schema, fieldPath, placement, depth);
             case "array" -> validateArraySchema(resource, schema, fieldPath, depth);
             default -> validateScalarSchema(resource, schema, fieldPath);
         }
@@ -765,6 +747,7 @@ public class YamlSkillCatalog implements InitializingBean
     private void validateObjectSchema(Resource resource,
             YamlSkillManifest.OutputSchemaManifest schema,
             String fieldPath,
+            SchemaPlacement placement,
             int depth)
     {
         if (schema.getAdditionalProperties() == null)
@@ -797,7 +780,11 @@ public class YamlSkillCatalog implements InitializingBean
                         "duplicates property '" + previous + "' when compared case-insensitively");
             }
 
-            validateSchemaNode(resource, entry.getValue(), fieldPath + ".properties." + propertyName, false, depth + 1);
+            SchemaPlacement childPlacement = placement == SchemaPlacement.ROOT
+                    ? SchemaPlacement.IMMEDIATE_ROOT_PROPERTY
+                    : SchemaPlacement.NESTED;
+            validateSchemaNode(resource, entry.getValue(), fieldPath + ".properties." + propertyName,
+                    childPlacement, depth + 1);
         }
 
         for (String requiredField : schema.getRequired())
@@ -836,7 +823,7 @@ public class YamlSkillCatalog implements InitializingBean
             throw invalidSkill(resource, fieldPath + ".items", "required block is missing for array schemas");
         }
 
-        validateSchemaNode(resource, schema.getItems(), fieldPath + ".items", false, depth + 1);
+        validateSchemaNode(resource, schema.getItems(), fieldPath + ".items", SchemaPlacement.NESTED, depth + 1);
 
         if ("array".equals(schema.getItems().getType()))
         {
@@ -862,6 +849,13 @@ public class YamlSkillCatalog implements InitializingBean
         {
             throw invalidSkill(resource, fieldPath + ".items", "is only supported for array schemas");
         }
+    }
+
+    private enum SchemaPlacement
+    {
+        ROOT,
+        IMMEDIATE_ROOT_PROPERTY,
+        NESTED
     }
 
     private void warnOnSchemaComplexity(Resource resource,

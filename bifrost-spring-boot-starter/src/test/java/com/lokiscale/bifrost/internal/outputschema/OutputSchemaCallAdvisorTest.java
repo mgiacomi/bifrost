@@ -51,7 +51,9 @@ class OutputSchemaCallAdvisorTest {
         assertThat(text(response)).isEqualTo("{\"vendorName\":\"Acme\",\"totalAmount\":42.5}");
         assertThat(chain.requests.getFirst().prompt().getSystemMessage().getText())
                 .contains("Return JSON only.")
-                .contains("vendorName");
+                .contains("vendorName")
+                .doesNotContain("invoiceParser")
+                .doesNotContain("\"evidence\"");
         assertThat((OutputSchemaOutcome) response.context().get(OutputSchemaCallAdvisor.CONTEXT_KEY))
                 .extracting(OutputSchemaOutcome::status, OutputSchemaOutcome::retryCount)
                 .containsExactly(OutputSchemaOutcomeStatus.PASSED, 0);
@@ -91,7 +93,7 @@ class OutputSchemaCallAdvisorTest {
     void retriesWithCanonicalIssuesAfterSchemaMismatch() {
         OutputSchemaCallAdvisor advisor = advisor(1);
         RecordingChain chain = new RecordingChain(List.of(
-                "{\"companyName\":\"Acme\",\"totalAmount\":\"42.5\"}",
+                "{\"companyName\":\"Acme\",\"totalAmount\":\"42.5\",\"evidence\":\"invoiceParser\"}",
                 "{\"vendorName\":\"Acme\",\"totalAmount\":42.5}"));
 
         ChatClientResponse response = advisor.adviseCall(request("Extract invoice"), chain);
@@ -100,6 +102,7 @@ class OutputSchemaCallAdvisorTest {
         assertThat(chain.requests.get(1).prompt().getSystemMessage().getText())
                 .contains("vendorName: missing required field 'vendorName'")
                 .contains("companyName: unknown field 'companyName'")
+                .contains("evidence: unknown field 'evidence'")
                 .contains("totalAmount: should be a number");
     }
 
@@ -314,6 +317,7 @@ class OutputSchemaCallAdvisorTest {
 
         YamlSkillManifest.OutputSchemaManifest vendorName = new YamlSkillManifest.OutputSchemaManifest();
         vendorName.setType("string");
+        vendorName.setEvidence("invoiceParser");
 
         YamlSkillManifest.OutputSchemaManifest totalAmount = new YamlSkillManifest.OutputSchemaManifest();
         totalAmount.setType("number");

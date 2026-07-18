@@ -1,0 +1,8 @@
+name: evidenceContractMalformedExpressionSkill
+description: Invalid malformed evidence expression
+model: gpt-5
+allowed_skills: [invoiceParser]
+output_schema:
+  type: object
+  properties:
+    vendorName: { type: string, evidence: "invoiceParser and" }

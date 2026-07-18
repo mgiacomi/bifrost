@@ -29,11 +29,11 @@ class SampleApplicationTests {
 
     @Test
     void loadsAllMigratedRootEvidenceContracts() throws IOException {
-        assertManifestContains("skills/basics/duplicate_invoice_checker.yml", "isDuplicate: invoiceParser and expenseLookup");
-        assertManifestContains("skills/incidents/handle_incident.yml", "likelyCause: classifyIncident and (investigateNetwork or investigateApp)");
-        assertManifestContains("skills/insurance/process_claim.yml", "disposition: assessCoverage and fraudScreen and recommendDisposition");
-        assertManifestContains("skills/support/resolve_support_case.yml", "disposition: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply");
-        assertManifestContains("skills/travel/plan_trip.yml", "rationale: understandPreferences and planTransport and planStay and assembleItinerary");
+        assertManifestContains("skills/basics/duplicate_invoice_checker.yml", "isDuplicate", "invoiceParser and expenseLookup");
+        assertManifestContains("skills/incidents/handle_incident.yml", "likelyCause", "classifyIncident and (investigateNetwork or investigateApp)");
+        assertManifestContains("skills/insurance/process_claim.yml", "disposition", "assessCoverage and fraudScreen and recommendDisposition");
+        assertManifestContains("skills/support/resolve_support_case.yml", "disposition", "understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply");
+        assertManifestContains("skills/travel/plan_trip.yml", "rationale", "understandPreferences and planTransport and planStay and assembleItinerary");
     }
 
     @Test
@@ -48,7 +48,9 @@ class SampleApplicationTests {
                 .contains("Hardware");
     }
 
-    private static void assertManifestContains(String path, String expression) throws IOException {
-        assertThat(new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8)).contains(expression);
+    private static void assertManifestContains(String path, String property, String expression) throws IOException {
+        assertThat(new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8))
+                .contains("    " + property + ":")
+                .contains("      evidence: " + expression);
     }
 }

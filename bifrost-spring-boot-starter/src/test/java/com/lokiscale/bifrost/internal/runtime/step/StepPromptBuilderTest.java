@@ -453,6 +453,8 @@ class StepPromptBuilderTest {
         assertThat(prompt).contains("\"reasoning\": \"<string>\"");
         assertThat(prompt).contains("Required top-level fields: isDuplicate, vendorName, totalAmount, invoiceDate, reasoning");
         assertThat(prompt).contains("Do not add fields that are not in this schema.");
+        assertThat(prompt).doesNotContain("invoiceParser and expenseLookup");
+        assertThat(prompt).doesNotContain("\"evidence\"");
     }
 
     @Test
@@ -480,6 +482,7 @@ class StepPromptBuilderTest {
 
         YamlSkillManifest.OutputSchemaManifest isDuplicate = new YamlSkillManifest.OutputSchemaManifest();
         isDuplicate.setType("boolean");
+        isDuplicate.setEvidence("invoiceParser and expenseLookup");
         YamlSkillManifest.OutputSchemaManifest vendorName = new YamlSkillManifest.OutputSchemaManifest();
         vendorName.setType("string");
         YamlSkillManifest.OutputSchemaManifest totalAmount = new YamlSkillManifest.OutputSchemaManifest();

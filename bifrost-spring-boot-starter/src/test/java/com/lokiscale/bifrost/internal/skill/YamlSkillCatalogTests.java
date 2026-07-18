@@ -201,8 +201,7 @@ class YamlSkillCatalogTests {
                 new Case("mapped-with-max-steps-text.yaml", "mappedWithStepsText", "max_steps", "no model executes", "remove the field"),
                 new Case("mapped-with-allowed-skills-empty.yaml", "mappedWithAllowedEmpty", "allowed_skills", "LLM parent", "declare the mapped child"),
                 new Case("mapped-with-linter-null.yaml", "mappedWithLinterNull", "linter", "model-output validation", "remove the field"),
-                new Case("mapped-with-output-schema-retries-zero.yaml", "mappedWithRetriesZero", "output_schema_max_retries", "model-output validation", "remove the field"),
-                new Case("mapped-with-evidence-contract-null.yaml", "mappedWithEvidenceNull", "evidence_contract", "invoking LLM parent", "declare an evidence_contract"))
+                new Case("mapped-with-output-schema-retries-zero.yaml", "mappedWithRetriesZero", "output_schema_max_retries", "model-output validation", "remove the field"))
                 .stream()
                 .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
                         .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/" + testCase.filename())
@@ -243,8 +242,7 @@ class YamlSkillCatalogTests {
                         "max_steps",
                         "allowed_skills",
                         "linter",
-                        "output_schema_max_retries",
-                        "evidence_contract");
+                        "output_schema_max_retries");
     }
 
     @Test
@@ -664,47 +662,14 @@ class YamlSkillCatalogTests {
     }
 
     @Test
-    void failsStartupWhenEvidenceContractReferencesUnknownClaim() {
-        contextRunner
-                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-unknown-claim-skill.yaml")
-                .run(context -> assertThat(context.getStartupFailure())
-                        .isNotNull()
-                        .hasMessageContaining("evidence-contract-unknown-claim-skill.yaml")
-                        .hasMessageContaining("field 'evidence_contract.claims.isDuplicate'")
-                        .hasMessageContaining("unknown output_schema property 'isDuplicate'"));
-    }
-
-    @Test
     void failsStartupWhenEvidenceContractContainsBlankExpression() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-blank-evidence-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("evidence-contract-blank-evidence-skill.yaml")
-                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'")
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.evidence'")
                         .hasMessageContaining("expression must be a nonblank YAML string"));
-    }
-
-    @Test
-    void failsStartupWhenEvidenceContractClaimKeysDifferOnlyByCase() {
-        contextRunner
-                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-duplicate-claim-case-skill.yaml")
-                .run(context -> assertThat(context.getStartupFailure())
-                        .isNotNull()
-                        .hasMessageContaining("evidence-contract-duplicate-claim-case-skill.yaml")
-                        .hasMessageContaining("field 'evidence_contract.claims.VendorName'")
-                        .hasMessageContaining("duplicates claim 'vendorName'"));
-    }
-
-    @Test
-    void failsStartupWhenEvidenceContractUsesObsoleteToolEvidence() {
-        contextRunner
-                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-duplicate-tool-case-skill.yaml")
-                .run(context -> assertThat(context.getStartupFailure())
-                        .isNotNull()
-                        .hasMessageContaining("evidence-contract-duplicate-tool-case-skill.yaml")
-                        .hasMessageContaining("field 'evidence_contract.tool_evidence'")
-                        .hasMessageContaining("unknown field"));
     }
 
     @Test
@@ -728,7 +693,7 @@ class YamlSkillCatalogTests {
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("evidence-contract-list-expression-skill.yaml")
-                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'"));
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.evidence'"));
     }
 
     @Test
@@ -737,7 +702,7 @@ class YamlSkillCatalogTests {
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-wrong-case-child-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
-                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'")
+                        .hasMessageContaining("field 'output_schema.properties.vendorName.evidence'")
                         .hasMessageContaining("column 1")
                         .hasMessageContaining("did you mean 'invoiceParser'?"));
     }

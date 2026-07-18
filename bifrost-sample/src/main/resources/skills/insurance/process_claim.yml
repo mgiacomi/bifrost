@@ -28,15 +28,6 @@ prompt: |
   claimedAmount precedence when forwarding to coverage:
   (1) root claimedAmount if present, else (2) extract claimedAmount, else (3) omit
   (scenario defaults are injected only by GET /claims/process-scenario, not by this skill).
-evidence_contract:
-  claims:
-    disposition: assessCoverage and fraudScreen and recommendDisposition
-    payableAmount: assessCoverage
-    coverageSummary: assessCoverage
-    fraudRisk: fraudScreen
-    matchedExclusions: assessCoverage
-    rationale: extractClaimFacts and assessCoverage and fraudScreen and recommendDisposition
-    evidenceNotes: extractClaimFacts and assessCoverage and fraudScreen
 input_schema:
   type: object
   properties:
@@ -59,22 +50,29 @@ output_schema:
   properties:
     disposition:
       type: string
+      evidence: assessCoverage and fraudScreen and recommendDisposition
       enum: [pay, partial_pay, deny, refer_human, refer_siu]
     payableAmount:
       type: number
+      evidence: assessCoverage
       description: Recommended payable when paying/partial; may be omitted for deny/refer.
     coverageSummary:
       type: string
+      evidence: assessCoverage
     fraudRisk:
       type: string
+      evidence: fraudScreen
       enum: [low, medium, high]
     matchedExclusions:
       type: array
+      evidence: assessCoverage
       items: { type: string }
     rationale:
       type: string
+      evidence: extractClaimFacts and assessCoverage and fraudScreen and recommendDisposition
     evidenceNotes:
       type: string
+      evidence: extractClaimFacts and assessCoverage and fraudScreen
   required: [disposition, coverageSummary, fraudRisk, matchedExclusions, rationale, evidenceNotes]
   additionalProperties: false
 output_schema_max_retries: 2

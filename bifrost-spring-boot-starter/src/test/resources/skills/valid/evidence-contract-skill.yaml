@@ -8,13 +8,11 @@ output_schema:
   properties:
     vendorName:
       type: string
+      evidence: invoiceParser
     isDuplicate:
       type: boolean
+      evidence: invoiceParser and expenseLookup
   required:
     - vendorName
     - isDuplicate
 output_schema_max_retries: 1
-evidence_contract:
-  claims:
-    vendorName: invoiceParser
-    isDuplicate: invoiceParser and expenseLookup

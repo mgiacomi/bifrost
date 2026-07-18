@@ -112,16 +112,14 @@ class SkillAdvisorResolverTests {
             schema.setType("object");
             YamlSkillManifest.OutputSchemaManifest vendorName = new YamlSkillManifest.OutputSchemaManifest();
             vendorName.setType("string");
+            if (withEvidenceContract) {
+                vendorName.setEvidence("invoiceParser");
+            }
             schema.setProperties(java.util.Map.of("vendorName", vendorName));
             schema.setRequired(java.util.List.of("vendorName"));
             schema.setAdditionalProperties(false);
             manifest.setOutputSchema(schema);
             manifest.setOutputSchemaMaxRetries(2);
-            if (withEvidenceContract) {
-                YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-                contract.setClaims(java.util.Map.of("vendorName", "invoiceParser"));
-                manifest.setEvidenceContract(contract);
-            }
         }
         if (withLinter) {
             YamlSkillManifest.RegexManifest regex = new YamlSkillManifest.RegexManifest();
@@ -137,7 +135,10 @@ class SkillAdvisorResolverTests {
                 new ByteArrayResource(new byte[0]),
                 manifest,
                 new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium"),
-                EvidenceContract.fromManifest(manifest.getEvidenceContract(), manifest.getOutputSchema()));
+                withEvidenceContract
+                        ? com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(
+                                java.util.Map.of("vendorName", "invoiceParser"))
+                        : EvidenceContract.empty());
     }
 
     private static ChatClientRequest request(String text) {

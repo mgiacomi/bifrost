@@ -1,6 +1,5 @@
 name: mappedWithMultipleInvalid
 description: Invalid mapped fields in non-validation order.
-evidence_contract: null
 output_schema:
   type: not-a-real-type
 planning_mode: false

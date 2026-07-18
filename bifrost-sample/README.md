@@ -10,7 +10,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 | --- | --- |
 | Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves, support CRM leaves, travel catalog leaves |
 | Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance/support/travel workers use schemas + retries only (no linter) |
-| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + OR expressions), `planTrip` (3-level light evidence + multi-option catalogs) |
+| Planning skill (`planning_mode: true`) with `allowed_skills` + property-level `evidence` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + OR expressions), `planTrip` (3-level light evidence + multi-option catalogs) |
 | Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen`; `handleBilling` / `handleTechnical` / `handleHowTo`; `planTransport` / `planStay` |
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
 | Named connections and model aliases (`ollama` + `openai` + OpenRouter) | `application.yml` → `bifrost.connections` / `bifrost.models` |
@@ -250,7 +250,7 @@ handleIncident                          [L1 planning YAML, model qwen3-35b]
 | Nested `planning_mode` | Root + `investigateNetwork` / `investigateApp` each run the step-loop engine |
 | `allowed_skills` governance | Each planner only sees its specialist / probe set |
 | Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping` only); Java owns contracts |
-| Light `evidence_contract` | Root only; `investigateNetwork or investigateApp` preserves selective branches |
+| Light property-level evidence | Root output properties only; `investigateNetwork or investigateApp` preserves selective branches |
 | Nested mission isolation | Parent plan/successful-skill state snapshotted while a child planner runs (visible in journal frames) |
 | Planner vs worker models | Shared OpenRouter connection; `qwen3-35b` planners, `gpt-4o-mini` workers |
 
@@ -318,7 +318,7 @@ Root `max_steps: 10`; mid-level `max_steps: 6`. Session mission timeout is `6000
 
 **Disclaimer:** This sample is a **demo only**. It is **not** real insurance advice, not actuarially correct, and **not** legally binding. Humans remain responsible for final claim decisions.
 
-Enterprise / compliance gallery piece: evidence-backed risk decisioning under HTN structure (stronger root `evidence_contract` than incident).
+Enterprise / compliance gallery piece: evidence-backed risk decisioning under HTN structure (stronger root property annotations than incident).
 
 ```
 processClaim                               [L1 planning YAML, model qwen3-35b]
@@ -339,7 +339,7 @@ processClaim                               [L1 planning YAML, model qwen3-35b]
 | Nested `planning_mode` | Root + `assessCoverage` / `fraudScreen` each run the step-loop engine |
 | `allowed_skills` governance | Root sees only four L2 specialists; mid-level desks see only their leaves |
 | Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping`); Java owns contracts |
-| **Strong** root `evidence_contract` | Plan-requires extract + coverage + fraud + recommend (all four specialists) |
+| **Strong** root-property evidence | Plan-requires extract + coverage + fraud + recommend (all four specialists) |
 | Nested mission isolation | Parent plan/successful-skill state snapshotted while a child planner runs |
 | Planner vs worker models | Same OpenRouter aliases as incident (`qwen3-35b` / `gpt-4o-mini`) |
 | Adjudication writer | `recommendDisposition` synthesizes full root-shaped fields; root **copies** them |
@@ -369,7 +369,7 @@ Fraud specialist is **plan-required** (clean claims still run SIU-lite and retur
 - Nested YAML missions **snapshot/restore** parent successful-skill state; successful leaf names do **not** bubble to the parent set.
 - Parent expressions reference **L2 specialists only** (`extractClaimFacts`, `assessCoverage`, `fraudScreen`, `recommendDisposition`) — never L3 leaves (`getPolicy`, `anomalyScore`, …).
 - Successful plans must include **all four** specialists. Fraud is not skippable.
-- Mid-level planners have **no** `evidence_contract` (structured digests only).
+- Mid-level planners have **no evidence-annotated output properties** (structured digests only).
 
 #### Payout formula (deterministic Java)
 
@@ -496,7 +496,7 @@ Vs incident: multi-label intents + customer-facing draft (not just ops status). 
 - Parent expressions reference **L2 children only** (`understandIntent`, `handleBilling`, `handleTechnical`, `handleHowTo`, `composeReply`) — never L3 CRM methods or `checkRefundPolicy`.
 - The direct OR expression needs **one successful `handle*` child**. Prompts still require every branch the intents need (mixed emails should run billing **and** technical).
 - Successful plans are expected to cover: `understandIntent` + ≥1 of `handleBilling` / `handleTechnical` / `handleHowTo` + `composeReply`.
-- Mid-level planners have **no** `evidence_contract` (structured digests only).
+- Mid-level planners have **no evidence-annotated output properties** (structured digests only).
 
 #### Dual refund path
 
@@ -607,7 +607,7 @@ planTrip                                   [L1 planning YAML, model qwen3-35b]
 - Nested YAML missions **snapshot/restore** parent successful-skill state; successful leaf names do **not** bubble to the parent set.
 - Parent expressions reference **L2 children only** (`understandPreferences`, `planTransport`, `planStay`, `assembleItinerary`) — never L3 catalog methods.
 - Successful plans must cover the direct child names required by all declared expressions: understand + transport + stay + assemble.
-- Mid-level planners have **no** `evidence_contract` (structured digests only).
+- Mid-level planners have **no evidence-annotated output properties** (structured digests only).
 - Teaching point: evidence is useful even on a “fun” sample — not only ops/compliance.
 
 #### Scenario plumbing

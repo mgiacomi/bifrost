@@ -28,14 +28,6 @@ prompt: |
   Do not invent telemetry. Do not call leaf probes directly — only the specialists listed
   in allowed_skills. Either investigation specialist can satisfy investigation evidence;
   you do not need both branches for a successful plan.
-evidence_contract:
-  claims:
-    severity: classifyIncident
-    category: classifyIncident
-    likelyCause: classifyIncident and (investigateNetwork or investigateApp)
-    evidenceSummary: investigateNetwork or investigateApp
-    recommendedAction: investigateNetwork or investigateApp
-    userMessage: draftIncidentResponse
 input_schema:
   type: object
   properties:
@@ -52,15 +44,25 @@ output_schema:
   properties:
     severity:
       type: string
+      evidence: classifyIncident
       description: SEV1 (highest) through SEV4 (lowest)
       enum: [SEV1, SEV2, SEV3, SEV4]
     category:
       type: string
+      evidence: classifyIncident
       enum: [network, application, mixed, unknown]
-    likelyCause: { type: string }
-    evidenceSummary: { type: string }
-    recommendedAction: { type: string }
-    userMessage: { type: string }
+    likelyCause:
+      type: string
+      evidence: classifyIncident and (investigateNetwork or investigateApp)
+    evidenceSummary:
+      type: string
+      evidence: investigateNetwork or investigateApp
+    recommendedAction:
+      type: string
+      evidence: investigateNetwork or investigateApp
+    userMessage:
+      type: string
+      evidence: draftIncidentResponse
   required: [severity, category, likelyCause, evidenceSummary, recommendedAction, userMessage]
   additionalProperties: false
 output_schema_max_retries: 2

@@ -5,7 +5,4 @@ allowed_skills: [invoiceParser]
 output_schema:
   type: object
   properties:
-    vendorName: { type: string }
-evidence_contract:
-  claims:
-    vendorName: null
+    vendorName: { type: string, evidence: null }

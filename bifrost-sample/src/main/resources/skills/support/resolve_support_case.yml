@@ -38,14 +38,6 @@ prompt: |
   Do not invent CRM data, refunds, or ticket ids. Do not call L3 leaves directly — only the
   specialists listed in allowed_skills. The minimum evidence expression accepts any one handle* specialist;
   still run every branch the intents require.
-evidence_contract:
-  claims:
-    intents: understandIntent
-    disposition: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply
-    refundRecommended: handleBilling or handleTechnical or handleHowTo
-    factsSummary: handleBilling or handleTechnical or handleHowTo
-    draftReply: composeReply
-    internalNotes: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply
 input_schema:
   type: object
   properties:
@@ -65,18 +57,28 @@ output_schema:
   properties:
     intents:
       type: array
+      evidence: understandIntent
       items:
         type: string
         enum: [billing, technical, how_to, other]
     disposition:
       type: string
+      evidence: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply
       enum: [resolved_draft, refund_offered, escalated_bug, needs_human, how_to_answered]
-    refundRecommended: { type: boolean }
+    refundRecommended:
+      type: boolean
+      evidence: handleBilling or handleTechnical or handleHowTo
     refundAmount: { type: number, nullable: true }
     bugTicketId: { type: string, nullable: true }
-    factsSummary: { type: string }
-    draftReply: { type: string }
-    internalNotes: { type: string }
+    factsSummary:
+      type: string
+      evidence: handleBilling or handleTechnical or handleHowTo
+    draftReply:
+      type: string
+      evidence: composeReply
+    internalNotes:
+      type: string
+      evidence: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply
   required:
     - intents
     - disposition

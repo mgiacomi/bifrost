@@ -1,5 +1,5 @@
-name: evidenceHashNameSkill
-description: Evidence producer using an exact validated public skill name
+name: outputSchemaPropertyEvidenceSkill
+description: Skill with evidence colocated on an output property
 model: gpt-5
 allowed_skills: [reviewSkill]
 output_schema:
@@ -9,3 +9,4 @@ output_schema:
       type: string
       evidence: reviewSkill
   required: [result]
+  additionalProperties: false

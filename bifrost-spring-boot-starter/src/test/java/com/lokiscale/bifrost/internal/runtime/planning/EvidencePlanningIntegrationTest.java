@@ -117,19 +117,17 @@ class EvidencePlanningIntegrationTest
                 "userMessage", scalar("string")));
         schema.setRequired(List.of("severity", "userMessage"));
         manifest.setOutputSchema(schema);
-        YamlSkillManifest.EvidenceContractManifest evidence = new YamlSkillManifest.EvidenceContractManifest();
-        evidence.setClaims(Map.of(
+        Map<String, String> evidence = Map.of(
                 "severity", "classifyIncident",
                 "likelyCause", "classifyIncident and (investigateNetwork or investigateApp)",
-                "userMessage", "draftIncidentResponse"));
-        manifest.setEvidenceContract(evidence);
+                "userMessage", "draftIncidentResponse");
         EffectiveSkillExecutionConfiguration configuration = new EffectiveSkillExecutionConfiguration(
                 "gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
         return new YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),
                 manifest,
                 configuration,
-                EvidenceContract.fromManifest(evidence, schema));
+                com.lokiscale.bifrost.internal.runtime.evidence.TestEvidenceContracts.compiled(evidence));
     }
 
     private static YamlSkillManifest.OutputSchemaManifest scalar(String type)

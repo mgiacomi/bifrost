@@ -139,7 +139,7 @@ When an LLM-backed YAML skill invokes another LLM-backed YAML skill:
 
 - the child receives the arguments supplied for the child contract;
 - the child opens its own mission frame inside the current session;
-- the child uses its own model, prompt, allowed skills, plan, and evidence contract;
+- the child uses its own model, prompt, allowed skills, plan, and property-level output evidence requirements;
 - the parent's plan and successful-direct-skill set are saved and restored around the child mission;
 - the parent observes the child capability result, not the child's internal tool surface or evidence ledger.
 
@@ -173,7 +173,7 @@ A planner SHOULD have:
 - a bounded `max_steps` appropriate to the mission;
 - a deliberate `allowed_skills` surface;
 - explicit input and output contracts when callers depend on structured behavior;
-- evidence requirements only for claims that need deterministic supportability enforcement.
+- property-level `evidence` requirements only on immediate root output claims that need deterministic supportability enforcement.
 
 A direct specialist SHOULD have:
 
