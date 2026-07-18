@@ -310,7 +310,7 @@ class StepLoopMissionExecutionEngineTest {
                 {"stepAction":"FINAL_RESPONSE","finalResponse":{"result":"Finished"}}
                 """);
         BifrostSession session = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("step-loop-evidence", 3);
-        session.addProducedEvidenceTypes(java.util.Set.of("parsed_invoice"));
+        session.addSuccessfulDirectSkill("invoiceParser");
 
         try (ExecutorService missionExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             StepLoopMissionExecutionEngine engine = engine(
@@ -333,7 +333,21 @@ class StepLoopMissionExecutionEngineTest {
         assertThat(session.getLastOutputSchemaOutcome().orElseThrow().attempt()).isEqualTo(1);
         assertThat(session.getLastOutputSchemaOutcome().orElseThrow().status()).isEqualTo(OutputSchemaOutcomeStatus.PASSED);
         assertThat(chatClient.systemMessagesSeen()).hasSize(2);
-        assertThat(chatClient.systemMessagesSeen().get(1)).contains("unsupported by gathered evidence");
+        assertThat(chatClient.systemMessagesSeen().get(1))
+                .contains("unsupported by gathered evidence")
+                .contains("requires successful completion of 'expenseLookup'")
+                .contains("successfully completed direct skills: [invoiceParser]");
+        List<TraceRecord> evidenceRecords = new ArrayList<>();
+        session.readTraceRecords(evidenceRecords::add);
+        assertThat(evidenceRecords).filteredOn(record -> record.recordType() == TraceRecordType.EVIDENCE_VALIDATION_FAILED)
+                .singleElement()
+                .satisfies(record ->
+                {
+                    assertThat(record.data().path("requiredExpressions").path("reasoning").asText()).isEqualTo("expenseLookup");
+                    assertThat(record.data().path("satisfiedSkills")).hasSize(1);
+                    assertThat(record.data().path("issues").get(0).path("unsatisfiedRequirements")).hasSize(1);
+                    assertThat(record.data().has("missingEvidence")).isFalse();
+                });
     }
 
     @Test
@@ -1148,11 +1162,8 @@ class StepLoopMissionExecutionEngineTest {
         manifest.setOutputSchema(schema);
         YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
         contract.setClaims(Map.of(
-                "result", List.of("parsed_invoice"),
-                "reasoning", List.of("expense_match_search")));
-        contract.setToolEvidence(Map.of(
-                "invoiceParser", List.of("parsed_invoice"),
-                "expenseLookup", List.of("expense_match_search")));
+                "result", "invoiceParser",
+                "reasoning", "expenseLookup"));
         manifest.setEvidenceContract(contract);
         return new YamlSkillDefinition(
                 new ByteArrayResource(new byte[0]),
@@ -1314,9 +1325,8 @@ class StepLoopMissionExecutionEngineTest {
         public Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                          String taskId,
                                                          String capabilityName,
-                                                         Object result,
-                                                         EvidenceContract evidenceContract) {
-            return delegate.markToolCompleted(session, taskId, capabilityName, result, evidenceContract);
+                                                         Object result) {
+            return delegate.markToolCompleted(session, taskId, capabilityName, result);
         }
 
         @Override

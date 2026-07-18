@@ -1,6 +1,7 @@
 name: evidenceContractUnknownClaimSkill
 description: Invalid evidence contract unknown claim
 model: gpt-5
+allowed_skills: [invoiceParser]
 output_schema:
   type: object
   additionalProperties: false
@@ -9,6 +10,4 @@ output_schema:
       type: string
 evidence_contract:
   claims:
-    isDuplicate: [parsed_invoice]
-  tool_evidence:
-    invoiceParser: [parsed_invoice]
+    isDuplicate: invoiceParser

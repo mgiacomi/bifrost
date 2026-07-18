@@ -116,8 +116,8 @@ Example:
 
 ```markdown
 - `EvidenceCoverageValidator#validatePlanCoverage` defines how planned
-  tool bindings cover required evidence types.
-- `PlanningServiceTest#acceptsContractBackedPlanWhenTaskBindingsCoverAllRequiredEvidence`
+  exact planned child names satisfy required evidence expressions.
+- `EvidencePlanningIntegrationTest#acceptsEitherInvestigatorWithoutRequiringBothAndRendersTheCanonicalExpression`
   protects the successful planning case.
 ```
 

@@ -61,7 +61,7 @@ public final class EvidenceContractCallAdvisor implements CallAdvisor
             EvidenceCoverageResult result = validator.validate(
                     candidate,
                     contract,
-                    BifrostSession.getCurrentSession().getProducedEvidenceTypes());
+                    BifrostSession.getCurrentSession().getSuccessfulDirectSkills());
 
             if (result.complete())
             {
@@ -111,8 +111,8 @@ public final class EvidenceContractCallAdvisor implements CallAdvisor
     {
         StringBuilder hint = new StringBuilder("""
                 Evidence validation failed for the previous response.
-                Do NOT call any tools again. Use only evidence already gathered from completed tool calls.
-                Return ONLY corrected raw JSON that removes unsupported claims or limits them to supported evidence.
+                Do NOT call any tools again. Use only results already gathered from successfully completed direct child skills.
+                Return ONLY corrected raw JSON that removes unsupported optional claims or limits them to supported successful skills.
                 Issues:
                 """);
 

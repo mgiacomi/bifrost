@@ -8,7 +8,6 @@ import com.lokiscale.bifrost.internal.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.internal.core.TraceFrameType;
 import com.lokiscale.bifrost.internal.core.ToolTraceContext;
 import com.lokiscale.bifrost.internal.core.TraceFailureMetadata;
-import com.lokiscale.bifrost.internal.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.internal.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.internal.runtime.usage.NoOpSessionUsageService;
@@ -141,11 +140,11 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory
             Object result = capabilityExecutionRouter.execute(capability, safeArguments, session, authentication);
             if (linkedTaskId != null && boundTaskId == null)
             {
-                planningService.markToolCompleted(session, linkedTaskId, capability.name(), result, definition.evidenceContract());
+                planningService.markToolCompleted(session, linkedTaskId, capability.name(), result);
             }
             else if (linkedTaskId == null)
             {
-                recordEvidenceIfProduced(session, definition.evidenceContract(), capability.name(), linkedTaskId, linkedTaskId == null);
+                executionStateService.recordSuccessfulSkill(session, capability.name(), null, true);
             }
 
             usageMetricsRecorder.recordToolInvocation(currentSkillName, capability.name(), "success");
@@ -244,23 +243,4 @@ public class DefaultToolCallbackFactory implements ToolCallbackFactory
         }
     }
 
-    private void recordEvidenceIfProduced(BifrostSession session,
-            EvidenceContract evidenceContract,
-            String capabilityName,
-            @Nullable String linkedTaskId,
-            boolean unplanned)
-    {
-        if (evidenceContract == null || evidenceContract.isEmpty())
-        {
-            return;
-        }
-
-        Set<String> evidenceTypes = evidenceContract.evidenceProducedByTool(capabilityName);
-        if (evidenceTypes.isEmpty())
-        {
-            return;
-        }
-
-        executionStateService.recordProducedEvidence(session, capabilityName, linkedTaskId, unplanned, evidenceTypes);
-    }
 }

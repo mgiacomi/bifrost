@@ -3,8 +3,14 @@ package com.lokiscale.bifrost.internal.skill;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -369,29 +375,30 @@ public class YamlSkillManifest
     @JsonIgnoreProperties(ignoreUnknown = false)
     public static class EvidenceContractManifest
     {
-        private Map<String, List<String>> claims = Map.of();
+        @JsonDeserialize(contentUsing = StrictStringScalarDeserializer.class)
+        private Map<String, String> claims = Map.of();
 
-        @JsonProperty("tool_evidence")
-        private Map<String, List<String>> toolEvidence = Map.of();
-
-        public Map<String, List<String>> getClaims()
+        public Map<String, String> getClaims()
         {
             return claims;
         }
 
-        public void setClaims(Map<String, List<String>> claims)
+        public void setClaims(Map<String, String> claims)
         {
-            this.claims = normalizeStringListMap(claims);
+            this.claims = claims == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(claims));
         }
+    }
 
-        public Map<String, List<String>> getToolEvidence()
+    public static final class StrictStringScalarDeserializer extends JsonDeserializer<String>
+    {
+        @Override
+        public String deserialize(JsonParser parser, DeserializationContext context) throws IOException
         {
-            return toolEvidence;
-        }
-
-        public void setToolEvidence(Map<String, List<String>> toolEvidence)
-        {
-            this.toolEvidence = normalizeStringListMap(toolEvidence);
+            if (parser.currentToken() != JsonToken.VALUE_STRING)
+            {
+                return (String) context.handleUnexpectedToken(String.class, parser);
+            }
+            return parser.getText();
         }
     }
 

@@ -30,18 +30,13 @@ prompt: |
   (scenario defaults are injected only by GET /claims/process-scenario, not by this skill).
 evidence_contract:
   claims:
-    disposition: [coverage_assessment, fraud_assessment, disposition_recommendation]
-    payableAmount: [coverage_assessment]
-    coverageSummary: [coverage_assessment]
-    fraudRisk: [fraud_assessment]
-    matchedExclusions: [coverage_assessment]
-    rationale: [claim_facts, coverage_assessment, fraud_assessment, disposition_recommendation]
-    evidenceNotes: [claim_facts, coverage_assessment, fraud_assessment]
-  tool_evidence:
-    extractClaimFacts: [claim_facts]
-    assessCoverage: [coverage_assessment]
-    fraudScreen: [fraud_assessment]
-    recommendDisposition: [disposition_recommendation]
+    disposition: assessCoverage and fraudScreen and recommendDisposition
+    payableAmount: assessCoverage
+    coverageSummary: assessCoverage
+    fraudRisk: fraudScreen
+    matchedExclusions: assessCoverage
+    rationale: extractClaimFacts and assessCoverage and fraudScreen and recommendDisposition
+    evidenceNotes: extractClaimFacts and assessCoverage and fraudScreen
 input_schema:
   type: object
   properties:

@@ -1,0 +1,11 @@
+name: evidenceContractAmbiguousCaseChildSkill
+description: Invalid ambiguous-case evidence child
+model: gpt-5
+allowed_skills: [invoiceParser, InvoiceParser]
+output_schema:
+  type: object
+  properties:
+    vendorName: { type: string }
+evidence_contract:
+  claims:
+    vendorName: INVOICEPARSER

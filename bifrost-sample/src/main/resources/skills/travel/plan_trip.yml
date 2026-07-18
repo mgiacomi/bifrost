@@ -26,17 +26,12 @@ prompt: |
   For underspecified requests, prefer non-empty openQuestions over inventing airports.
 evidence_contract:
   claims:
-    summary: [itinerary_draft]
-    transport: [transport_digest]
-    hotel: [stay_digest]
-    estimatedTotal: [itinerary_draft]
-    rationale: [trip_preferences, transport_digest, stay_digest, itinerary_draft]
-    openQuestions: [trip_preferences, itinerary_draft]
-  tool_evidence:
-    understandPreferences: [trip_preferences]
-    planTransport: [transport_digest]
-    planStay: [stay_digest]
-    assembleItinerary: [itinerary_draft]
+    summary: assembleItinerary
+    transport: planTransport
+    hotel: planStay
+    estimatedTotal: assembleItinerary
+    rationale: understandPreferences and planTransport and planStay and assembleItinerary
+    openQuestions: understandPreferences and assembleItinerary
 input_schema:
   type: object
   properties:

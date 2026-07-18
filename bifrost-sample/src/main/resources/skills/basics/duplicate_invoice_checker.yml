@@ -10,14 +10,11 @@ max_steps: 10
 allowed_skills: [invoiceParser, expenseLookup]
 evidence_contract:
   claims:
-    vendorName: [parsed_invoice]
-    invoiceDate: [parsed_invoice]
-    totalAmount: [parsed_invoice]
-    isDuplicate: [parsed_invoice, expense_match_search]
-    reasoning: [parsed_invoice, expense_match_search]
-  tool_evidence:
-    invoiceParser: [parsed_invoice]
-    expenseLookup: [expense_match_search]
+    vendorName: invoiceParser
+    invoiceDate: invoiceParser
+    totalAmount: invoiceParser
+    isDuplicate: invoiceParser and expenseLookup
+    reasoning: invoiceParser and expenseLookup
 output_schema:
   type: object
   properties:

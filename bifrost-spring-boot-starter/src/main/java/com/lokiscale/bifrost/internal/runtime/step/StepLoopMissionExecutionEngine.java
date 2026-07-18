@@ -688,8 +688,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                     session,
                     action.taskId(),
                     action.toolName(),
-                    toolResult,
-                    skillDefinition == null ? com.lokiscale.bifrost.internal.runtime.evidence.EvidenceContract.empty() : skillDefinition.evidenceContract());
+                    toolResult);
         }
         catch (RuntimeException ex)
         {
@@ -984,7 +983,7 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
         EvidenceCoverageResult result = evidenceBackedOutputValidator.validate(
                 finalResponseNode,
                 skillDefinition.evidenceContract(),
-                executionStateService.currentEvidenceTypes(session));
+                executionStateService.currentSuccessfulSkills(session));
 
         executionStateService.recordEvidenceValidation(
                 session,

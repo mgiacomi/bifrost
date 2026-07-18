@@ -36,22 +36,16 @@ prompt: |
   Omit refundAmount and bugTicketId when not applicable (null is also allowed) — do not invent them.
 
   Do not invent CRM data, refunds, or ticket ids. Do not call L3 leaves directly — only the
-  specialists listed in allowed_skills. Any one handle* specialist can satisfy case_facts evidence;
+  specialists listed in allowed_skills. The minimum evidence expression accepts any one handle* specialist;
   still run every branch the intents require.
 evidence_contract:
   claims:
-    intents: [intent_classification]
-    disposition: [intent_classification, case_facts, response_draft]
-    refundRecommended: [case_facts]
-    factsSummary: [case_facts]
-    draftReply: [response_draft]
-    internalNotes: [intent_classification, case_facts, response_draft]
-  tool_evidence:
-    understandIntent: [intent_classification]
-    handleBilling: [case_facts]
-    handleTechnical: [case_facts]
-    handleHowTo: [case_facts]
-    composeReply: [response_draft]
+    intents: understandIntent
+    disposition: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply
+    refundRecommended: handleBilling or handleTechnical or handleHowTo
+    factsSummary: handleBilling or handleTechnical or handleHowTo
+    draftReply: composeReply
+    internalNotes: understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply
 input_schema:
   type: object
   properties:

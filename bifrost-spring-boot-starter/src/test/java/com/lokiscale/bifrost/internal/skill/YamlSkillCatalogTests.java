@@ -202,7 +202,7 @@ class YamlSkillCatalogTests {
                 new Case("mapped-with-allowed-skills-empty.yaml", "mappedWithAllowedEmpty", "allowed_skills", "LLM parent", "declare the mapped child"),
                 new Case("mapped-with-linter-null.yaml", "mappedWithLinterNull", "linter", "model-output validation", "remove the field"),
                 new Case("mapped-with-output-schema-retries-zero.yaml", "mappedWithRetriesZero", "output_schema_max_retries", "model-output validation", "remove the field"),
-                new Case("mapped-with-evidence-contract-null.yaml", "mappedWithEvidenceNull", "evidence_contract", "invoking LLM parent", "declare tool evidence"))
+                new Case("mapped-with-evidence-contract-null.yaml", "mappedWithEvidenceNull", "evidence_contract", "invoking LLM parent", "declare an evidence_contract"))
                 .stream()
                 .map(testCase -> DynamicTest.dynamicTest(testCase.filename(), () -> contextRunner
                         .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/" + testCase.filename())
@@ -657,10 +657,9 @@ class YamlSkillCatalogTests {
                     YamlSkillCatalog catalog = context.getBean(YamlSkillCatalog.class);
 
                     assertThat(catalog.getSkill("evidenceContractSkill")).isNotNull();
-                    assertThat(catalog.getSkill("evidenceContractSkill").evidenceContract().evidenceForClaim("isDuplicate"))
-                            .containsExactlyInAnyOrder("parsed_invoice", "expense_match_search");
-                    assertThat(catalog.getSkill("evidenceContractSkill").evidenceContract().evidenceProducedByTool("expenseLookup"))
-                            .containsExactly("expense_match_search");
+                    assertThat(catalog.getSkill("evidenceContractSkill").evidenceContract()
+                            .canonicalExpressionForClaim("isDuplicate"))
+                            .isEqualTo("invoiceParser and expenseLookup");
                 });
     }
 
@@ -676,14 +675,14 @@ class YamlSkillCatalogTests {
     }
 
     @Test
-    void failsStartupWhenEvidenceContractContainsBlankEvidenceIds() {
+    void failsStartupWhenEvidenceContractContainsBlankExpression() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-blank-evidence-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("evidence-contract-blank-evidence-skill.yaml")
                         .hasMessageContaining("field 'evidence_contract.claims.vendorName'")
-                        .hasMessageContaining("evidence ids must not be blank"));
+                        .hasMessageContaining("expression must be a nonblank YAML string"));
     }
 
     @Test
@@ -698,18 +697,18 @@ class YamlSkillCatalogTests {
     }
 
     @Test
-    void failsStartupWhenEvidenceContractToolKeysDifferOnlyByCase() {
+    void failsStartupWhenEvidenceContractUsesObsoleteToolEvidence() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-duplicate-tool-case-skill.yaml")
                 .run(context -> assertThat(context.getStartupFailure())
                         .isNotNull()
                         .hasMessageContaining("evidence-contract-duplicate-tool-case-skill.yaml")
-                        .hasMessageContaining("field 'evidence_contract.tool_evidence.InvoiceParser'")
-                        .hasMessageContaining("duplicates tool 'invoiceParser'"));
+                        .hasMessageContaining("field 'evidence_contract.tool_evidence'")
+                        .hasMessageContaining("unknown field"));
     }
 
     @Test
-    void usesExactValidatedPublicNameForEvidenceToolProducer() {
+    void usesExactValidatedPublicNameInEvidenceExpression() {
         contextRunner
                 .withPropertyValues("bifrost.skills.locations=classpath:/skills/valid/evidence-contract-hash-public-name-skill.yaml")
                 .run(context -> {
@@ -717,9 +716,30 @@ class YamlSkillCatalogTests {
                     assertThat(context.getBean(YamlSkillCatalog.class)
                             .getSkill("evidenceHashNameSkill")
                             .evidenceContract()
-                            .evidenceProducedByTool("reviewSkill"))
-                            .containsExactly("review_result");
+                            .canonicalExpressionForClaim("result"))
+                            .isEqualTo("reviewSkill");
                 });
+    }
+
+    @Test
+    void rejectsListValuedEvidenceExpressionWithoutStringCoercion() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-list-expression-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("evidence-contract-list-expression-skill.yaml")
+                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'"));
+    }
+
+    @Test
+    void rejectsWrongCaseDirectChildWithSuggestion() {
+        contextRunner
+                .withPropertyValues("bifrost.skills.locations=classpath:/skills/invalid/evidence-contract-wrong-case-child-skill.yaml")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .hasMessageContaining("field 'evidence_contract.claims.vendorName'")
+                        .hasMessageContaining("column 1")
+                        .hasMessageContaining("did you mean 'invoiceParser'?"));
     }
 
     @Test

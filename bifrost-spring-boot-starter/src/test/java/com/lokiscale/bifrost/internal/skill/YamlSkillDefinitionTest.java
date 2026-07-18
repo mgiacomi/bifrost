@@ -95,7 +95,7 @@ class YamlSkillDefinitionTest
 
         YamlSkillManifest mapped = mappedManifest("mapped.evidence.skill", "targetBean#deterministicTarget");
         YamlSkillManifest.EvidenceContractManifest evidenceManifest = new YamlSkillManifest.EvidenceContractManifest();
-        evidenceManifest.setToolEvidence(Map.of("child.skill", List.of("receipt")));
+        evidenceManifest.setClaims(Map.of("claim", "childSkill"));
         EvidenceContract evidenceContract = EvidenceContract.fromManifest(evidenceManifest, null);
         assertThatThrownBy(() -> new YamlSkillDefinition(resource(), mapped, null, evidenceContract))
                 .isInstanceOf(IllegalArgumentException.class)

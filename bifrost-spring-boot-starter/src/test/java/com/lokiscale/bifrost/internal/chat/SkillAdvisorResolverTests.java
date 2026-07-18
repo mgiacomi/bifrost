@@ -119,8 +119,7 @@ class SkillAdvisorResolverTests {
             manifest.setOutputSchemaMaxRetries(2);
             if (withEvidenceContract) {
                 YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-                contract.setClaims(java.util.Map.of("vendorName", java.util.List.of("parsed_invoice")));
-                contract.setToolEvidence(java.util.Map.of("invoiceParser", java.util.List.of("parsed_invoice")));
+                contract.setClaims(java.util.Map.of("vendorName", "invoiceParser"));
                 manifest.setEvidenceContract(contract);
             }
         }

@@ -221,8 +221,7 @@ public class DefaultPlanningService implements PlanningService
     public Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
             String taskId,
             String capabilityName,
-            @Nullable Object result,
-            EvidenceContract evidenceContract)
+            @Nullable Object result)
     {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(taskId, "taskId must not be null");
@@ -246,13 +245,9 @@ public class DefaultPlanningService implements PlanningService
                         .map(task -> task.status() == PlanTaskStatus.COMPLETED)
                         .orElse(false));
 
-        if (updatedPlan.isPresent() && evidenceContract != null && !evidenceContract.isEmpty())
+        if (updatedPlan.isPresent())
         {
-            Set<String> evidenceTypes = evidenceContract.evidenceProducedByTool(capabilityName);
-            if (!evidenceTypes.isEmpty())
-            {
-                executionStateService.recordProducedEvidence(session, capabilityName, taskId, false, evidenceTypes);
-            }
+            executionStateService.recordSuccessfulSkill(session, capabilityName, taskId, false);
         }
         return updatedPlan;
     }
@@ -387,9 +382,11 @@ public class DefaultPlanningService implements PlanningService
         metadata.put("issueCodes", List.of("evidence-coverage"));
         metadata.put("severity", "ERROR");
         metadata.put("claims", coverage.evaluatedClaims());
-        metadata.put("missingEvidence", coverage.issues().stream()
-                .flatMap(issue -> issue.missingEvidence().stream())
-                .distinct()
+        metadata.put("unsatisfiedClaims", coverage.issues().stream().map(com.lokiscale.bifrost.internal.runtime.evidence.EvidenceCoverageIssue::claimName).toList());
+        metadata.put("requiredExpressions", coverage.requiredExpressions());
+        metadata.put("satisfiedSkills", coverage.satisfiedSkills());
+        metadata.put("unsatisfiedRequirements", coverage.issues().stream()
+                .flatMap(issue -> issue.unsatisfiedRequirements().stream())
                 .toList());
 
         executionStateService.recordPlanningEvent(session, planningFrame, recordType, metadata, coverage.issues());
@@ -548,21 +545,11 @@ public class DefaultPlanningService implements PlanningService
 
             for (String claim : sortedClaims)
             {
-                Set<String> reqEvidence = evidenceContract.evidenceForClaim(claim);
-                List<String> tools = evidenceContract.evidenceByTool().entrySet().stream()
-                        .filter(e -> e.getValue().stream().anyMatch(reqEvidence::contains))
-                        .map(Map.Entry::getKey)
-                        .sorted()
-                        .toList();
-
-                if (!tools.isEmpty())
-                {
-                    builder.append("- You MUST explicitly include a task that uses the ")
-                            .append(tools)
-                            .append(" tool(s) to help determine the value for the '")
-                            .append(claim)
-                            .append("' output field.\n");
-                }
+                builder.append("- The '")
+                        .append(claim)
+                        .append("' output field requires tasks whose exact capability names satisfy: ")
+                        .append(evidenceContract.canonicalExpressionForClaim(claim))
+                        .append(". For an 'or' group, include any one alternative; for an 'and' group, include every requirement.\n");
             }
 
             if (!builder.isEmpty())

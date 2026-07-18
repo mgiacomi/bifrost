@@ -26,15 +26,15 @@ public final class EvidenceBackedOutputValidator
 
     public EvidenceCoverageResult validate(String rawOutput,
             EvidenceContract contract,
-            Set<String> gatheredEvidence)
+            Set<String> successfulSkills)
     {
         if (contract == null || contract.isEmpty())
         {
-            return new EvidenceCoverageResult(Set.of(), Set.of(), gatheredEvidence == null ? Set.of() : Set.copyOf(gatheredEvidence), java.util.List.of());
+            return new EvidenceCoverageResult(Set.of(), java.util.Map.of(), successfulSkills, java.util.List.of());
         }
         try
         {
-            return validate(objectMapper.readTree(rawOutput == null ? "{}" : rawOutput), contract, gatheredEvidence);
+            return validate(objectMapper.readTree(rawOutput == null ? "{}" : rawOutput), contract, successfulSkills);
         }
         catch (JsonProcessingException ex)
         {
@@ -44,14 +44,14 @@ public final class EvidenceBackedOutputValidator
 
     public EvidenceCoverageResult validate(JsonNode candidate,
             EvidenceContract contract,
-            Set<String> gatheredEvidence)
+            Set<String> successfulSkills)
     {
         if (contract == null || contract.isEmpty())
         {
-            return new EvidenceCoverageResult(Set.of(), Set.of(), gatheredEvidence == null ? Set.of() : Set.copyOf(gatheredEvidence), java.util.List.of());
+            return new EvidenceCoverageResult(Set.of(), java.util.Map.of(), successfulSkills, java.util.List.of());
         }
 
         Set<String> presentClaims = contract.presentClaims(candidate);
-        return coverageValidator.validateEvidenceForClaims(presentClaims, gatheredEvidence, contract);
+        return coverageValidator.validateEvidenceForClaims(presentClaims, successfulSkills, contract);
     }
 }

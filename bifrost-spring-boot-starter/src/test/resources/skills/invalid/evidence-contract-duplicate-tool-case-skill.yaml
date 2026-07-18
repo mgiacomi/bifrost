@@ -1,6 +1,7 @@
 name: evidenceContractDuplicateToolCaseSkill
 description: Invalid evidence contract with duplicate tool keys after normalization
 model: gpt-5
+allowed_skills: [invoiceParser]
 output_schema:
   type: object
   additionalProperties: false
@@ -11,7 +12,7 @@ output_schema:
     - vendorName
 evidence_contract:
   claims:
-    vendorName: [parsed_invoice]
+    vendorName: invoiceParser
   tool_evidence:
     invoiceParser: [parsed_invoice]
     InvoiceParser: [expense_match_search]

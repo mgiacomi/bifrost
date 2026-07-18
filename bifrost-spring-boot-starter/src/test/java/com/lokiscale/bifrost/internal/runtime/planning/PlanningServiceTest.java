@@ -239,7 +239,7 @@ class PlanningServiceTest {
         assertThat(session.getJournalSnapshot()).extracting(JournalEntry::type)
                 .containsExactly(JournalEntryType.PLAN_UPDATED);
 
-        ExecutionPlan completed = planningService.markToolCompleted(session, "task-1", capability.name(), "done", EvidenceContract.empty()).orElseThrow();
+        ExecutionPlan completed = planningService.markToolCompleted(session, "task-1", capability.name(), "done").orElseThrow();
         assertThat(completed.activeTaskId()).isNull();
         assertThat(completed.findTask("task-1").orElseThrow().status()).isEqualTo(PlanTaskStatus.COMPLETED);
 
@@ -318,7 +318,7 @@ class PlanningServiceTest {
                 List.of(new PlanTask("task-1", "Use tool once", PlanTaskStatus.IN_PROGRESS,
                         "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
 
-        assertThatThrownBy(() -> planningService.markToolCompleted(session, "task-1", "different.visible.skill", "done", EvidenceContract.empty()))
+        assertThatThrownBy(() -> planningService.markToolCompleted(session, "task-1", "different.visible.skill", "done"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("task-1")
                 .hasMessageContaining("allowedVisibleSkill")
@@ -361,7 +361,7 @@ class PlanningServiceTest {
                 Instant.parse("2026-03-15T12:00:00Z"),
                 List.of(new PlanTask("task-1", "Use tool", PlanTaskStatus.PENDING, "allowedVisibleSkill", "Use tool", List.of(), List.of(), false, null))));
 
-        assertThat(planningService.markToolCompleted(session, "missing-task", "allowedVisibleSkill", "done", EvidenceContract.empty())).isEmpty();
+        assertThat(planningService.markToolCompleted(session, "missing-task", "allowedVisibleSkill", "done")).isEmpty();
         assertThat(session.getJournalSnapshot()).isEmpty();
     }
 
@@ -438,8 +438,9 @@ class PlanningServiceTest {
 
         String systemPrompt = chatClient.getSystemMessagesSeen().getFirst();
         assertThat(systemPrompt).contains("Evidence Constraints:");
-        assertThat(systemPrompt).contains("- You MUST explicitly include a task that uses the [expenseLookup, invoiceParser] tool(s) to help determine the value for the 'isDuplicate' output field.");
-        assertThat(systemPrompt).contains("- You MUST explicitly include a task that uses the [invoiceParser] tool(s) to help determine the value for the 'vendorName' output field.");
+        assertThat(systemPrompt).contains("The 'isDuplicate' output field requires tasks whose exact capability names satisfy: invoiceParser and expenseLookup");
+        assertThat(systemPrompt).contains("The 'vendorName' output field requires tasks whose exact capability names satisfy: invoiceParser");
+        assertThat(systemPrompt).doesNotContain("[expenseLookup, invoiceParser] tool(s)");
     }
 
     @Test
@@ -877,11 +878,8 @@ class PlanningServiceTest {
         manifest.setOutputSchemaMaxRetries(1);
         YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
         contract.setClaims(Map.of(
-                "vendorName", List.of("parsed_invoice"),
-                "isDuplicate", List.of("parsed_invoice", "expense_match_search")));
-        contract.setToolEvidence(Map.of(
-                "invoiceParser", List.of("parsed_invoice"),
-                "expenseLookup", List.of("expense_match_search")));
+                "vendorName", "invoiceParser",
+                "isDuplicate", "invoiceParser and expenseLookup"));
         manifest.setEvidenceContract(contract);
         return new YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),

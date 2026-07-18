@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
@@ -52,7 +53,7 @@ public final class BifrostSession
     private LinterOutcome lastLinterOutcome;
     private OutputSchemaOutcome lastOutputSchemaOutcome;
     private SessionUsageSnapshot sessionUsage;
-    private Set<String> producedEvidenceTypes;
+    private Set<String> successfulDirectSkills;
     @JsonIgnore
     private Authentication authentication;
 
@@ -123,7 +124,7 @@ public final class BifrostSession
         this.lastLinterOutcome = lastLinterOutcome;
         this.lastOutputSchemaOutcome = lastOutputSchemaOutcome;
         this.sessionUsage = sessionUsage;
-        this.producedEvidenceTypes = new LinkedHashSet<>();
+        this.successfulDirectSkills = new LinkedHashSet<>();
         this.authentication = authentication;
     }
 
@@ -504,12 +505,12 @@ public final class BifrostSession
         return BifrostSessionHolder.requireCurrentSession();
     }
 
-    public Set<String> getProducedEvidenceTypes()
+    public Set<String> getSuccessfulDirectSkills()
     {
         lock.lock();
         try
         {
-            return Set.copyOf(producedEvidenceTypes);
+            return Collections.unmodifiableSet(new LinkedHashSet<>(successfulDirectSkills));
         }
         finally
         {
@@ -517,17 +518,17 @@ public final class BifrostSession
         }
     }
 
-    public void addProducedEvidenceTypes(Collection<String> evidenceTypes)
+    public void addSuccessfulDirectSkill(String skillName)
     {
-        Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
+        Objects.requireNonNull(skillName, "skillName must not be null");
         lock.lock();
         try
         {
-            if (producedEvidenceTypes == null)
+            if (successfulDirectSkills == null)
             {
-                producedEvidenceTypes = new LinkedHashSet<>();
+                successfulDirectSkills = new LinkedHashSet<>();
             }
-            producedEvidenceTypes.addAll(evidenceTypes);
+            successfulDirectSkills.add(skillName);
         }
         finally
         {
@@ -535,17 +536,17 @@ public final class BifrostSession
         }
     }
 
-    public void clearProducedEvidenceTypes()
+    public void clearSuccessfulDirectSkills()
     {
         lock.lock();
         try
         {
-            if (producedEvidenceTypes == null)
+            if (successfulDirectSkills == null)
             {
-                producedEvidenceTypes = new LinkedHashSet<>();
+                successfulDirectSkills = new LinkedHashSet<>();
                 return;
             }
-            producedEvidenceTypes.clear();
+            successfulDirectSkills.clear();
         }
         finally
         {
@@ -553,13 +554,13 @@ public final class BifrostSession
         }
     }
 
-    public void replaceProducedEvidenceTypes(Collection<String> evidenceTypes)
+    public void replaceSuccessfulDirectSkills(Collection<String> skillNames)
     {
-        Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
+        Objects.requireNonNull(skillNames, "skillNames must not be null");
         lock.lock();
         try
         {
-            producedEvidenceTypes = new LinkedHashSet<>(evidenceTypes);
+            successfulDirectSkills = new LinkedHashSet<>(skillNames);
         }
         finally
         {

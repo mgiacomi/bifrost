@@ -15,7 +15,6 @@ import com.lokiscale.bifrost.internal.linter.LinterOutcome;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcome;
 import org.springframework.lang.Nullable;
 
-import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -40,9 +39,9 @@ public interface ExecutionStateService
 
     void restorePlan(BifrostSession session, PlanSnapshot snapshot);
 
-    EvidenceSnapshot snapshotEvidence(BifrostSession session);
+    SuccessfulSkillSnapshot snapshotSuccessfulSkills(BifrostSession session);
 
-    void restoreEvidence(BifrostSession session, EvidenceSnapshot snapshot);
+    void restoreSuccessfulSkills(BifrostSession session, SuccessfulSkillSnapshot snapshot);
 
     void logPlanCreated(BifrostSession session, ExecutionPlan plan);
 
@@ -74,15 +73,14 @@ public interface ExecutionStateService
 
     void logToolFailure(BifrostSession session, ToolTraceContext context, Object payload);
 
-    void clearProducedEvidence(BifrostSession session);
+    void clearSuccessfulSkills(BifrostSession session);
 
-    Set<String> currentEvidenceTypes(BifrostSession session);
+    Set<String> currentSuccessfulSkills(BifrostSession session);
 
-    void recordProducedEvidence(BifrostSession session,
+    void recordSuccessfulSkill(BifrostSession session,
             String capabilityName,
             @Nullable String linkedTaskId,
-            boolean unplanned,
-            Collection<String> evidenceTypes);
+            boolean unplanned);
 
     void recordEvidenceValidation(BifrostSession session,
             boolean passed,

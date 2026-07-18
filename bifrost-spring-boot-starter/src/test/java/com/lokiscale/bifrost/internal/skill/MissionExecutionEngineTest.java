@@ -863,8 +863,7 @@ class MissionExecutionEngineTest {
         public java.util.Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
                                                                    String taskId,
                                                                    String capabilityName,
-                                                                   Object result,
-                                                                   EvidenceContract evidenceContract) {
+                                                                   Object result) {
             throw new UnsupportedOperationException();
         }
 

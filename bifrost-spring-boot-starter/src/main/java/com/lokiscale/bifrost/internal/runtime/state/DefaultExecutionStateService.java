@@ -184,23 +184,23 @@ public class DefaultExecutionStateService implements ExecutionStateService
     }
 
     @Override
-    public EvidenceSnapshot snapshotEvidence(BifrostSession session)
+    public SuccessfulSkillSnapshot snapshotSuccessfulSkills(BifrostSession session)
     {
         Objects.requireNonNull(session, "session must not be null");
-        return EvidenceSnapshot.of(session.getProducedEvidenceTypes());
+        return SuccessfulSkillSnapshot.of(session.getSuccessfulDirectSkills());
     }
 
     @Override
-    public void restoreEvidence(BifrostSession session, EvidenceSnapshot snapshot)
+    public void restoreSuccessfulSkills(BifrostSession session, SuccessfulSkillSnapshot snapshot)
     {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(snapshot, "snapshot must not be null");
-        if (snapshot.evidenceTypes() == null)
+        if (snapshot.successfulDirectSkills() == null)
         {
-            session.clearProducedEvidenceTypes();
+            session.clearSuccessfulDirectSkills();
             return;
         }
-        session.replaceProducedEvidenceTypes(snapshot.evidenceTypes());
+        session.replaceSuccessfulDirectSkills(snapshot.successfulDirectSkills());
     }
 
     @Override
@@ -334,48 +334,38 @@ public class DefaultExecutionStateService implements ExecutionStateService
     }
 
     @Override
-    public void clearProducedEvidence(BifrostSession session)
+    public void clearSuccessfulSkills(BifrostSession session)
     {
         Objects.requireNonNull(session, "session must not be null");
-        session.clearProducedEvidenceTypes();
+        session.clearSuccessfulDirectSkills();
     }
 
     @Override
-    public Set<String> currentEvidenceTypes(BifrostSession session)
+    public Set<String> currentSuccessfulSkills(BifrostSession session)
     {
         Objects.requireNonNull(session, "session must not be null");
-        return session.getProducedEvidenceTypes();
+        return session.getSuccessfulDirectSkills();
     }
 
     @Override
-    public void recordProducedEvidence(BifrostSession session,
+    public void recordSuccessfulSkill(BifrostSession session,
             String capabilityName,
             String linkedTaskId,
-            boolean unplanned,
-            Collection<String> evidenceTypes)
+            boolean unplanned)
     {
         Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(capabilityName, "capabilityName must not be null");
-        Objects.requireNonNull(evidenceTypes, "evidenceTypes must not be null");
-
-        if (evidenceTypes.isEmpty())
-        {
-            return;
-        }
-
-        session.addProducedEvidenceTypes(evidenceTypes);
+        session.addSuccessfulDirectSkill(capabilityName);
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("capabilityName", capabilityName);
         metadata.put("unplanned", unplanned);
-
         if (linkedTaskId != null)
         {
             metadata.put("linkedTaskId", linkedTaskId);
         }
-
         session.appendTraceRecord(TraceRecordType.EVIDENCE_RECORDED, Map.copyOf(metadata), Map.of(
-                "evidenceTypes", List.copyOf(evidenceTypes),
-                "ledger", session.getProducedEvidenceTypes()));
+                "successfulSkill", capabilityName,
+                "successfulDirectSkills", session.getSuccessfulDirectSkills()));
     }
 
     @Override

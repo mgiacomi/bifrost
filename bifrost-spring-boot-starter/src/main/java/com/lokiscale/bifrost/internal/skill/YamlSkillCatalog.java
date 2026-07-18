@@ -170,7 +170,7 @@ public class YamlSkillCatalog implements InitializingBean
         }
         validateInputSchema(resource, manifest);
         validateOutputSchema(resource, manifest);
-        validateEvidenceContract(resource, manifest);
+        EvidenceContract evidenceContract = validateEvidenceContract(resource, manifest);
         validateLinter(resource, manifest);
 
         BifrostProperties.ModelCatalogEntry catalogEntry = resolveModelCatalogEntry(resource, manifest);
@@ -193,7 +193,7 @@ public class YamlSkillCatalog implements InitializingBean
                 resource,
                 manifest,
                 effectiveConfiguration,
-                EvidenceContract.fromManifest(manifest.getEvidenceContract(), manifest.getOutputSchema()));
+                evidenceContract);
     }
 
     private void validateMappedManifest(Resource resource, YamlSkillManifest manifest)
@@ -228,7 +228,7 @@ public class YamlSkillCatalog implements InitializingBean
             case LINTER, OUTPUT_SCHEMA_MAX_RETRIES ->
                     "cannot be declared because model-output validation and retry do not run on direct Java routing; remove the field";
             case EVIDENCE_CONTRACT ->
-                    "cannot be declared because the mapped child's model evidence contract is not evaluated; declare tool evidence on an invoking LLM parent instead";
+                    "cannot be declared because the mapped child's evidence contract is not evaluated; declare an evidence_contract on an invoking LLM parent instead";
             default -> throw new IllegalArgumentException("No mapped-field explanation for " + field);
         };
     }
@@ -438,12 +438,12 @@ public class YamlSkillCatalog implements InitializingBean
         validateInputSchemaNode(resource, inputSchema, "input_schema", true, 1);
     }
 
-    private void validateEvidenceContract(Resource resource, YamlSkillManifest manifest)
+    private EvidenceContract validateEvidenceContract(Resource resource, YamlSkillManifest manifest)
     {
         YamlSkillManifest.EvidenceContractManifest contract = manifest.getEvidenceContract();
         if (contract == null)
         {
-            return;
+            return EvidenceContract.empty();
         }
         if (manifest.getOutputSchema() == null)
         {
@@ -451,66 +451,91 @@ public class YamlSkillCatalog implements InitializingBean
         }
 
         Map<String, String> schemaPropertiesByNormalized = new LinkedHashMap<>();
-        manifest.getOutputSchema().getProperties().keySet().forEach(propertyName -> schemaPropertiesByNormalized.put(propertyName.toLowerCase(Locale.ROOT), propertyName));
-
-        validateEvidenceMappings(resource, "evidence_contract.claims", contract.getClaims(), true, schemaPropertiesByNormalized);
-        validateEvidenceMappings(resource, "evidence_contract.tool_evidence", contract.getToolEvidence(), false, schemaPropertiesByNormalized);
-    }
-
-    private void validateEvidenceMappings(Resource resource,
-            String fieldPath,
-            Map<String, List<String>> mappings,
-            boolean claimsMapping,
-            Map<String, String> schemaPropertiesByNormalized)
-    {
+        manifest.getOutputSchema().getProperties().keySet()
+                .forEach(propertyName -> schemaPropertiesByNormalized.put(propertyName.toLowerCase(Locale.ROOT), propertyName));
         Map<String, String> canonicalByNormalized = new LinkedHashMap<>();
+        Map<String, com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression> compiled = new LinkedHashMap<>();
+        com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpressionParser parser =
+                new com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpressionParser();
+        Set<String> directChildren = new LinkedHashSet<>(manifest.getAllowedSkills());
 
-        for (Map.Entry<String, List<String>> entry : mappings.entrySet())
+        for (Map.Entry<String, String> entry : contract.getClaims().entrySet())
         {
-            String name = entry.getKey();
-            if (!StringUtils.hasText(name))
+            String claimName = entry.getKey();
+            if (!StringUtils.hasText(claimName))
             {
-                throw invalidSkill(resource, fieldPath, claimsMapping ? "claim names must not be blank" : "tool names must not be blank");
+                throw invalidSkill(resource, "evidence_contract.claims", "claim names must not be blank");
             }
-
-            String normalizedName = name.trim().toLowerCase(Locale.ROOT);
-            String previous = canonicalByNormalized.putIfAbsent(normalizedName, name);
-
+            String normalizedClaim = claimName.trim().toLowerCase(Locale.ROOT);
+            String previous = canonicalByNormalized.putIfAbsent(normalizedClaim, claimName);
             if (previous != null)
             {
-                throw invalidSkill(resource, fieldPath + "." + name,
-                        (claimsMapping ? "duplicates claim '" : "duplicates tool '") + previous
-                                + "' when compared case-insensitively");
+                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
+                        "duplicates claim '" + previous + "' when compared case-insensitively");
             }
-            if (claimsMapping && !schemaPropertiesByNormalized.containsKey(name.toLowerCase(Locale.ROOT)))
+            String canonicalClaim = schemaPropertiesByNormalized.get(claimName.toLowerCase(Locale.ROOT));
+            if (canonicalClaim == null)
             {
-                throw invalidSkill(resource, fieldPath + "." + name,
-                        "references unknown output_schema property '" + name + "'");
+                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
+                        "references unknown output_schema property '" + claimName + "'");
+            }
+            if (!StringUtils.hasText(entry.getValue()))
+            {
+                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
+                        "expression must be a nonblank YAML string");
             }
 
-            List<String> values = entry.getValue() == null ? List.of() : entry.getValue();
-            Set<String> duplicates = new LinkedHashSet<>();
-            Set<String> seen = new LinkedHashSet<>();
-
-            for (String value : values)
+            com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression expression;
+            try
             {
-                if (!StringUtils.hasText(value))
+                expression = parser.parse(entry.getValue());
+            }
+            catch (com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpressionParser.ParseException ex)
+            {
+                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
+                        "invalid evidence expression for claim '" + claimName + "' at column "
+                                + ex.column() + ": " + ex.getMessage());
+            }
+
+            for (String reference : expression.referencedSkills())
+            {
+                if (directChildren.contains(reference))
                 {
-                    throw invalidSkill(resource, fieldPath + "." + name,
-                            claimsMapping ? "evidence ids must not be blank" : "produced evidence ids must not be blank");
+                    continue;
                 }
-                if (!seen.add(value))
-                {
-                    duplicates.add(value);
-                }
+                List<String> caseMatches = directChildren.stream()
+                        .filter(child -> child.equalsIgnoreCase(reference))
+                        .toList();
+                String suggestion = caseMatches.size() == 1 ? "; did you mean '" + caseMatches.getFirst() + "'?" : "";
+                throw invalidSkill(resource, "evidence_contract.claims." + claimName,
+                        "invalid evidence expression for claim '" + claimName + "' at column "
+                                + referenceColumn(expression, reference) + ": skill '" + reference
+                                + "' is not a direct allowed child of '" + manifest.getName() + "'" + suggestion);
             }
-
-            if (!duplicates.isEmpty())
-            {
-                throw invalidSkill(resource, fieldPath + "." + name,
-                        "contains duplicate evidence ids " + duplicates);
-            }
+            compiled.put(canonicalClaim, expression);
         }
+
+        Map<String, String> normalizedClaims = new LinkedHashMap<>();
+        compiled.keySet().forEach(claim -> normalizedClaims.put(claim.toLowerCase(Locale.ROOT), claim));
+        return EvidenceContract.compiled(compiled, normalizedClaims);
+    }
+
+    private int referenceColumn(com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression expression,
+            String reference)
+    {
+        if (expression instanceof com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression.Skill skill)
+        {
+            return skill.name().equals(reference) ? skill.column() : 1;
+        }
+        List<com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression> children =
+                expression instanceof com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression.AllOf allOf
+                        ? allOf.expressions()
+                        : ((com.lokiscale.bifrost.internal.runtime.evidence.EvidenceExpression.AnyOf) expression).expressions();
+        return children.stream()
+                .filter(child -> child.referencedSkills().contains(reference))
+                .findFirst()
+                .map(child -> referenceColumn(child, reference))
+                .orElse(1);
     }
 
     private void validateSchemaNode(Resource resource,

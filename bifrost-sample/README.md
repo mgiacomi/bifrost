@@ -10,7 +10,7 @@ Use this module as a reference implementation when integrating `bifrost-spring-b
 | --- | --- |
 | Mapped YAML skill → Java method | `expenseLookup`, `feedstockTicketParser`, incident probes, insurance leaves, support CRM leaves, travel catalog leaves |
 | Pure LLM YAML skill with `input_schema` / `output_schema` / linter | `invoiceParser` (linter); incident/insurance/support/travel workers use schemas + retries only (no linter) |
-| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + shared `case_facts`), `planTrip` (3-level light evidence + multi-option catalogs) |
+| Planning skill (`planning_mode: true`) with `allowed_skills` + `evidence_contract` | `duplicateInvoiceChecker` (2-level), `handleIncident` (3-level light evidence), `processClaim` (3-level strong evidence), `resolveSupportCase` (3-level multi-intent + OR expressions), `planTrip` (3-level light evidence + multi-option catalogs) |
 | Nested mid-level planners | `investigateNetwork` / `investigateApp`; `assessCoverage` / `fraudScreen`; `handleBilling` / `handleTechnical` / `handleHowTo`; `planTransport` / `planStay` |
 | Pure YAML vision skill with `attachment` input | `feedstockTicketParserBySkill` |
 | Named connections and model aliases (`ollama` + `openai` + OpenRouter) | `application.yml` → `bifrost.connections` / `bifrost.models` |
@@ -195,7 +195,7 @@ Demonstrates: structured extraction with schema validation and lint retries.
 - **Type:** Planning skill (`planning_mode: true`, `max_steps: 10`)
 - **Model:** `granite4-tiny`
 - **Allowed tools:** `invoiceParser`, `expenseLookup`
-- **Evidence contract:** claims such as `isDuplicate` must be backed by tool evidence tags
+- **Evidence contract:** claims such as `isDuplicate` require successful direct children through Boolean expressions
 - **Output schema:** `isDuplicate`, `vendorName`, `totalAmount`, `invoiceDate`, `reasoning`
 
 Demonstrates: multi-step agentic workflow — parse invoice, look up expenses, decide duplicate — with evidence constraints.
@@ -250,8 +250,8 @@ handleIncident                          [L1 planning YAML, model qwen3-35b]
 | Nested `planning_mode` | Root + `investigateNetwork` / `investigateApp` each run the step-loop engine |
 | `allowed_skills` governance | Each planner only sees its specialist / probe set |
 | Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping` only); Java owns contracts |
-| Light `evidence_contract` | Root only; shared `investigation_digest` so either branch can satisfy investigation claims |
-| Nested mission isolation | Parent plan/evidence snapshotted while a child planner runs (visible in journal frames) |
+| Light `evidence_contract` | Root only; `investigateNetwork or investigateApp` preserves selective branches |
+| Nested mission isolation | Parent plan/successful-skill state snapshotted while a child planner runs (visible in journal frames) |
 | Planner vs worker models | Shared OpenRouter connection; `qwen3-35b` planners, `gpt-4o-mini` workers |
 
 Contrast with `duplicateInvoiceChecker`: that skill is **2-level** (one planner + leaves). Incident commander is **3-level** (planner that calls other planners).
@@ -267,10 +267,10 @@ Contrast with `duplicateInvoiceChecker`: that skill is **2-level** (one planner 
 
 #### Evidence contract rules (root)
 
-- Claim evidence lists are **AND-all** (every listed evidence type for a present claim must be gathered).
-- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
-- Parent `tool_evidence` keys are the **tools the parent invokes** (L2 specialists), not L3 probes inside a child planner.
-- Multiple tools may produce the same evidence type; **one successful producer is enough**. Both `investigateNetwork` and `investigateApp` produce `investigation_digest` — either branch satisfies investigation claims (do not require both).
+- Claim expressions use `and` for all-required children and `or` for alternatives.
+- Nested YAML missions **snapshot/restore** parent successful-skill state; successful leaf names do **not** bubble to the parent set.
+- Parent expressions reference **direct L2 children**, never L3 probes inside a child planner.
+- `investigateNetwork or investigateApp` means **one successful investigator is enough**; do not require both.
 - Successful plans are expected to cover: `classifyIncident` + ≥1 investigation specialist + `draftIncidentResponse`.
 - `lookupRunbook` is intentionally **not** in the evidence contract (optional enrichment).
 
@@ -340,7 +340,7 @@ processClaim                               [L1 planning YAML, model qwen3-35b]
 | `allowed_skills` governance | Root sees only four L2 specialists; mid-level desks see only their leaves |
 | Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping`); Java owns contracts |
 | **Strong** root `evidence_contract` | Plan-requires extract + coverage + fraud + recommend (all four specialists) |
-| Nested mission isolation | Parent plan/evidence snapshotted while a child planner runs |
+| Nested mission isolation | Parent plan/successful-skill state snapshotted while a child planner runs |
 | Planner vs worker models | Same OpenRouter aliases as incident (`qwen3-35b` / `gpt-4o-mini`) |
 | Adjudication writer | `recommendDisposition` synthesizes full root-shaped fields; root **copies** them |
 
@@ -349,7 +349,7 @@ processClaim                               [L1 planning YAML, model qwen3-35b]
 | Sample | Levels | Evidence | Branching story |
 | --- | --- | --- | --- |
 | `duplicateInvoiceChecker` | 2 | Shallow root contract | Parse + lookup, then decide |
-| `handleIncident` | 3 | Light root contract; either investigation branch can satisfy `investigation_digest` | Ops: classify → selective network/app → draft |
+| `handleIncident` | 3 | Light root contract; either investigation branch satisfies the direct OR expression | Ops: classify → selective network/app → draft |
 | `processClaim` | 3 | **Strong** root contract; **all four** L2 specialists plan-required | Risk: extract → coverage desk **and** SIU-lite → writer |
 
 #### What the LLM decides vs what is fixed
@@ -365,9 +365,9 @@ Fraud specialist is **plan-required** (clean claims still run SIU-lite and retur
 
 #### Evidence contract rules (root)
 
-- Claim evidence lists are **AND-all**.
-- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
-- Parent `tool_evidence` keys are **L2 specialists only** (`extractClaimFacts`, `assessCoverage`, `fraudScreen`, `recommendDisposition`) — never L3 leaves (`getPolicy`, `anomalyScore`, …).
+- Claim expressions use `and` for all-required children and `or` for alternatives.
+- Nested YAML missions **snapshot/restore** parent successful-skill state; successful leaf names do **not** bubble to the parent set.
+- Parent expressions reference **L2 specialists only** (`extractClaimFacts`, `assessCoverage`, `fraudScreen`, `recommendDisposition`) — never L3 leaves (`getPolicy`, `anomalyScore`, …).
 - Successful plans must include **all four** specialists. Fraud is not skippable.
 - Mid-level planners have **no** `evidence_contract` (structured digests only).
 
@@ -465,7 +465,7 @@ resolveSupportCase                         [L1 planning YAML, model qwen3-35b]
 | --- | --- |
 | Nested `planning_mode` | Root + billing/technical/how-to specialists each run the step-loop engine |
 | Multi-label intent routing | `understandIntent` can return billing + technical together |
-| Shared evidence type | Any one `handle*` specialist produces `case_facts` for the parent |
+| Direct OR expression | Parent expressions directly allow any one `handle*` specialist |
 | Dual refund path | Java `lookupRefundPolicy` (facts) + LLM `checkRefundPolicy` (judgment) under billing |
 | Mapped Java leaves | Minimal YAML (`name` / `description` / `mapping`); Java owns contracts |
 | Planner vs worker models | Same OpenRouter aliases as incident (`qwen3-35b` / `gpt-4o-mini`) |
@@ -474,9 +474,9 @@ resolveSupportCase                         [L1 planning YAML, model qwen3-35b]
 
 | Sample | Levels | Evidence | Branching story |
 | --- | --- | --- | --- |
-| `handleIncident` | 3 | Light root; either investigation branch can satisfy `investigation_digest` | Ops: classify → selective network/app → draft |
+| `handleIncident` | 3 | Light root; either investigation branch satisfies the direct OR expression | Ops: classify → selective network/app → draft |
 | `processClaim` | 3 | **Strong** root; **all four** L2 specialists plan-required | Risk: extract → coverage **and** fraud → writer |
-| `resolveSupportCase` | 3 | Require understand + ≥1 handle* (`case_facts`) + compose | Support: multi-intent → selective specialists → customer reply |
+| `resolveSupportCase` | 3 | Require `understandIntent and (handleBilling or handleTechnical or handleHowTo) and composeReply` | Support: multi-intent → selective specialists → customer reply |
 
 Vs incident: multi-label intents + customer-facing draft (not just ops status). Vs insurance: selective specialist branches still evidence-require **one** specialist, not all desks.
 
@@ -491,10 +491,10 @@ Vs incident: multi-label intents + customer-facing draft (not just ops status). 
 
 #### Evidence contract rules (root)
 
-- Claim evidence lists are **AND-all**.
-- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
-- Parent `tool_evidence` keys are **L2 tools only** (`understandIntent`, `handleBilling`, `handleTechnical`, `handleHowTo`, `composeReply`) — never L3 CRM methods or `checkRefundPolicy` (billing child owns that call).
-- Multiple tools may produce `case_facts`; **one successful producer is enough**. Prompts still require every branch the intents need (mixed emails should run billing **and** technical).
+- Claim expressions use `and` for all-required children and `or` for alternatives.
+- Nested YAML missions **snapshot/restore** parent successful-skill state; successful leaf names do **not** bubble to the parent set.
+- Parent expressions reference **L2 children only** (`understandIntent`, `handleBilling`, `handleTechnical`, `handleHowTo`, `composeReply`) — never L3 CRM methods or `checkRefundPolicy`.
+- The direct OR expression needs **one successful `handle*` child**. Prompts still require every branch the intents need (mixed emails should run billing **and** technical).
 - Successful plans are expected to cover: `understandIntent` + ≥1 of `handleBilling` / `handleTechnical` / `handleHowTo` + `composeReply`.
 - Mid-level planners have **no** `evidence_contract` (structured digests only).
 
@@ -588,7 +588,7 @@ planTrip                                   [L1 planning YAML, model qwen3-35b]
 | Structured preference handoff | `understandPreferences` extracts fields; leaves key off `scenario` / origin / destination / dates — **not** re-parse the essay in Java |
 | Options in / choice out | Catalog leaves return ≥2 options including **dominated** options so journals show real choice |
 | Java ranks, LLM picks | `rankTransportOptions` sorts deterministically; transport planner still chooses |
-| Light root evidence + nested isolation | Root requires prefs + transport + stay + itinerary digests; `tool_evidence` names **L2 only** |
+| Light root evidence + nested isolation | Root expressions directly name L2 preference, transport, stay, and itinerary children |
 | Planner vs worker models | `qwen3-35b` planners; `gpt-4o-mini` workers on shared OpenRouter connection |
 
 #### What the LLM decides vs what is fixed
@@ -603,10 +603,10 @@ planTrip                                   [L1 planning YAML, model qwen3-35b]
 
 #### Evidence contract rules (root)
 
-- Claim evidence lists are **AND-all**.
-- Nested YAML missions **snapshot/restore** parent evidence; leaf evidence does **not** bubble to the parent ledger.
-- Parent `tool_evidence` keys are **L2 only** (`understandPreferences`, `planTransport`, `planStay`, `assembleItinerary`) — never L3 catalog methods.
-- Successful plans must cover: understand + transport + stay + assemble (all four evidence tags: `trip_preferences`, `transport_digest`, `stay_digest`, `itinerary_draft`).
+- Claim expressions use `and` for all-required children and `or` for alternatives.
+- Nested YAML missions **snapshot/restore** parent successful-skill state; successful leaf names do **not** bubble to the parent set.
+- Parent expressions reference **L2 children only** (`understandPreferences`, `planTransport`, `planStay`, `assembleItinerary`) — never L3 catalog methods.
+- Successful plans must cover the direct child names required by all declared expressions: understand + transport + stay + assemble.
 - Mid-level planners have **no** `evidence_contract` (structured digests only).
 - Teaching point: evidence is useful even on a “fun” sample — not only ops/compliance.
 

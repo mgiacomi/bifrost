@@ -2,7 +2,7 @@ package com.lokiscale.bifrost.internal.core;
 
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidationResult;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidator;
-import com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot;
+import com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot;
 import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.internal.runtime.state.PlanSnapshot;
 import com.lokiscale.bifrost.api.SkillInputValidationException;
@@ -74,7 +74,7 @@ public class CapabilityExecutionRouter
         if (capability.kind() == CapabilityKind.YAML_SKILL && capability.mappedTargetId() == null)
         {
             PlanSnapshot parentPlan = executionStateService.snapshotPlan(session);
-            EvidenceSnapshot parentEvidence = executionStateService.snapshotEvidence(session);
+            SuccessfulSkillSnapshot parentSkills = executionStateService.snapshotSuccessfulSkills(session);
             try
             {
                 return executionCoordinatorProvider.getObject()
@@ -83,7 +83,7 @@ public class CapabilityExecutionRouter
             finally
             {
                 executionStateService.restorePlan(session, parentPlan);
-                executionStateService.restoreEvidence(session, parentEvidence);
+                executionStateService.restoreSuccessfulSkills(session, parentSkills);
             }
         }
 

@@ -115,7 +115,7 @@ public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver
                             Map.of(
                                     "skillName", definition.manifest().getName(),
                                     "claims", result.evaluatedClaims(),
-                                    "evidence", result.availableEvidence()),
+                                    "satisfiedSkills", result.satisfiedSkills()),
                             result),
                     result -> executionStateService.recordEvidenceValidation(
                             BifrostSession.getCurrentSession(),
@@ -123,10 +123,9 @@ public final class DefaultSkillAdvisorResolver implements SkillAdvisorResolver
                             Map.of(
                                     "skillName", definition.manifest().getName(),
                                     "claims", result.evaluatedClaims(),
-                                    "missingEvidence", result.issues().stream()
-                                            .flatMap(issue -> issue.missingEvidence().stream())
-                                            .distinct()
-                                            .toList()),
+                                    "unsatisfiedClaims", result.issues().stream().map(com.lokiscale.bifrost.internal.runtime.evidence.EvidenceCoverageIssue::claimName).toList(),
+                                    "requiredExpressions", result.requiredExpressions(),
+                                    "satisfiedSkills", result.satisfiedSkills()),
                             result),
                     advisorTraceRecorder));
         }

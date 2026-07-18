@@ -3,7 +3,6 @@ package com.lokiscale.bifrost.internal.runtime.planning;
 import com.lokiscale.bifrost.internal.core.BifrostSession;
 import com.lokiscale.bifrost.internal.core.CapabilityMetadata;
 import com.lokiscale.bifrost.internal.core.ExecutionPlan;
-import com.lokiscale.bifrost.internal.runtime.evidence.EvidenceContract;
 import com.lokiscale.bifrost.internal.skill.YamlSkillDefinition;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -30,8 +29,7 @@ public interface PlanningService
     Optional<ExecutionPlan> markToolCompleted(BifrostSession session,
             String taskId,
             String capabilityName,
-            @Nullable Object result,
-            EvidenceContract evidenceContract);
+            @Nullable Object result);
 
     Optional<ExecutionPlan> markToolFailed(BifrostSession session, String taskId, String capabilityName, RuntimeException ex);
 }

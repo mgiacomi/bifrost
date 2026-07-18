@@ -2,6 +2,9 @@
 bifrost-cli
 bifrost-cli.exe
 
+# Traces
+traces/
+
 # Go build artifacts
 *.exe
 *.exe~

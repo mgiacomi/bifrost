@@ -30,17 +30,12 @@ prompt: |
   you do not need both branches for a successful plan.
 evidence_contract:
   claims:
-    severity: [incident_classification]
-    category: [incident_classification]
-    likelyCause: [incident_classification, investigation_digest]
-    evidenceSummary: [investigation_digest]
-    recommendedAction: [investigation_digest]
-    userMessage: [response_draft]
-  tool_evidence:
-    classifyIncident: [incident_classification]
-    investigateNetwork: [investigation_digest]
-    investigateApp: [investigation_digest]
-    draftIncidentResponse: [response_draft]
+    severity: classifyIncident
+    category: classifyIncident
+    likelyCause: classifyIncident and (investigateNetwork or investigateApp)
+    evidenceSummary: investigateNetwork or investigateApp
+    recommendedAction: investigateNetwork or investigateApp
+    userMessage: draftIncidentResponse
 input_schema:
   type: object
   properties:

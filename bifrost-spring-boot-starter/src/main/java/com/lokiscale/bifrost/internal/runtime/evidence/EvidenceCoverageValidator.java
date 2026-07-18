@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.internal.core.ExecutionPlan;
 import com.lokiscale.bifrost.internal.core.PlanTask;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -15,87 +16,64 @@ public class EvidenceCoverageValidator
     {
         if (plan == null || contract == null || contract.isEmpty())
         {
-            return new EvidenceCoverageResult(Set.of(), Set.of(), Set.of(), List.of());
+            return new EvidenceCoverageResult(Set.of(), Map.of(), Set.of(), List.of());
         }
-
-        Set<String> evaluatedClaims = contract.claims();
-        Set<String> requiredEvidence = contract.requiredEvidenceForClaims(evaluatedClaims);
-        Set<String> availableEvidence = new LinkedHashSet<>();
-
+        LinkedHashSet<String> plannedSkills = new LinkedHashSet<>();
         for (PlanTask task : plan.tasks())
         {
             if (task.capabilityName() != null && !task.capabilityName().isBlank())
             {
-                availableEvidence.addAll(contract.evidenceProducedByTool(task.capabilityName()));
+                plannedSkills.add(task.capabilityName());
             }
         }
-
-        return coverageForClaims(evaluatedClaims, requiredEvidence, availableEvidence, contract, true);
+        return coverageForClaims(contract.claims(), plannedSkills, contract, true);
     }
 
     public EvidenceCoverageResult validateEvidenceForClaims(Set<String> presentClaims,
-            Set<String> availableEvidence,
+            Set<String> successfulSkills,
             EvidenceContract contract)
     {
-        if (contract == null || contract.isEmpty() || presentClaims == null || presentClaims.isEmpty())
+        Set<String> safeClaims = presentClaims == null ? Set.of() : new LinkedHashSet<>(presentClaims);
+        Set<String> safeSkills = successfulSkills == null ? Set.of() : new LinkedHashSet<>(successfulSkills);
+        if (contract == null || contract.isEmpty() || safeClaims.isEmpty())
         {
-            return new EvidenceCoverageResult(
-                    presentClaims == null ? Set.of() : Set.copyOf(presentClaims),
-                    Set.of(),
-                    availableEvidence == null ? Set.of() : Set.copyOf(availableEvidence),
-                    List.of());
+            return new EvidenceCoverageResult(safeClaims, Map.of(), safeSkills, List.of());
         }
-
-        Set<String> requiredEvidence = contract.requiredEvidenceForClaims(presentClaims);
-        return coverageForClaims(
-                Set.copyOf(presentClaims),
-                requiredEvidence,
-                availableEvidence == null ? Set.of() : Set.copyOf(availableEvidence),
-                contract,
-                false);
+        return coverageForClaims(safeClaims, safeSkills, contract, false);
     }
 
     private EvidenceCoverageResult coverageForClaims(Set<String> evaluatedClaims,
-            Set<String> requiredEvidence,
-            Set<String> availableEvidence,
+            Set<String> satisfiedSkills,
             EvidenceContract contract,
-            boolean includeSupportingTools)
+            boolean planning)
     {
         List<EvidenceCoverageIssue> issues = new ArrayList<>();
-
+        Map<String, String> requiredExpressions = new LinkedHashMap<>();
         for (String claimName : evaluatedClaims)
         {
-            Set<String> missingEvidence = new LinkedHashSet<>(contract.evidenceForClaim(claimName));
-            missingEvidence.removeAll(availableEvidence);
-            if (missingEvidence.isEmpty())
+            EvidenceExpression expression = contract.expressionForClaim(claimName);
+            if (expression == null)
             {
                 continue;
             }
-            List<String> tools = includeSupportingTools
-                    ? contract.evidenceByTool().entrySet().stream()
-                            .filter(entry -> entry.getValue().stream().anyMatch(missingEvidence::contains))
-                            .map(Map.Entry::getKey)
-                            .sorted()
-                            .toList()
-                    : List.of();
-
-            String message = includeSupportingTools
-                    ? "Validation Error: The plan is missing required evidence %s for the '%s' claim. To fix this, you MUST include a task that uses %s."
-                            .formatted(missingEvidence, claimName, tools.isEmpty() ? "a tool that can produce it" : "the " + tools + " tool(s)")
-                    : "Validation Error: Execution failed to gather %s required for the '%s' claim (only gathered %s)."
-                            .formatted(missingEvidence, claimName, availableEvidence);
-
+            requiredExpressions.put(claimName, expression.canonical());
+            if (expression.evaluate(satisfiedSkills))
+            {
+                continue;
+            }
+            EvidenceRequirement requirement = expression.unsatisfiedRequirement(satisfiedSkills);
+            String message = planning
+                    ? "Validation Error: The plan does not satisfy expression '%s' required for the '%s' claim. Include tasks whose exact capability names satisfy this expression; already planned: %s."
+                            .formatted(expression.canonical(), claimName, satisfiedSkills)
+                    : "Validation Error: The '%s' claim requires successful completion of '%s' (successfully completed direct skills: %s)."
+                            .formatted(claimName, expression.canonical(), satisfiedSkills);
             issues.add(new EvidenceCoverageIssue(
                     claimName,
-                    missingEvidence.stream().sorted().toList(),
-                    tools,
+                    expression.canonical(),
+                    satisfiedSkills,
+                    requirement == null ? List.of() : List.of(requirement),
                     message));
         }
-
-        return new EvidenceCoverageResult(
-                evaluatedClaims,
-                requiredEvidence,
-                availableEvidence,
-                List.copyOf(issues));
+        return new EvidenceCoverageResult(evaluatedClaims, requiredExpressions, satisfiedSkills, issues);
     }
 }

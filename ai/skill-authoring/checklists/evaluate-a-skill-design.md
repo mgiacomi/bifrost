@@ -35,7 +35,7 @@ Reject an entry design that requires callers to understand internal child propag
 ## 3. Design the Capability Surface
 
 - Does every public YAML `name` match `^[A-Za-z_][A-Za-z0-9_]{0,63}$` and use the exact same case in every reference?
-- Do `SkillTemplate`, `allowed_skills`, plans, and evidence producer keys use public YAML names rather than internal `beanName#methodName` target IDs?
+- Do `SkillTemplate`, `allowed_skills`, plans, and evidence-expression references use public YAML names rather than internal `beanName#methodName` target IDs?
 - Which direct child capabilities does each LLM-backed skill need?
 - Are those children declared locally through `allowed_skills`?
 - Is the surface narrower than the global catalog?
@@ -79,13 +79,13 @@ Planning depth is not itself a quality goal. Prefer the least complex execution 
 
 - Which top-level output fields are claims about the mission result?
 - Which claims need deterministic supportability enforcement?
-- What minimum independent semantic evidence types support each claim?
-- Are claim evidence lists intentionally AND-all?
-- If multiple branches are substitutes, can they truthfully produce one shared semantic evidence type?
-- Does `tool_evidence` name direct children of the declaring skill?
-- Does successful completion of each mapped tool justify the evidence label?
-- Can every contract claim be covered without forcing unrelated branches?
-- Are nested child evidence details kept behind the child capability boundary?
+- What minimum Boolean expression over successful direct children supports each claim?
+- Does every reference exactly match a direct `allowed_skills` name, including case?
+- Are conjunctions written with `and`, genuine substitutes with `or`, and mixed precedence made explicit with parentheses?
+- Can every declared claim be covered during planning without forcing unrelated OR branches?
+- Does successful completion of each referenced child justify support for the claim?
+- Are workflow order and multi-intent branch policy kept outside the evidence expression?
+- Are nested child internals kept behind the child capability boundary?
 
 Read [evidence-contracts.md](../evidence-contracts.md) before authoring an evidence contract.
 

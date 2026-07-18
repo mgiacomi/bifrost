@@ -497,7 +497,7 @@ class ExecutionCoordinatorTest {
 
         ExecutionStateService stateService = fixedStateService();
         MissionExecutionEngine assertingEngine = (session, definition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
-            assertThat(session.getProducedEvidenceTypes()).isEmpty();
+            assertThat(session.getSuccessfulDirectSkills()).isEmpty();
             return "nested complete";
         };
         ExecutionCoordinator coordinator = coordinator(
@@ -514,12 +514,12 @@ class ExecutionCoordinatorTest {
 
         BifrostSession session = new BifrostSession("session-nested", 3);
         ExecutionFrame parentFrame = stateService.openMissionFrame(session, "parent.visible.skill", Map.of("objective", "parent"));
-        stateService.recordProducedEvidence(session, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
+        stateService.recordSuccessfulSkill(session, "invoiceParser", "task-1", false);
 
         String response = coordinator.execute("rootVisibleSkill", "child objective", session, null);
 
         assertThat(response).isEqualTo("nested complete");
-        assertThat(session.getProducedEvidenceTypes()).isEmpty();
+        assertThat(session.getSuccessfulDirectSkills()).isEmpty();
         stateService.closeMissionFrame(session, parentFrame);
     }
 

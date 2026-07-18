@@ -92,7 +92,7 @@ class ToolCallbackFactoryTest {
         Object linkedResult = linkedCallback.call("{\"value\":\"hello\"}");
 
         assertThat(linkedResult).isEqualTo("\"child:hello\"");
-        verify(planningService).markToolCompleted(eq(session), eq("task-1"), eq(capability.name()), eq("child:hello"), any());
+        verify(planningService).markToolCompleted(eq(session), eq("task-1"), eq(capability.name()), eq("child:hello"));
         org.mockito.InOrder inOrder = inOrder(stateService);
         inOrder.verify(stateService).openFrame(eq(session), eq(TraceFrameType.TOOL_INVOCATION), eq(capability.name()), any());
         inOrder.verify(stateService).logToolCall(eq(session), any());
@@ -108,7 +108,7 @@ class ToolCallbackFactoryTest {
 
         assertThat(unplannedResult).isEqualTo("\"child:again\"");
         verify(stateService).logUnplannedToolCall(eq(session), any());
-        verify(stateService).recordProducedEvidence(eq(session), eq(capability.name()), eq(null), eq(true), eq(java.util.Set.of("parsed_invoice")));
+        verify(stateService).recordSuccessfulSkill(eq(session), eq(capability.name()), eq(null), eq(true));
         verify(stateService, times(2)).closeFrame(eq(session), eq(toolFrame), any());
 
         ArgumentCaptor<TaskExecutionEvent> linkedCall = ArgumentCaptor.forClass(TaskExecutionEvent.class);
@@ -177,8 +177,8 @@ class ToolCallbackFactoryTest {
                         DefaultToolCallbackFactory.STEP_LOOP_TASK_ID_CONTEXT_KEY, "task-1")));
 
         assertThat(result).isEqualTo("\"child:hello\"");
-        verify(planningService, never()).markToolCompleted(eq(session), eq("task-1"), eq(capability.name()), eq("child:hello"), any());
-        verify(stateService, never()).recordProducedEvidence(eq(session), eq(capability.name()), eq("task-1"), eq(false), eq(java.util.Set.of("parsed_invoice")));
+        verify(planningService, never()).markToolCompleted(eq(session), eq("task-1"), eq(capability.name()), eq("child:hello"));
+        verify(stateService, never()).recordSuccessfulSkill(eq(session), eq(capability.name()), eq("task-1"), eq(false));
     }
 
     private static CapabilityMetadata capability() {
@@ -200,8 +200,7 @@ class ToolCallbackFactoryTest {
         manifest.setDescription("rootVisibleSkill");
         manifest.setModel("gpt-5");
         YamlSkillManifest.EvidenceContractManifest contract = new YamlSkillManifest.EvidenceContractManifest();
-        contract.setClaims(java.util.Map.of("vendorName", java.util.List.of("parsed_invoice")));
-        contract.setToolEvidence(java.util.Map.of("allowedVisibleSkill", java.util.List.of("parsed_invoice")));
+        contract.setClaims(java.util.Map.of("vendorName", "allowedVisibleSkill"));
         manifest.setEvidenceContract(contract);
         return new com.lokiscale.bifrost.internal.skill.YamlSkillDefinition(
                 new org.springframework.core.io.ByteArrayResource(new byte[0]),

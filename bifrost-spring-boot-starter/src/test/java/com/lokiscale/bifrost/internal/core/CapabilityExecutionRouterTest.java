@@ -52,10 +52,10 @@ class CapabilityExecutionRouterTest {
                 CapabilityToolDescriptor.generic("child.llm.skill", "child"),
                 null);
         PlanSnapshot snapshot = PlanSnapshot.of(null);
-        com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot evidenceSnapshot = com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot.of(java.util.Set.of("parsed_invoice"));
+        com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot evidenceSnapshot = com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot.of(java.util.Set.of("parsed_invoice"));
 
         when(stateService.snapshotPlan(session)).thenReturn(snapshot);
-        when(stateService.snapshotEvidence(session)).thenReturn(evidenceSnapshot);
+        when(stateService.snapshotSuccessfulSkills(session)).thenReturn(evidenceSnapshot);
         when(coordinator.execute(eq("child.llm.skill"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyMap(), eq(session), eq(null)))
                 .thenReturn("child result");
 
@@ -63,7 +63,7 @@ class CapabilityExecutionRouterTest {
 
         assertThat(result).isEqualTo("child result");
         verify(stateService).restorePlan(session, snapshot);
-        verify(stateService).restoreEvidence(session, evidenceSnapshot);
+        verify(stateService).restoreSuccessfulSkills(session, evidenceSnapshot);
     }
 
     @Test
@@ -134,10 +134,10 @@ class CapabilityExecutionRouterTest {
                 CapabilityToolDescriptor.generic("child.llm.skill", "child"),
                 null);
         PlanSnapshot snapshot = PlanSnapshot.of(null);
-        com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot evidenceSnapshot = com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot.of(java.util.Set.of("parsed_invoice"));
+        com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot evidenceSnapshot = com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot.of(java.util.Set.of("parsed_invoice"));
 
         when(stateService.snapshotPlan(session)).thenReturn(snapshot);
-        when(stateService.snapshotEvidence(session)).thenReturn(evidenceSnapshot);
+        when(stateService.snapshotSuccessfulSkills(session)).thenReturn(evidenceSnapshot);
         when(coordinator.execute(eq("child.llm.skill"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyMap(), eq(session), eq(null)))
                 .thenReturn("child result");
 
@@ -145,7 +145,7 @@ class CapabilityExecutionRouterTest {
 
         assertThat(result).isEqualTo("child result");
         verify(stateService).restorePlan(session, snapshot);
-        verify(stateService).restoreEvidence(session, evidenceSnapshot);
+        verify(stateService).restoreSuccessfulSkills(session, evidenceSnapshot);
         verify(refResolver, never()).resolveArguments(org.mockito.ArgumentMatchers.any(), eq(session));
     }
 
@@ -191,8 +191,8 @@ class CapabilityExecutionRouterTest {
         when(chatClientFactory.createForStepExecution(definition)).thenReturn(mock(org.springframework.ai.chat.client.ChatClient.class));
 
         com.lokiscale.bifrost.internal.runtime.MissionExecutionEngine engine = (session, skillDefinition, objective, missionInput, chatClient, visibleTools, planningEnabled, authentication) -> {
-            assertThat(session.getProducedEvidenceTypes()).isEmpty();
-            session.addProducedEvidenceTypes(java.util.List.of("expense_match_search"));
+            assertThat(session.getSuccessfulDirectSkills()).isEmpty();
+            session.addSuccessfulDirectSkill("expense_match_search");
             return "child result";
         };
         ExecutionCoordinator coordinator = new ExecutionCoordinator(
@@ -212,13 +212,13 @@ class CapabilityExecutionRouterTest {
                 stateService,
                 new DefaultAccessGuard());
         BifrostSession session = new BifrostSession("session-1", 2);
-        session.addProducedEvidenceTypes(java.util.List.of("parsed_invoice"));
+        session.addSuccessfulDirectSkill("parsed_invoice");
         ExecutionFrame parentFrame = stateService.openMissionFrame(session, "parent.visible.skill", Map.of("objective", "parent"));
 
         Object result = router.execute(capability, Map.of("topic", "mars"), session, null);
 
         assertThat(result).isEqualTo("child result");
-        assertThat(session.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
+        assertThat(session.getSuccessfulDirectSkills()).containsExactly("parsed_invoice");
         stateService.closeMissionFrame(session, parentFrame);
     }
 
@@ -259,10 +259,10 @@ class CapabilityExecutionRouterTest {
                         """),
                 null);
         PlanSnapshot snapshot = PlanSnapshot.of(null);
-        com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot evidenceSnapshot = com.lokiscale.bifrost.internal.runtime.state.EvidenceSnapshot.of(java.util.Set.of());
+        com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot evidenceSnapshot = com.lokiscale.bifrost.internal.runtime.state.SuccessfulSkillSnapshot.of(java.util.Set.of());
 
         when(stateService.snapshotPlan(session)).thenReturn(snapshot);
-        when(stateService.snapshotEvidence(session)).thenReturn(evidenceSnapshot);
+        when(stateService.snapshotSuccessfulSkills(session)).thenReturn(evidenceSnapshot);
         when(coordinator.execute(eq("child.llm.skill"), eq("Execute YAML skill 'child.llm.skill' using the provided mission input object."),
                 eq(Map.of("invoiceId", "INV-7")), eq(session), eq(null)))
                 .thenReturn("child result");

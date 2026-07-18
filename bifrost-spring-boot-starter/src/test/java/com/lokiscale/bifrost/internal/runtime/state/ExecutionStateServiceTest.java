@@ -25,6 +25,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +35,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ExecutionStateServiceTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-03-15T12:00:00Z"), ZoneOffset.UTC);
+
+    @Test
+    void successfulSkillSnapshotDefensivelyPreservesInsertionOrder() {
+        LinkedHashSet<String> source = new LinkedHashSet<>(List.of("invoiceParser", "expenseLookup"));
+        SuccessfulSkillSnapshot snapshot = new SuccessfulSkillSnapshot(source);
+        source.add("taxLookup");
+
+        assertThat(snapshot.successfulDirectSkills()).containsExactly("invoiceParser", "expenseLookup");
+        assertThatThrownBy(() -> snapshot.successfulDirectSkills().add("taxLookup"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 
     @Test
     void managesFramePlanAndJournalWritesThroughSingleBoundary() {
@@ -105,22 +117,24 @@ class ExecutionStateServiceTest {
     }
 
     @Test
-    void restoresParentEvidenceAfterNestedMissionAndClearsWhenNoParentExists() {
+    void restoresParentSuccessfulSkillsAfterNestedMissionAndClearsWhenNoParentExists() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
 
         BifrostSession sessionWithParent = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("session-parent-evidence", 3);
-        stateService.recordProducedEvidence(sessionWithParent, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
-        EvidenceSnapshot snapshot = stateService.snapshotEvidence(sessionWithParent);
-        stateService.recordProducedEvidence(sessionWithParent, "expenseLookup", "task-2", false, List.of("expense_match_search"));
-        stateService.restoreEvidence(sessionWithParent, snapshot);
+        stateService.recordSuccessfulSkill(sessionWithParent, "invoiceParser", "task-1", false);
+        stateService.recordSuccessfulSkill(sessionWithParent, "expenseLookup", "task-2", false);
+        SuccessfulSkillSnapshot snapshot = stateService.snapshotSuccessfulSkills(sessionWithParent);
+        assertThat(snapshot.successfulDirectSkills()).containsExactly("invoiceParser", "expenseLookup");
+        stateService.recordSuccessfulSkill(sessionWithParent, "taxLookup", "task-3", false);
+        stateService.restoreSuccessfulSkills(sessionWithParent, snapshot);
 
         BifrostSession sessionWithoutParent = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("session-empty-evidence", 3);
-        EvidenceSnapshot emptySnapshot = stateService.snapshotEvidence(sessionWithoutParent);
-        stateService.recordProducedEvidence(sessionWithoutParent, "expenseLookup", "task-2", false, List.of("expense_match_search"));
-        stateService.restoreEvidence(sessionWithoutParent, emptySnapshot);
+        SuccessfulSkillSnapshot emptySnapshot = stateService.snapshotSuccessfulSkills(sessionWithoutParent);
+        stateService.recordSuccessfulSkill(sessionWithoutParent, "expenseLookup", "task-2", false);
+        stateService.restoreSuccessfulSkills(sessionWithoutParent, emptySnapshot);
 
-        assertThat(sessionWithParent.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
-        assertThat(sessionWithoutParent.getProducedEvidenceTypes()).isEmpty();
+        assertThat(sessionWithParent.getSuccessfulDirectSkills()).containsExactly("invoiceParser", "expenseLookup");
+        assertThat(sessionWithoutParent.getSuccessfulDirectSkills()).isEmpty();
     }
 
     @Test
@@ -192,18 +206,25 @@ class ExecutionStateServiceTest {
     }
 
     @Test
-    void recordsProducedEvidenceInLedgerAndTraceWithoutJournalEntries() {
+    void recordsSuccessfulSkillInLedgerAndTraceWithoutJournalEntries() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         BifrostSession session = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("session-evidence", 3);
 
         ExecutionFrame rootFrame = stateService.openMissionFrame(session, "rootVisibleSkill", Map.of());
-        stateService.recordProducedEvidence(session, "invoiceParser", "task-1", false, List.of("parsed_invoice"));
+        stateService.recordSuccessfulSkill(session, "invoiceParser", "task-1", false);
         stateService.recordEvidenceValidation(session, false, Map.of("skillName", "rootVisibleSkill"), Map.of("claims", List.of("isDuplicate")));
         stateService.closeMissionFrame(session, rootFrame);
 
-        assertThat(session.getProducedEvidenceTypes()).containsExactly("parsed_invoice");
+        assertThat(session.getSuccessfulDirectSkills()).containsExactly("invoiceParser");
         assertThat(session.getJournalSnapshot()).isEmpty();
-        assertThat(readRecords(session)).anyMatch(record -> record.recordType() == TraceRecordType.EVIDENCE_RECORDED);
+        TraceRecord evidenceRecord = readRecords(session).stream()
+                .filter(record -> record.recordType() == TraceRecordType.EVIDENCE_RECORDED)
+                .findFirst()
+                .orElseThrow();
+        assertThat(evidenceRecord.data().path("successfulSkill").asText()).isEqualTo("invoiceParser");
+        assertThat(evidenceRecord.data().path("successfulDirectSkills")).hasSize(1);
+        assertThat(evidenceRecord.data().has("evidenceTypes")).isFalse();
+        assertThat(evidenceRecord.data().has("ledger")).isFalse();
         assertThat(readRecords(session)).anyMatch(record -> record.recordType() == TraceRecordType.EVIDENCE_VALIDATION_FAILED);
     }
 

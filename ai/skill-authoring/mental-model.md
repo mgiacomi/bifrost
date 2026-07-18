@@ -34,7 +34,7 @@ The YAML manifest `name` is the single public identity for both LLM-backed and m
 
 Descriptive lowerCamelCase, such as `expenseLookup`, is the recommended repository style, not an additional runtime restriction. Valid alternatives include `expense_lookup`, `_internalStyleAllowed`, and `Skill2`.
 
-Use the exact validated YAML name for catalog and registry lookup, `SkillTemplate` invocation, `allowed_skills`, plan capability targets, evidence tool-producer keys, metrics, journals, traces, and provider-facing tool definitions. These surfaces share one identity rather than maintaining provider-specific aliases.
+Use the exact validated YAML name for catalog and registry lookup, `SkillTemplate` invocation, `allowed_skills`, plan capability targets, evidence-expression references, metrics, journals, traces, and provider-facing tool definitions. These surfaces share one identity rather than maintaining provider-specific aliases.
 
 `mapping.target_id` belongs to a separate internal namespace. Its `beanName#methodName` syntax is intentionally not valid as a public YAML name and is not governed by the public-name validator.
 
@@ -140,7 +140,7 @@ When an LLM-backed YAML skill invokes another LLM-backed YAML skill:
 - the child receives the arguments supplied for the child contract;
 - the child opens its own mission frame inside the current session;
 - the child uses its own model, prompt, allowed skills, plan, and evidence contract;
-- the parent's plan and evidence ledger are saved and restored around the child mission;
+- the parent's plan and successful-direct-skill set are saved and restored around the child mission;
 - the parent observes the child capability result, not the child's internal tool surface or evidence ledger.
 
 This isolation is intentional. A parent contract should describe the child capability it invokes rather than coupling itself to the child's internal leaves.
@@ -227,7 +227,7 @@ Use these only when current behavior or an edge case needs verification:
 - [`DefaultSkillVisibilityResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/DefaultSkillVisibilityResolver.java) defines the current local YAML child surface and access filtering.
 - [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouter.java) distinguishes nested LLM-backed YAML execution from mapped/Java invocation and preserves parent state.
 - [`ExecutionCoordinator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/ExecutionCoordinator.java) selects the execution engine and constructs each YAML mission boundary.
-- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouterTest.java) covers nested routing, authorization fallback, plan restoration, evidence isolation, and canonical mission input.
+- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouterTest.java) covers nested routing, authorization fallback, plan restoration, successful-skill isolation, and canonical mission input.
 - [`SupportedSurfaceIntegrationTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/integration/SupportedSurfaceIntegrationTest.java) proves that an LLM-backed YAML entry skill can be configured and invoked through `SkillTemplate` without replacing internal Bifrost infrastructure.
 
 ## Coverage Boundary

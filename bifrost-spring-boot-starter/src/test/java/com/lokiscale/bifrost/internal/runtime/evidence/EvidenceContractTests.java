@@ -16,6 +16,8 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +29,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EvidenceContractTests {
 
     @Test
+    void preservesDiagnosticClaimExpressionAndSkillOrder() {
+        LinkedHashMap<String, String> requiredExpressions = new LinkedHashMap<>();
+        requiredExpressions.put("vendorName", "invoiceParser");
+        requiredExpressions.put("isDuplicate", "invoiceParser and expenseLookup");
+        EvidenceCoverageResult result = new EvidenceCoverageResult(
+                new LinkedHashSet<>(List.of("vendorName", "isDuplicate")),
+                requiredExpressions,
+                new LinkedHashSet<>(List.of("invoiceParser", "expenseLookup")),
+                List.of());
+
+        assertThat(result.evaluatedClaims()).containsExactly("vendorName", "isDuplicate");
+        assertThat(result.requiredExpressions().keySet()).containsExactly("vendorName", "isDuplicate");
+        assertThat(result.satisfiedSkills()).containsExactly("invoiceParser", "expenseLookup");
+    }
+
+    @Test
     void normalizesClaimsToolsAndPresentClaimLookups() throws Exception {
         YamlSkillManifest.OutputSchemaManifest schema = new YamlSkillManifest.OutputSchemaManifest();
         schema.setType("object");
@@ -36,26 +54,21 @@ class EvidenceContractTests {
 
         YamlSkillManifest.EvidenceContractManifest manifest = new YamlSkillManifest.EvidenceContractManifest();
         manifest.setClaims(Map.of(
-                "vendorName", List.of("parsed_invoice"),
-                "isDuplicate", List.of("parsed_invoice", "expense_match_search")));
-        manifest.setToolEvidence(Map.of(
-                "invoiceParser", List.of("parsed_invoice"),
-                "expenseLookup", List.of("expense_match_search")));
+                "vendorName", "invoiceParser",
+                "isDuplicate", "invoiceParser and expenseLookup"));
 
         EvidenceContract contract = EvidenceContract.fromManifest(manifest, schema);
         EvidenceBackedOutputValidator validator = new EvidenceBackedOutputValidator();
 
-        assertThat(contract.evidenceForClaim("VENDORNAME")).containsExactly("parsed_invoice");
-        assertThat(contract.evidenceProducedByTool("expenselookup")).containsExactly("expense_match_search");
-        assertThat(contract.requiredEvidenceForClaims(Set.of("vendorName", "isDuplicate")))
-                .containsExactlyInAnyOrder("parsed_invoice", "expense_match_search");
+        assertThat(contract.canonicalExpressionForClaim("VENDORNAME")).isEqualTo("invoiceParser");
+        assertThat(contract.canonicalExpressionForClaim("isDuplicate")).isEqualTo("invoiceParser and expenseLookup");
 
         EvidenceCoverageResult result = validator.validate(
                 JsonMapper.builder().findAndAddModules().build().readTree("""
                         {"vendorName":"Acme","isDuplicate":false}
                         """),
                 contract,
-                Set.of("parsed_invoice"));
+                Set.of("invoiceParser"));
         assertThat(result.complete()).isFalse();
         assertThat(result.issues()).singleElement()
                 .extracting(EvidenceCoverageIssue::claimName)
@@ -69,8 +82,7 @@ class EvidenceContractTests {
         schema.setProperties(Map.of("vendorName", scalar("string")));
 
         YamlSkillManifest.EvidenceContractManifest manifest = new YamlSkillManifest.EvidenceContractManifest();
-        manifest.setClaims(Map.of("vendorName", List.of("parsed_invoice")));
-        manifest.setToolEvidence(Map.of("invoiceParser", List.of("parsed_invoice")));
+        manifest.setClaims(Map.of("vendorName", "invoiceParser"));
 
         EvidenceContractCallAdvisor advisor = new EvidenceContractCallAdvisor(
                 "evidence.skill",
@@ -100,7 +112,7 @@ class EvidenceContractTests {
         assertThat(chain.requests.get(1).prompt().getSystemMessage().getText())
                 .startsWith("SKILL_PROMPT_SENTINEL")
                 .contains("Evidence validation failed")
-                .contains("Use only evidence already gathered");
+                .contains("Use only results already gathered");
     }
 
     private static YamlSkillManifest.OutputSchemaManifest scalar(String type) {

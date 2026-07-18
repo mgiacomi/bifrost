@@ -79,9 +79,9 @@ public class ExecutionCoordinator
         accessGuard.checkAccess(rootCapability, session, authentication);
         executionStateService.clearPlan(session);
 
-        // Every YAML skill run gets a fresh evidence ledger; nested invocations rely on
-        // CapabilityExecutionRouter to snapshot and restore the parent's evidence afterward.
-        executionStateService.clearProducedEvidence(session);
+        // Every YAML skill run gets a fresh successful-direct-skill ledger; nested invocations rely on
+        // CapabilityExecutionRouter to snapshot and restore the parent's successful skills afterward.
+        executionStateService.clearSuccessfulSkills(session);
         LinkedHashMap<String, Object> frameParameters = new LinkedHashMap<>();
         frameParameters.put("objective", objective);
 
