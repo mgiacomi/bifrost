@@ -57,7 +57,7 @@ Create a short, explicit list of:
 
 Tests establish existing behavior but do not independently establish a supported compatibility promise. Use the canonical categories from `ai/thoughts/framework-feature-design-lens.md`: Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, and Internal or accidentally exposed implementation.
 
-When the work affects the Bifrost Console application-adapter REST/SSE boundary, read `ai/thoughts/bifrost-console-compatibility.md`, carry forward the approved increment or no-increment decision, and cover the affected Java/Go protocol fixtures, exact-version rejection, and observable semantics.
+When the work affects the Bifrost Console application-adapter REST/SSE, acquisition, problem, or consumed NDJSON boundary, carry forward the approved Java-to-Go boundary-coordination scope and cover the affected executable fixtures, exact release-string rejection, and observable semantics.
 
 ### Step 3: Plan the Failing Test (When Applicable)
 

@@ -52,7 +52,7 @@ Then wait for the user's research query.
 
    **For framework API and compatibility research:**
    - Read the canonical policy in `ai/thoughts/framework-feature-design-lens.md` and use its exact categories: Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, and Internal or accidentally exposed implementation
-   - When the research affects the Bifrost Console application-adapter REST/SSE boundary, also read `ai/thoughts/bifrost-console-compatibility.md` completely and identify the current `consoleCompatibilityVersion`, protected protocol consumers, contract fixtures, and observable semantics that may change
+   - When the research affects the Bifrost Console application-adapter REST/SSE, acquisition, problem, or consumed NDJSON boundary, identify the protected protocol consumers, executable fixtures, and observable semantics that may require coordinated Java-to-Go changes in the same release
    - Inventory separately: public declarations; interfaces and constructors; Spring beans and `@ConditionalOnMissingBean`; tests and fixtures; documentation; configuration and manifests; serialized formats; traces; and verified in-repository usage
    - For each affected surface, distinguish technical exposure, evidence of existing behavior, evidence of a deliberately supported contract, and unknown or unclassified status
    - A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, fixture, or previous implementation does not by itself establish a supported contract or prove a supported Application API or Supported SPI
