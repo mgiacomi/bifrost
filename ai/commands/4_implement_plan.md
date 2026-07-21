@@ -13,6 +13,7 @@ When given a plan path:
 - Read the original ticket and all files mentioned in the plan
 - If a testing plan exists for this work (for example, `ai/thoughts/plans/*-testing.md`), read it completely and follow it during implementation
 - For Bifrost framework work, read and follow the plan's `Contract and Compatibility Impact` section and the canonical policy in `ai/thoughts/framework-feature-design-lens.md` before editing code
+- When the plan affects the Bifrost Console application-adapter REST/SSE boundary, also read `ai/thoughts/bifrost-console-compatibility.md` and treat the plan's console compatibility decision as an implementation constraint
 - Read the plan's `Skill-Authoring Documentation Impact` section. If it is missing (for example, in an older plan), perform the assessment described below before implementation
 - When skill-authoring impact is `Affected`, read `ai/skill-authoring/README.md`, the relevant routed topic documents, and `ai/skill-authoring/source-verification.md` before editing the knowledge base
 - **Read files fully when practical** - avoid partial reads unless a file is very large; if you must read in chunks, capture sufficient surrounding context
@@ -64,6 +65,8 @@ When impact is present:
 - Report any conflict between the knowledge base and executable behavior explicitly; do not silently choose one
 
 If actual implementation reveals skill-authoring impact that the approved plan marked `No impact`, or materially changes the planned documentation scope, treat that as a plan mismatch. Propose the minimal plan update and rationale using the mismatch process above before proceeding.
+
+If implementation reveals that the approved `consoleCompatibilityVersion` increment or no-increment decision is incorrect, treat that as a plan mismatch. Do not silently change the version or preserve it. When an approved increment is implemented, update the Java and Go constants, protocol fixtures, rejection tests, and documentation atomically.
 
 ## Verification Approach
 

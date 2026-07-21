@@ -188,6 +188,9 @@ Use the questions that are relevant to the proposal. They are prompts for discus
 - What is the public-surface delta, including public signature types and Spring extension points?
 - Which breaking changes are intentional, and why are they appropriate under the current lifecycle posture?
 - Is the decision shim or no shim? If a shim is proposed, what protected contract requires it, why is atomic change inappropriate, and what is its removal condition?
+- If the feature changes a versioned cross-component protocol, what compatibility marker governs it, what observable semantic changes require that marker to change, and where is the increment or no-increment decision recorded?
+
+For work affecting the Bifrost Console application-adapter REST/SSE boundary, `ai/thoughts/bifrost-console-compatibility.md` is the canonical protocol-version policy and must be applied in addition to this general lens.
 
 ## Applying the Lens
 
@@ -204,5 +207,6 @@ Feature research and plans should summarize the relevant tradeoffs rather than c
 9. intended breaking changes and the protected and in-repository consumers affected;
 10. the public-surface delta, including signature and extension-point exposure;
 11. an explicit shim/no-shim decision, with justification and a removal condition for any temporary mechanism.
+12. for a versioned cross-component protocol, an explicit compatibility-marker decision with its semantic rationale.
 
 When principles pull in different directions, document the tradeoff. The purpose of this lens is not to eliminate judgment; it is to make that judgment deliberate, consistent, and reviewable.

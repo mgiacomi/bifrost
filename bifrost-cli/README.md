@@ -1,5 +1,7 @@
 # Bifrost CLI
 
+> **Deprecated:** This project is a legacy trace-viewer proof of concept. It is not a compatibility target or supported foundation for Bifrost Console and will be removed after the Bifrost Console implementation is complete. Do not build new workflows or integrations around it.
+
 Interactive command-line interface for Bifrost built with Bubbletea.
 
 ## Features

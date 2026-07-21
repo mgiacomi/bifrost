@@ -51,6 +51,7 @@ Then wait for the user's input.
    - **CRITICAL**: DO NOT start broader research steps before reading these files yourself in the main context
    - **NEVER** read files partially - if a file is mentioned, read it completely
    - For Bifrost framework work, read `ai/thoughts/framework-feature-design-lens.md` completely before forming compatibility conclusions
+   - When the work affects the Bifrost Console application-adapter REST/SSE boundary, also read `ai/thoughts/bifrost-console-compatibility.md` completely before forming a protocol compatibility conclusion
 
 2. **Read all files identified by research steps**:
    - After research steps complete, read ALL files they identified as relevant
@@ -228,6 +229,7 @@ Required for Bifrost framework work. Cover every category, including categories 
 - **In-repository consumers to update**: [Callers, tests, samples, fixtures, configuration, manifests, and documentation]
 - **Public-surface delta**: [Types, signatures, constructors, and Spring extension points added or removed]
 - **Shim decision**: **[Shim / No shim].** [For a shim, identify the protected contract, explain why atomic change is inappropriate, name the mechanism, and state its removal condition]
+- **Console compatibility decision**: **[Not applicable / No version increment / Increment N -> N+1].** [When the application-adapter REST/SSE boundary is affected, explain why existing clients preserve the documented semantics or what they would reject or misinterpret]
 
 ## Implementation Approach
 

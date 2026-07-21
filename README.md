@@ -32,7 +32,7 @@ Bifrost currently contains three projects:
 
 - `bifrost-spring-boot-starter`: the core starter.
 - `bifrost-sample`: a sample Spring Boot application.
-- `bifrost-cli`: a separate Go command-line project for inspecting and testing Bifrost traces.
+- `bifrost-cli`: a deprecated trace-viewer proof of concept retained temporarily as a reference; it will be removed after Bifrost Console is implemented.
 
 ## Getting Started
 

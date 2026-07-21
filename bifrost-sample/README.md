@@ -143,7 +143,7 @@ Notes:
 
 - `default-model` is an ordinary named model key; it is **not** auto-selected for LLM-backed skills that omit `model`.
 - Session mission timeout is raised to `6000s` for long vision/planning runs.
-- `execution-trace.persistence: ALWAYS` keeps full execution traces for inspection (useful with `bifrost-cli`).
+- `execution-trace.persistence: ALWAYS` prevents normal post-completion deletion of full execution traces. The deprecated `bifrost-cli` may inspect them manually while it remains in the repository, but it is not a supported long-term workflow and will be removed after Bifrost Console is implemented.
 - Incident, insurance, support, and travel planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
 
 Debug logging is enabled for Bifrost chat, linter, output schema, and planning packages so skill runs are easy to follow in the console.
@@ -917,5 +917,5 @@ No test calls OpenRouter or Ollama for incident/insurance/support/travel skills.
 ## Related modules
 
 - **`bifrost-spring-boot-starter`** — framework core and auto-configuration
-- **`bifrost-cli`** — inspect persisted execution traces from sample runs
+- **`bifrost-cli`** — deprecated trace-viewer proof of concept scheduled for removal after Bifrost Console is implemented
 - Root **`README.md`** — framework concepts, skill YAML reference, and starter setup

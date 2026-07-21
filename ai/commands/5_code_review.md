@@ -73,6 +73,7 @@ Do not review only the diff hunks. Read enough surrounding code and connected ca
    - assumptions the implementation relies on.
 5. Use the ticket and plans to understand intent, but record discrepancies between those documents and executable behavior rather than silently choosing one.
 6. For Bifrost framework changes, read the canonical policy in `ai/thoughts/framework-feature-design-lens.md`. Inventory exposure and evidence, then classify each affected surface as Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, or Internal or accidentally exposed implementation before evaluating compatibility.
+7. When a change affects the Bifrost Console application-adapter REST/SSE boundary, read `ai/thoughts/bifrost-console-compatibility.md` and verify the explicit increment or no-increment decision against observable semantics, Java/Go constants, protocol fixtures, and exact-version rejection behavior.
 
 ### Step 3: Perform an independent defect review
 
