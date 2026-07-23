@@ -8,6 +8,8 @@ Initial product and architecture direction. This document records decisions esta
 
 Phase 2 depends on the observability contracts and safety properties defined in [Bifrost Console — Phase 1 Observability Foundation](./bifrost_console_phase_1_observability_foundation.md).
 
+Approved end-to-end developer workflows and the product requirements they surface are recorded in [Bifrost Console — Developer Workflows](./bifrost_console_workflows.md). Workflow design consumes the settled Phase 1–3 architecture and does not supersede it.
+
 Phase 1 owns engine publication, activity projection, active-execution state, trace discovery, and the Spring web adapter. Phase 2 owns the separately running developer console and its browser experience.
 
 Phase 1 also owns the execution-observation lifecycle through one optional internal handle per execution. Successful canonical appends update that handle, and the guaranteed core completion boundary closes it exactly once. The handle alone coordinates terminal activity, current-process catalog publication, and active-entry removal; disabled observability uses a no-op handle. Go consumes the resulting contracts and must not create a second execution-lifecycle owner.
@@ -63,20 +65,38 @@ The console host is a separate Go application responsible for:
 - applying target timeouts and certificate trust configuration;
 - exposing transport-neutral runtime query and analysis services below browser handlers;
 - parsing and analyzing finalized traces from the exactly matched application contract;
-- maintaining a bounded transient trace workspace or index for interactive browser and future MCP queries; and
+- maintaining the current-scope user-controlled transient trace cache and its indexes for interactive browser and future MCP queries; and
 - proxying trace downloads.
 
 The console host is a backend-for-frontend and the owner of console-side trace analysis, not another authoritative observability database or execution engine.
 
 ### Browser application
 
-The browser UI should be a client-rich TypeScript single-page application. The exact framework is unresolved.
+The browser UI is a client-rich React and TypeScript single-page application built with Vite. React Router owns browser routing. Tailwind CSS provides layout, spacing, typography, responsive behavior, and interaction-state styling over a small Bifrost semantic token system. A deliberately small authored CSS layer owns resets, global theme and accessibility rules, and specialized visualizations for which utility classes would obscure the design. The initial console does not adopt a Tailwind component or theme library.
 
-A rich client is preferred because the eventual trace and live-execution experiences require hierarchical navigation, incremental updates, selection preservation, filtering, expandable detail, split views, deep links, and potentially large-list virtualization.
+A rich client is preferred because the trace and live-execution experiences require hierarchical navigation, incremental updates, selection preservation, filtering, expandable detail, coordinated views, and deep links.
 
 The browser communicates only with its same-origin Go console host. It does not connect directly to the Bifrost application.
 
 The browser owns the in-memory live view it renders. It obtains current snapshots through Go, applies relayed Phase 1 activity envelopes to its local UI store, and owns navigation, filtering, selection, expansion, and other presentation behavior. It does not parse raw NDJSON traces or independently calculate authoritative hierarchy, duration, usage, failure, or availability facts that browser and MCP must share.
+
+### Frontend foundation
+
+The initial frontend uses React, TypeScript, Vite, and React Router. It uses React Aria selectively for interaction-heavy accessible primitives such as menus, dialogs, tabs, tables, and hierarchical navigation while retaining Bifrost-owned presentation. The implementation should begin with explicit domain stores built from ordinary React composition, context, and reducers rather than adding a general-purpose global state-management library. A new state dependency requires a demonstrated cross-cutting need that the simpler model cannot serve clearly.
+
+Frontend domain state preserves the console's evidence boundary. It may deterministically format, group, sort, filter, and relate recorded facts, and it may calculate presentation values explicitly authorized by this plan. It does not classify evidence as important, surprising, excessive, justified, causal, or actionable.
+
+The production browser baseline is Vite's pinned release-time **Baseline Widely Available** target. The console does not initially add legacy-browser transforms or polyfills. The build records the exact Vite and frontend dependency versions in the package lock so a later Vite baseline change occurs only through an intentional dependency update.
+
+The initial accessibility target is WCAG 2.2 AA. All operations are keyboard available; focus remains visible and unobscured; updates do not steal focus; routes manage focus and announce navigation appropriately; semantic landmarks, headings, tables, controls, and tree interaction patterns are used; color is not the sole carrier of status or relationships; and status announcements do not turn every live activity item into an interruption. The UI respects reduced-motion and forced-colors preferences. Automated accessibility checks support, but do not replace, keyboard and representative assistive-technology verification.
+
+The console is desktop-first and responsive rather than fixed-width. Coordinated views may stack or become alternate tabs as space narrows. Normal application navigation does not require whole-page horizontal scrolling; data tables, raw records, and intrinsically wide evidence may scroll within labeled regions. Browser zoom through 200 percent remains usable. Phone-specific workflow optimization is outside the initial release, but pairing, connection status, trace-storage management, and basic evidence views remain readable.
+
+The initial theme choices are light, dark, and follow-system. Theme selection is scope-bound browser presentation state under the existing `sessionStorage` policy. Forced-colors and reduced-motion preferences override decorative choices where required.
+
+The initial frontend does not adopt a general charting, graph, or visualization library. Execution hierarchy uses semantic HTML and accessible tree behavior. Timelines begin with HTML and SVG derived from recorded timestamps and deterministic durations; usage views use tables and simple CSS or SVG presentation; raw records remain structured content. Specialized visualization dependencies require an implementation-proven accessibility or rendering need and must not redefine hierarchy, ordering, evidence relationships, or diagnostic meaning.
+
+Frontend verification uses Vitest, React Testing Library, and Playwright. Component tests cover deterministic presentation and interaction behavior; browser tests cover routing, keyboard paths, accessibility-critical behavior, live updates, target-scope resets, and the approved workflows. Exact test composition within the repository build is settled with the project/build/distribution decision below.
 
 ### Spring web adapter
 
@@ -128,20 +148,20 @@ Development may run the frontend development server separately for hot reload, b
 State should remain deliberately divided:
 
 - **Bifrost application:** authoritative skill catalog, active executions, activity stream, and current-process trace catalog.
-- **Go console:** selected target configuration and opaque target scope, in-memory target credential, connection and exact-version compatibility state, one upstream SSE connection, a bounded recent-activity window exposed through transport-neutral query services, per-tab relay state, browser session pairing, and bounded transient trace parsing/indexing state.
+- **Go console:** selected target configuration and opaque target scope, in-memory target credential, connection and exact-version compatibility state, one upstream SSE connection, a bounded recent-activity window exposed through transport-neutral query services, per-tab relay state, browser session pairing, and the current-scope user-controlled transient trace cache.
 - **Browser:** the current rendered live-execution view derived from snapshots and relayed activity, plus navigation, filters, selections, expanded nodes, pane sizes, and other presentation state.
 
-The application remains authoritative. Go must not continuously materialize a complete duplicate of the skill catalog, active-execution registry, or execution history merely to serve browser-shaped state. It may request or briefly coalesce current snapshots, retain a bounded ring of already-received activity envelopes for browser reconnect and on-demand recent-activity queries, and use its bounded disposable local work directory to acquire, parse, and index a selected trace from the application's current-process catalog. The ring is a short-lived best-effort window, not execution history. All application-derived relay, catalog, execution, and trace state belongs to the current opaque `targetScopeId` and follows the authoritative [`TargetContext` ownership](#go-targetcontext-ownership) lifecycle. It is cleared on scope rotation or console shutdown and is never authoritative. A database is explicitly out of initial scope.
+The application remains authoritative. Go must not continuously materialize a complete duplicate of the skill catalog, active-execution registry, or execution history merely to serve browser-shaped state. It may request or briefly coalesce current snapshots, retain a bounded ring of already-received activity envelopes for browser reconnect and on-demand recent-activity queries, and use its disposable local work directory to acquire, parse, and index traces selected by the developer from the application's current-process catalog. The trace cache follows its configured aggregate byte and idle-TTL policy, including the explicit `unlimited` and `never` choices; it is not application history or a durable cross-process archive. The activity ring is a short-lived best-effort window, not execution history. All application-derived relay, catalog, execution, and trace state belongs to the current opaque `targetScopeId` and follows the authoritative [`TargetContext` ownership](#go-targetcontext-ownership) lifecycle. It is cleared on scope rotation or console shutdown and is never authoritative. A database is explicitly out of initial scope.
 
 The console is deliberately current-process-only. Core filesystem retention is not console history: `ALWAYS` may leave a trace file on disk after the producing application process exits, and a shutdown or crash may abandon a grace-held `NEVER` or successful `ONERROR` file before its process-local deletion task runs. This is an accepted initial lifecycle tradeoff. Neither the application adapter nor Go scans, adopts, serves, or cleans such a file in a later process. Application restart empties the supported application catalog, rotates `targetScopeId` after authoritative identity revalidation, invalidates prior-scope browser state and deep links, and clears prior-scope Go-acquired copies. Physical file survival does not preserve console discoverability.
 
-Within a running application process, the application-side trace catalog retains small bounded metadata entries by age. `bifrost.observability.trace-catalog-metadata-ttl`, configured on the observed application and defaulting to `24h`, determines that lifetime. The catalog has no independent entry-count or aggregate-metadata-memory cap; its total memory is proportional to current-process completions still inside the configured window. Catalog expiry only removes discoverability and acquisition metadata. It never deletes, shortens, or extends the canonical trace file's core retention. This application setting is separate from the Go console's local acquired-copy idle timeout and workspace limits.
+Within a running application process, the application-side trace catalog retains small bounded metadata entries by age. `bifrost.observability.trace-catalog-metadata-ttl`, configured on the observed application and defaulting to `24h`, determines that lifetime. The catalog has no independent entry-count or aggregate-metadata-memory cap; its total memory is proportional to current-process completions still inside the configured window. Catalog expiry only removes discoverability and acquisition metadata. It never deletes, shortens, or extends the canonical trace file's core retention. This application setting is separate from the Go console's local `trace-workspace.max-bytes` and `trace-workspace.idle-ttl` policy.
 
 ## Local configuration
 
-Phase 2 owns one versioned, strictly validated local YAML configuration file in the platform-appropriate user configuration directory, with a `--config` option for an alternate location. The resolved configuration file's parent directory defines one console profile. That profile owns the YAML file, the Phase 3 sibling MCP credential, one exclusive profile lock, and one resolved managed work directory. It covers console listener behavior, selected-target defaults, target timeouts and trust configuration, transient workspace limits, and other non-secret operational settings.
+Phase 2 owns one versioned, strictly validated local YAML configuration file in the platform-appropriate user configuration directory, with a `--config` option for an alternate location. The resolved configuration file's parent directory defines one console profile. That profile owns the YAML file, the Phase 3 sibling MCP credential, one exclusive profile lock, and one resolved managed work directory. It covers console listener behavior, selected-target defaults, target timeouts and trust configuration, the trace-cache byte and idle-TTL policy, and other non-secret operational settings.
 
-Unknown fields are rejected, durations and byte sizes use explicit units, and unsafe or nonpositive values are rejected clearly. Changes to this static YAML initially require restart. Secrets are not stored inline in it. Before using the profile, the Go process acquires its exclusive operating-system profile lock and retains it until shutdown. Failure to acquire that lock means another console owns the profile and fails startup clearly; the later process must select a different profile rather than reading configuration or mutating credentials concurrently. Phase 3 extends the YAML with restart-only, non-secret MCP operational settings and places the persistent MCP access key in a separate protected sibling file. Runtime enablement, regeneration, and disablement mutate only that credential file and the process-local MCP authentication snapshot under the same profile ownership; they are not YAML configuration changes and take effect immediately.
+Unknown fields are rejected, ordinary durations and byte sizes use explicit units, and unsafe or nonpositive numeric values are rejected clearly. `trace-workspace.max-bytes` additionally accepts the explicit value `unlimited`, and `trace-workspace.idle-ttl` accepts `never`; numeric zero means neither. Changes to this static YAML initially require restart. Secrets are not stored inline in it. Before using the profile, the Go process acquires its exclusive operating-system profile lock and retains it until shutdown. Failure to acquire that lock means another console owns the profile and fails startup clearly; the later process must select a different profile rather than reading configuration or mutating credentials concurrently. Phase 3 extends the YAML with restart-only, non-secret MCP operational settings and places the persistent MCP access key in a separate protected sibling file. Runtime enablement, regeneration, and disablement mutate only that credential file and the process-local MCP authentication snapshot under the same profile ownership; they are not YAML configuration changes and take effect immediately.
 
 Persistent configuration, trust material, the profile lock, and the Phase 3 MCP access-key file never live inside the disposable work directory described below. There are no user-data or configuration exceptions inside its `transient` subtree. One owning console process may serve multiple paired browser sessions and multiple authenticated MCP clients; those clients do not acquire the profile lock or become additional console/MCP server processes.
 
@@ -168,7 +188,7 @@ Target-scope rotation and graceful shutdown delete current transient artifacts b
 
 The work directory is a mandatory console dependency, not an optional trace-analysis feature. Failure to resolve, create, identify, protect, lock, safely clean, or verify it is a fatal startup error, and the process exits before opening its listener or serving browser or MCP requests. Go does not fall back to a shared, weakly protected, or uncertain directory and does not silently reuse partially cleaned contents.
 
-After startup, any loss of the work-directory lock, safety guarantees, or required ability to read, write, create, or remove console-managed workspace content is a fatal console error. Go stops admitting work, cancels in-flight operations, closes browser and MCP service, attempts ordinary best-effort transient cleanup where it remains safe, releases its locks, and exits with an error. It does not remain available in a reduced-function mode. An artifact that is malformed, exceeds a configured limit, or fails artifact-specific validation remains an ordinary request failure; only evidence that the managed workspace itself can no longer be used correctly triggers process termination. Console workspace failure must not alter or terminate the observed Bifrost application.
+After startup, any loss of the work-directory lock, path-safety guarantees, or general required ability to manage console-owned workspace content is a fatal console error. Go stops admitting work, cancels in-flight operations, closes browser and MCP service, attempts ordinary best-effort transient cleanup where it remains safe, releases its locks, and exits with an error. It does not remain available in a reduced-function mode. A malformed artifact, configured-capacity rejection, artifact-specific validation failure, or disk-full/write-capacity failure confined to one acquisition remains an ordinary request failure when its partial state can be removed and safe workspace operation is restored. If the console cannot restore the ability to use the managed workspace correctly after that cleanup, the process-wide fatal rule applies. Console workspace failure must not alter or terminate the observed Bifrost application.
 
 ## Transport policy
 
@@ -319,9 +339,10 @@ The initial shared codes are:
 | `INVALID_ARTIFACT` | Downloaded trace bytes violate the Java writer invariants or consumed semantics exercised by the current-release fixtures. Code-specific details may state whether unchanged raw download remains available, but no partial analysis result is valid. |
 | `LIVE_MONITORING_UNAVAILABLE` | The application reported that its live projection is unavailable. Skill and finalized-trace operations remain independent. |
 | `LIMIT_EXCEEDED` | A configured request, response, artifact, workspace, or concurrency bound prevents the operation. Bounded details may identify the relevant limit and observed value when safe. |
+| `LOCAL_STORAGE_UNAVAILABLE` | A local trace acquisition or derived-file operation could not complete because the managed filesystem lacked usable write capacity or returned an equivalent storage failure, but artifact-specific cleanup restored safe workspace operation. The result may identify the affected local operation without exposing filesystem paths. |
 | `CONSOLE_ERROR` | An unexpected Go shared-service failure occurred and no more specific shared code applies. The message is sanitized and bounded; internal error text, stack traces, paths, credentials, and diagnostic payloads are not returned. |
 
-Phase 1 problems map into this contract before reaching either adapter: `BIFROST_API_KEY_REJECTED` maps to `TARGET_AUTHENTICATION_REQUIRED`; a generic upstream `401` or `403` without that code maps to `TARGET_ACCESS_BLOCKED`; connection, TLS, timeout, `APPLICATION_ERROR`, and other unusable upstream failures map to `TARGET_UNAVAILABLE`; compatibility mismatch maps to `INCOMPATIBLE_TARGET`; `INVALID_REQUEST` maps to `INVALID_ARGUMENT`; and the Phase 1 cursor, not-found, live-monitoring, and `LIMIT_EXCEEDED` codes retain their corresponding Go meanings. Absence of an in-memory application credential produces the same Go-owned `TARGET_AUTHENTICATION_REQUIRED` code before an upstream request is attempted. Trace validation, scope rotation, handle retention, local continuations, and Go limits produce their Go-owned codes directly. A workspace-wide safety or I/O failure is outside this request-error contract because it terminates the console process.
+Phase 1 problems map into this contract before reaching either adapter: `BIFROST_API_KEY_REJECTED` maps to `TARGET_AUTHENTICATION_REQUIRED`; a generic upstream `401` or `403` without that code maps to `TARGET_ACCESS_BLOCKED`; connection, TLS, timeout, `APPLICATION_ERROR`, and other unusable upstream failures map to `TARGET_UNAVAILABLE`; compatibility mismatch maps to `INCOMPATIBLE_TARGET`; `INVALID_REQUEST` maps to `INVALID_ARGUMENT`; and the Phase 1 cursor, not-found, live-monitoring, and `LIMIT_EXCEEDED` codes retain their corresponding Go meanings. Absence of an in-memory application credential produces the same Go-owned `TARGET_AUTHENTICATION_REQUIRED` code before an upstream request is attempted. Trace validation, scope rotation, handle retention, local continuations, configured Go limits, and recoverable artifact-specific local-storage failures produce their Go-owned codes directly. A workspace-wide safety or I/O failure that remains after artifact-specific cleanup is outside this request-error contract because it terminates the console process.
 
 `CONSOLE_ERROR` is the final Go-owned fallback, not a wrapper for errors that already have a specific code and not a substitute for target, application, browser-authentication, or MCP protocol failures. Go records the internal cause only through sanitized local diagnostics. Browser handlers normally map this shared code to HTTP `500` while preserving `CONSOLE_ERROR` in the response envelope.
 
@@ -396,31 +417,31 @@ The browser network page size is independent of visible row count. It may receiv
 
 Finalized trace artifacts currently available from the selected application's current-instance catalog should be streamed into the Go host's bounded `bifrost-console-work/transient` workspace rather than buffered entirely in memory. Go shared services, not the application server or browser, own frame, record, search, pagination, timeline, failure, and usage analysis.
 
-Go consumes the raw file incrementally according to the current Java writer, enums, documented global invariants, and Java-produced fixtures paired with `consoleCompatibilityVersion`. It reconstructs chunked logical payloads while preserving raw payload envelope and `PAYLOAD_CHUNK_APPENDED` records for framework inspection. It enforces configured total-byte and line-size limits and rejects malformed JSON, unknown record or consumed semantic enum values, inconsistent trace/session identities, invalid consumed sequence or frame relationships, a missing or non-final canonical `TRACE_COMPLETED`, and missing, duplicate, or mismatched chunks with `INVALID_ARTIFACT`. Metadata and data that Go does not interpret remain opaque diagnostic JSON and do not require a Go model. Parser failure affects that artifact or view rather than terminating the console process; code-specific details may report that raw attachment download remains available.
+Go consumes the raw file incrementally according to the current Java writer, enums, documented global invariants, and Java-produced fixtures paired with `consoleCompatibilityVersion`. It reconstructs chunked logical payloads while preserving raw payload envelope and `PAYLOAD_CHUNK_APPENDED` records for framework inspection. It enforces the configured aggregate cache policy plus finite line-size, nesting, and structural-processing bounds and rejects malformed JSON, unknown record or consumed semantic enum values, inconsistent trace/session identities, invalid consumed sequence or frame relationships, a missing or non-final canonical `TRACE_COMPLETED`, and missing, duplicate, or mismatched chunks with `INVALID_ARTIFACT`. Metadata and data that Go does not interpret remain opaque diagnostic JSON and do not require a Go model. Parser failure affects that artifact or view rather than terminating the console process; code-specific details may report that raw attachment download remains available.
 
-### Centralized artifact service and bounded retention
+### Centralized artifact service and user-controlled retention
 
 One adapter-neutral Go artifact service is the sole path for acquiring and analyzing a finalized trace for interactive use. Browser handlers and MCP handlers call this service; they do not download into adapter-specific caches, create their own indexes, issue independent analysis handles, reserve separate workspace pools, or implement retention and eviction. Explicit raw attachment streaming to a developer-selected browser download remains a separate pass-through operation and does not create an analysis copy or handle unless the caller separately requests console analysis.
 
 Within one `targetScopeId`, the service maintains at most one installed immutable analysis copy for a given scope-bound application trace reference. If that trace is already installed, either adapter receives the existing `artifactHandle`. If acquisition of it is already in progress, concurrent browser and MCP requests join the same acquisition and receive the same installed handle or the same acquisition failure rather than downloading, validating, indexing, and charging capacity twice. Cancellation of one waiting adapter request stops that caller's wait but does not cancel work still needed by another admitted waiter. The implementation may choose its synchronization mechanism; adapters must not be able to bypass it.
 
-Workspace admission, partial-file cleanup, validation, handle issuance, query pinning, idle refresh, eviction, and capacity accounting all occur once in this service. Workspace byte and retained-artifact limits apply globally across browser and MCP use. A query from either adapter pins the same installed copy for that query and refreshes the same idle lifetime on success. Eviction or invalidation expires the shared handle consistently for both adapters; there are no per-adapter leases, release operations, reference counts exposed to clients, or reserved browser-versus-MCP capacity partitions in the initial product.
+Workspace admission, partial-file cleanup, validation, handle issuance, query pinning, last-used refresh, TTL cleanup, capacity cleanup, manual removal, and byte accounting all occur once in this service. The configured aggregate byte ceiling and idle TTL apply globally across browser and MCP use, including their explicit `unlimited` and `never` values. There is no trace-count or per-trace byte limit. A query from either adapter pins the same installed copy for that query and refreshes the same last-used time on success. Cleanup or invalidation expires the shared handle consistently for both adapters; there are no per-adapter leases, reference counts exposed to clients, or reserved browser-versus-MCP capacity partitions.
 
-Go installs a trace into its analysis workspace only after the complete artifact has been downloaded, its operation still belongs to the current `targetScopeId`, and the current trace record, identity, ordering, and chunk contracts have been validated. A target transport interruption produces `TARGET_UNAVAILABLE`, scope rotation produces `TARGET_CHANGED`, invalid content produces `INVALID_ARTIFACT`, and an over-limit acquisition produces `LIMIT_EXCEEDED`; none receives an analysis handle or is presented as a partial valid trace. Caller cancellation ends that request through the adapter's ordinary cancellation path rather than inventing another domain code. Raw attachment download may remain a separate option when the application artifact is still available.
+Go installs a trace into its analysis workspace only after the complete artifact has been downloaded, its operation still belongs to the current `targetScopeId`, and the current trace record, identity, ordering, and chunk contracts have been validated. A target transport interruption produces `TARGET_UNAVAILABLE`, scope rotation produces `TARGET_CHANGED`, and invalid content produces `INVALID_ARTIFACT`; none receives an analysis handle or is presented as a partial valid trace. Under a finite `max-bytes`, aggregate workspace `LIMIT_EXCEEDED` occurs only after expired-first and then least-recently-used unpinned cleanup cannot make the complete artifact and required derived files fit. Caller cancellation ends that request through the adapter's ordinary cancellation path rather than inventing another domain code. Raw attachment download may remain a separate option when the application artifact is still available.
 
-A successfully installed immutable copy receives an opaque `artifactHandle` bound to its `targetScopeId`. Go retains the copy while it is being used, subject to a configured idle timeout and bounded workspace capacity. A successful query or continuation refreshes the idle timeout. Browser and MCP callers do not acquire, release, or manage a separate retention object. Exact idle lifetime, maximum retained-artifact count, per-artifact bytes, and total retained bytes are configuration decisions, but `0` must not mean unlimited.
+A successfully installed immutable copy receives an opaque `artifactHandle` bound to its `targetScopeId`. Go retains the copy according to the configured aggregate cache ceiling and idle TTL. A successful query or continuation refreshes its last-used time. The defaults are `4GiB` and `4h`; explicit `unlimited` and `never` values disable aggregate-capacity and time-based cleanup respectively. Numeric zero is invalid. Browser and MCP callers do not acquire or manage a separate retention object, while the paired Trace Storage page may deliberately remove unused local copies through the centralized service.
 
-Once installed, that immutable copy has completed its upstream authorization boundary. A later `BIFROST_API_KEY_REJECTED` does not invalidate its handle or require Go to reauthenticate before each local query. Paired-browser or MCP authentication still applies to every local request, and the copy remains subject to its ordinary handle, scope, capacity, and process-lifetime limits. Reacquisition after handle expiration is a new upstream operation and therefore requires valid application authentication as well as current catalog availability.
+Once installed, that immutable copy has completed its upstream authorization boundary. A later `BIFROST_API_KEY_REJECTED` does not invalidate its handle or require Go to reauthenticate before each local query. Paired-browser or MCP authentication still applies to every local request, and the copy remains subject to its ordinary handle, target scope, configured cache policy, manual removal, and console-process lifetime. Reacquisition after handle expiration is a new upstream operation and therefore requires valid application authentication as well as current catalog availability.
 
-Go must not delete an acquired copy during an in-flight query. When its idle timeout expires, its handle expires and the copy becomes eligible for ordinary workspace eviction. When active work and retained copies occupy the configured capacity, Go rejects or delays a new acquisition rather than deleting a copy that an in-flight query is using. `targetScopeId` rotation and console shutdown invalidate all affected handles immediately, cancel in-flight analysis, and clear their files and indexes regardless of idle time. Application-side expiration does not affect a fully acquired Go copy, but it can prevent an expired handle from being reacquired.
+Go must not delete an acquired copy during an in-flight query. Under a finite idle TTL, an expired unpinned copy is removed and its handle expires. Under a finite aggregate ceiling, admission first removes expired unpinned copies and then least-recently-successfully-used unpinned copies until the new work fits; only inability to reclaim enough configured capacity produces workspace `LIMIT_EXCEEDED`. Manual browser cleanup likewise removes only unused copies. `targetScopeId` rotation and console shutdown invalidate all affected handles immediately, cancel in-flight analysis, and clear their files and indexes regardless of configured TTL. Application-side expiration does not affect a fully acquired Go copy, but it can prevent an expired or removed handle from being reacquired.
 
-Every record-query, search, and payload continuation is opaque and bound to the target scope, artifact handle, query or filter fingerprint, and next canonical record or byte position. A malformed token or reuse after a query or filter change produces `INVALID_CURSOR`; scope rotation produces `TARGET_CHANGED`; and handle removal or idle expiration produces `ARTIFACT_EXPIRED`. Go never silently restarts or applies a continuation to another query, artifact, or target. Tokens need no cryptographic signature because the loopback API is already authenticated and Go may manage the bounded state server-side.
+Every record-query, search, and payload continuation is opaque and bound to the target scope, artifact handle, query or filter fingerprint, and next canonical record or byte position. A malformed token or reuse after a query or filter change produces `INVALID_CURSOR`; scope rotation produces `TARGET_CHANGED`; and TTL cleanup, capacity cleanup, or manual handle removal produces `ARTIFACT_EXPIRED`. Go never silently restarts or applies a continuation to another query, artifact, or target. Tokens need no cryptographic signature because the loopback API is already authenticated and Go may manage the bounded state server-side.
 
 Record pagination alone is insufficient for a reconstructed payload larger than one response. Such a record returns a payload descriptor containing its logical size, content type, inline status, opaque payload reference, and supported range information. Callers retrieve the payload through bounded ranges tied to the same artifact handle. Text delivery must preserve valid UTF-8 boundaries; otherwise the range contract returns encoded bytes rather than malformed partial text.
 
 Search operates over the immutable acquired copy and orders results deterministically by canonical record sequence. Reaching a result, byte, or time bound returns the fully completed results so far plus a continuation from the last fully examined record when progress can continue. Search does not require a database snapshot or durable index version because the artifact handle identifies immutable bytes. Its continuation expires when the handle does.
 
-Go shared trace services provide **complete inspectability while the artifact handle remains valid**, not guaranteed completion of an arbitrarily long traversal. No successfully parsed record or payload is intentionally excluded according to guessed relevance or sensitivity, and bounded pagination plus payload ranges make every item addressable under the configured artifact limits. Completion remains contingent on the handle, target scope, console process, and local resource limits remaining valid long enough. Per-response bounds protect console stability and client interoperability; they are not redaction or authorization rules.
+Go shared trace services provide **complete inspectability while the artifact handle remains valid**, not guaranteed completion of an arbitrarily long traversal. No successfully parsed record or payload is intentionally excluded according to guessed relevance or sensitivity, and bounded pagination plus payload ranges make every item addressable. Completion remains contingent on the handle, target scope, console process, configured cache policy, manual removal, and local filesystem remaining valid long enough. Per-response bounds protect console stability and client interoperability; they are not redaction or authorization rules.
 
 The production console does not depend on filename parsing or shared filesystem paths used by the deprecated proof-of-concept CLI. It uses opaque catalog identifiers and ordinary HTTP response metadata. No manifest parser, archive reader, digest verifier, application-level decompressor, or second logical-trace wire representation is required initially.
 
@@ -441,6 +462,406 @@ Independent consoles may observe the same application, but each requires a separ
 Phase 1's finite fixed process-wide admission limits still apply across those independent observers. If either the open observability-SSE or concurrent trace-download capacity is occupied, a new operation receives the shared `LIMIT_EXCEEDED` result and does not displace an admitted operation.
 
 Phase 2 does not include console discovery, leader election, user presence, shared selections, cross-console synchronization, or per-console durable delivery.
+
+## Information architecture and navigation
+
+The initial browser application has four primary evidence areas:
+
+1. **Overview**
+2. **Live Executions**
+3. **Traces**
+4. **Skills**
+
+These destinations follow the authoritative evidence categories rather than developer interpretations. Slow executions, failed executions, unexpected usage, and unfamiliar skill paths are approved workflows or entry states over Live Executions and Traces; they are not separate top-level destinations, stores, or analysis engines. The initial console does not add global Failures, Diagnostics, Recommendations, or similar interpretation-oriented areas.
+
+### Stable Overview landing view
+
+Overview is the stable landing destination. The console does not redirect automatically because a target connects, an execution starts or ends, or an active-execution count changes.
+
+Overview presents the selected target address or label, independent connection, authentication, Java/Go compatibility, runtime-identity, and live-monitoring facts, the established application `instanceId`, registered-skill count, active-execution count, current-process cataloged-trace count, and applicable trace persistence and availability settings. It does not combine those facts into an aggregate health, readiness, or severity value.
+
+The page retains its identity while its facts and available actions change:
+
+- with no selected target, it presents the target-connection entry state;
+- when application authentication is required, it presents that fact and the credential-entry action;
+- when the target is unavailable, access-blocked, or incompatible, it presents the applicable independent facts; and
+- when the target is authenticated and compatible, it presents the instance facts and navigation into available live, trace, and skill evidence.
+
+### Global target and live context
+
+The global application chrome presents a compact current-target context sufficient to prevent confusion about which runtime is being inspected. It includes the selected target address or label and the independent connection, authentication, compatibility, and runtime-identity facts appropriate to the available space. Live-monitoring availability remains a separate fact where relevant. An established `instanceId` remains available without requiring the developer to infer it from another status.
+
+The global chrome also presents the current active-execution count and a direct path to Live Executions. It does not keep the full active-execution list, activity narrative, or continuously changing execution details visible while the developer inspects another area. The one upstream SSE connection and bounded recent-activity window continue independently of the current browser route, so returning to Live Executions shows the latest available current-scope state.
+
+A changed active count may use restrained visual emphasis but does not create a toast, modal, automatic navigation, or global failure notification. A future notification system requires a separately demonstrated workflow.
+
+Changing the selected target is an intentional operation through the target-connection experience. The resulting `targetScopeId` rotation clears prior application-derived state under the settled lifecycle and returns browser navigation to Overview. It never attempts to reinterpret an old execution, trace, frame, record, or skill reference in the new scope.
+
+### Inspection context
+
+Within a selected execution or trace, a persistent contextual area beneath the global navigation keeps the applicable identity and lifecycle facts visible while the developer navigates related evidence. Depending on availability, those facts include:
+
+- entry skill;
+- active, completed, or observation-ended fact;
+- session and trace identifiers;
+- elapsed or completed time;
+- application and local artifact availability;
+- observation freshness for live evidence; and
+- the current-scope execution or trace breadcrumb.
+
+The contextual area displays identifiers where they identify the evidence and support existing current-scope navigation. It does not add copying, exporting, evidence packaging, or retention behavior.
+
+Failure-, usage-, hierarchy-, timeline-, record-, attempt-, validation-, and registered-skill facts remain coordinated views or drill-downs from the same execution context. Navigating among them preserves the current target scope, artifact handle, trace, and applicable frame selection. The exact trace explorer layout remains a separate open decision.
+
+### Persistent and drill-down information
+
+Persistent global space is limited to selected-target context, independent target/runtime status facts, primary navigation, active-execution count, and current execution or trace identity when inside an inspection context.
+
+Area-level persistent space contains the current bounded live summary while viewing a live execution or the selected trace and frame identity while viewing finalized-trace detail.
+
+Activity narrative, hierarchy, timeline, failures, validation sequences, usage attribution, individual records, raw payloads, framework metadata, and registered skill YAML are area content or explicit drill-down detail. Raw payloads and framework metadata do not occupy global or default persistent space.
+
+### Workflow placement
+
+The approved workflows map into this information architecture as follows:
+
+| Workflow | Primary entry | Continued inspection |
+|---|---|---|
+| Currently slow execution | Live Executions | Current summary, active path, and recent narrative. |
+| Failed completed execution | Live Executions or Traces | Failure-focused state over the shared trace explorer when an artifact is available. |
+| Unexpected usage or cost | Traces | Usage facts over the shared trace explorer; the console does not calculate unrecorded monetary cost. |
+| Unfamiliar nested skill path | Live Executions or Traces | Active path or finalized hierarchy plus application-provided registered skill YAML. |
+
+Skills remains independently useful for discovering the definitions registered by the application. Runtime skill-path inspection begins from execution evidence; the skill catalog does not become or imply execution history.
+
+## Live execution presentation
+
+The live experience presents every activity kind deliberately emitted by the Phase 1 initial visible set while keeping current execution facts separate from the chronological activity narrative. It does not apply an importance filter, create a health classification, or imply that the bounded live projection is a complete trace.
+
+### Live collections and selection
+
+Live Executions contains two visibly separate collections:
+
+- **Active executions:** bounded current snapshots from the application registry.
+- **Recent completions:** terminal activity still present in Go's bounded current continuity interval.
+
+Recent completions are explicitly temporary live context rather than durable execution history. They may disappear as the bounded interval advances or resets.
+
+The initial list behavior is:
+
+- opening Live Executions does not select an execution automatically;
+- a direct current-scope link selects its referenced execution;
+- the default active order remains the Phase 1 newest-started-first order;
+- a new execution enters at the top;
+- changes to phase, usage, elapsed time, or latest activity do not reorder rows automatically;
+- developer-selected sorting or filtering is browser presentation state;
+- recent completions appear newest first; and
+- a selected execution remains selected when it terminates.
+
+### Selected live execution
+
+A selected execution has three coordinated logical information areas. Their responsive screen arrangement remains a frontend-design choice.
+
+1. **Current summary**
+2. **Active skill path**
+3. **Recent narrative**
+
+The current summary remains visible while the developer inspects live activity. It shows the entry skill, execution status when established, current phase, current active skill path, start time and elapsed time, model/tool/skill invocation counts, current usage and configured limits, latest concise activity, session and trace identifiers, snapshot observation time, continuity state, and connection freshness.
+
+The summary is replaced from refreshed authoritative snapshots and updated from ordered activity. It is not reconstructed solely from envelopes that remain in the browser, and it does not add slow, stuck, healthy, degraded, expensive, or likely-failing classifications.
+
+The active-path area shows only the bounded currently active nested skill path supplied by the snapshot. Skill-frame opening and closing update it, and every invocation remains distinguishable by frame identity. The presentation may use breadcrumbs or indentation, but it does not add inactive siblings, completed branches, planning/model/tool/validation nodes, or any other structure that would make it appear to be a complete execution tree. Complete hierarchy remains finalized-trace functionality.
+
+### Activity narrative
+
+The recent narrative presents every envelope in the Phase 1 initial visible activity set in application delivery-cursor order. One envelope remains one individually accessible narrative item. Adjacent items may be grouped visually, but grouping does not merge, discard, reorder, or rewrite them.
+
+| Activity kind | Live presentation |
+|---|---|
+| `TRACE_STARTED` | Execution-start row and current-summary update. |
+| Skill `FRAME_OPENED` | Narrative row and active-path transition. |
+| Skill `FRAME_CLOSED` | Narrative row and active-path transition. |
+| `MODEL_REQUEST_SENT` | Model-interaction row without prompt content. |
+| `MODEL_RESPONSE_RECEIVED` | Receipt row with supported concise facts and no response content. |
+| `PLAN_CREATED` | Plan-created row with its bounded summary; full detail requires a finalized trace. |
+| `PLAN_UPDATED` | Distinct row preserving that an update occurred. |
+| `PLAN_VALIDATION_FAILED` | Validation-failure row without a console-generated explanation. |
+| `PLAN_RETRY_REQUESTED` | Retry-request row without judging whether retry was appropriate. |
+| `TOOL_CALL_STARTED` | Tool-start row identifying the tool when recorded, without tool input. |
+| `TOOL_CALL_COMPLETED` | Tool-completion row with supported concise outcome facts and no tool output. |
+| `TOOL_CALL_FAILED` | Tool-failure row that does not automatically become the execution-ending failure. |
+| `STEP_STARTED` | Step-start row identifying the recorded step. |
+| `STEP_ACTION_REJECTED` | Rejection row showing the recorded classification. |
+| `STEP_COMPLETED` | Step-completion row. |
+| `ERROR_RECORDED` | Recorded-error row that does not declare the execution terminal. |
+| `TRACE_COMPLETED` | Terminal row carrying execution outcome and separate application-trace-availability facts. |
+| `EXECUTION_OBSERVATION_ENDED` | Distinct noncanonical terminal row stating incomplete observation and `CORE_FINALIZATION_FAILED`. |
+
+Each row shows only applicable concise facts: timestamp, activity label, bounded summary, recorded skill/frame/route/tool/phase identity, supported status or outcome, and recorded retry, validation, or failure classification. Optional bounded event details remain collapsed until the developer selects the row. Documented semantic details may receive labeled presentation; other display-only details remain untrusted text and cannot drive browser state or calculations.
+
+Live rows do not automatically include prompts, model responses, tool inputs or outputs, full plans, raw records, reconstructed payloads, arbitrary metadata, or records outside the Phase 1 live set. Those remain explicit finalized-trace detail. The browser does not promote additional trace records independently.
+
+The narrative orders retained activity chronologically, oldest first and newest last. A row may show or indent its recorded frame context when that relationship is available, but the browser does not infer a missing parent, construct hierarchy from adjacency, or hide an item whose parent is outside the retained interval. The view states when its earliest retained item is not the beginning of the execution.
+
+### Following, updates, and motion
+
+Live following is enabled initially. Scrolling backward or selecting an earlier row pauses automatic following and presents a **Resume live** action. Incoming events continue updating the current summary while following is paused, but they do not change the selected row or scroll position. Navigating elsewhere does not stop Go's upstream subscription; returning obtains the latest snapshot and available continuous interval.
+
+Semantic activity appears promptly and in order. The browser may batch a short event burst into one render pass, but it does not semantically coalesce or drop envelopes. Quietly changing facts such as elapsed time, counts, and usage update without animated transitions. Elapsed time may use a steady display cadence while visible and remains a browser calculation from the recorded start time rather than new runtime evidence; the exact cadence is an implementation-planning value.
+
+A newly received activity row may receive a brief restrained highlight. The initial presentation does not use pulsing execution rows, animated tree movement, bouncing counters, success animation, automatic expansion, per-event toast notifications, or sound. Reduced-motion preferences suppress nonessential motion. Exact durations, colors, iconography, and component transitions remain frontend and accessibility implementation choices.
+
+### Connection and continuity presentation
+
+Go-owned connection and continuity facts remain visually and semantically separate from Bifrost activity:
+
+- a temporary disconnect is an inline connection-status notice;
+- a tab-local replay gap is a local-gap notice;
+- an upstream continuity reset inserts a clear divider before the new interval;
+- refreshed state shows its new observation time;
+- retained stale state is not presented as current; and
+- `LIVE_MONITORING_UNAVAILABLE` replaces the live evidence with an explicit unavailable state rather than a reconnect animation.
+
+These notices never masquerade as Bifrost execution records. An upstream reset clears the shared recent-activity interval before new activity is admitted and never presents events from opposite sides as continuous.
+
+### Terminal transition
+
+Selecting a recent terminal item opens its terminal summary in place. `TRACE_COMPLETED` shows execution outcome and application trace availability as separate facts. `EXECUTION_OBSERVATION_ENDED` shows incomplete observation without inventing an outcome. **Inspect trace** appears only when a finalized application trace is available for acquisition. Completion never navigates automatically, and deliberate acquisition follows the centralized artifact-service lifecycle.
+
+## Trace explorer organization
+
+The trace explorer is hierarchy-first. It uses one acquired immutable artifact, one shared selection context, and the same transport-neutral Go calculations across four coordinated views:
+
+1. **Hierarchy** — the default view;
+2. **Timeline**;
+3. **Usage**; and
+4. **Records**.
+
+These are browser views over the same artifact handle and analysis services, not separate parsers, caches, evidence models, or retention lifecycles. The initial product does not require the hierarchy and timeline to remain visible in a permanent synchronized split. Switching views preserves the closest applicable frame or record selection, and returning to Hierarchy restores its browser-owned selection and expansion state.
+
+### Hierarchy-first default
+
+Opening a trace from the catalog normally selects the execution root in Hierarchy. Each hierarchy item presents supported recorded or mechanically calculated facts such as frame or skill name, frame type, route, recorded outcome, timestamps, inclusive and self duration, direct and descendant usage, and recorded failure or validation indicators.
+
+The exact shared duration, usage, attempt, retry, failure, and completeness definitions remain separate open calculation decisions below the browser adapter. The hierarchy displays those common Go results and never calculates competing browser-specific values.
+
+The hierarchy distinguishes runtime invocation from registered skill definition, direct child from descendant, repeated invocations of the same skill, canonical order from parent-child structure, and recorded failure from inferred root cause. Every frame in a valid acquired trace remains available. The initial product imposes no hierarchy-specific depth limit, node limit, truncation rule, or partial-tree mode. Specialized very-deep-tree rendering or hierarchy virtualization is deferred until demonstrated necessary.
+
+### Workflow-specific entry states
+
+The navigation context determines the initial view and selection without changing the underlying trace analysis:
+
+| Entry | Initial explorer state |
+|---|---|
+| Trace catalog | Hierarchy with the execution root selected. |
+| Failed execution | Hierarchy with the execution-ending failure's frame or record selected when mechanically established. |
+| Usage workflow | Usage with the applicable execution, frame, or attempt selected. |
+| Nested skill path | Hierarchy with the referenced frame selected and its recorded path expanded. |
+| Timeline link | Timeline with the referenced frame or record selected. |
+| Record deep link | Records with the referenced canonical sequence selected. |
+| Stale or invalid reference | Existing explicit `TARGET_CHANGED`, `ARTIFACT_EXPIRED`, `INVALID_CURSOR`, or other applicable domain behavior. |
+
+A failure-focused entry does not label the selected item a root cause. It presents the mechanically established execution-ending failure and related recorded facts.
+
+### Shared selected-item detail
+
+Every view coordinates with one selected-item detail area. Depending on the selected execution, frame, interval, attempt, or record, it presents supported facts including stable identifiers, parent and child relationships, route and frame type, timestamps and duration, direct/descendant/inclusive usage, attempts and retries, validation outcomes, recorded errors, plan creation and update facts, model and tool transitions, evidence/quota/timeout/guardrail outcomes, related canonical record sequences, evidence completeness, and registered skill YAML when a recorded skill name maps to a currently available registered definition.
+
+The detail area presents facts and explicit relationships. It does not generate a diagnosis, importance ranking, causal narrative, root-cause claim, or recommended action.
+
+### Timeline
+
+Timeline presents supported recorded temporal relationships: execution and frame intervals, nested skill intervals, model and tool activity, attempts and retries, validation activity, errors, and terminal outcome. Selecting an interval updates the shared frame selection; selecting a point activity updates the applicable record selection.
+
+The timeline does not infer time for missing events, equate wall-clock duration with model or tool usage, or label the longest interval problematic.
+
+### Usage
+
+Usage presents the common Go attribution facts: recorded totals and units, configured limits, direct/descendant/inclusive frame usage, attempt and retry usage, unattributed usage, and model interactions sorted by attributed usage when requested. Selecting a usage row updates the applicable frame or attempt context, and returning to Hierarchy reveals the same frame.
+
+Sorting is arithmetic presentation. It does not label the first result important, excessive, causal, wasteful, or actionable. Monetary cost remains unavailable unless recorded canonically under separately defined semantics.
+
+### Records
+
+Records presents canonical records in sequence order. It supports filtering by supported record type and frame, navigation from hierarchy/timeline/failure/usage/attempt/validation facts, deterministic search results in canonical record order, bounded record pagination, and explicit payload access. It never reorders records into a guessed narrative.
+
+Records not consumed by Go semantic calculations remain available as opaque diagnostic JSON under the current-release trace agreement. Their presence does not cause the browser to invent a typed interpretation.
+
+### Progressive detail
+
+Trace information uses three disclosure layers:
+
+1. **Concise facts:** hierarchy rows, timeline items, usage rows, recorded outcomes, and short summaries.
+2. **Structured detail:** selected frame or record metadata, relationships, common calculated facts, validation outcomes, attempts, and indexes.
+3. **Raw detail:** raw record JSON, reconstructed payloads, and unchanged raw artifact download.
+
+Raw detail always requires an explicit developer action. Opening a failure, usage, timeline, hierarchy, or selected-item detail does not automatically retrieve or display prompts, model responses, tool inputs or outputs, or large payloads. All diagnostic content renders as text rather than HTML or Markdown.
+
+### Large artifacts and complete inspectability
+
+The hierarchy remains complete without a product-level depth or node cap. Existing operational bounds continue to protect delivery and the Go process:
+
+- records use bounded pagination;
+- search uses deterministic continuation;
+- large reconstructed payloads use explicit ranges;
+- text ranges preserve valid UTF-8 boundaries;
+- other byte ranges use the defined encoded representation;
+- configured cache, local-storage, and response constraints produce their explicit errors; and
+- handle expiration stops later traversal with `ARTIFACT_EXPIRED`.
+
+These mechanisms do not omit hierarchy frames, create a guessed relevance filter, or authorize a best-effort partial semantic tree. Specialized hierarchy virtualization is not an initial requirement and may be designed later if representative traces demonstrate a rendering problem without changing the complete-hierarchy contract.
+
+### Failure and validation navigation
+
+The shared Go failure and validation indexes provide facts and navigation rather than conclusions. The explorer may present the mechanically established execution-ending failure, every recorded error location, failed tool calls, validation failures, rejected actions, retry relationships, affected frames, and related record sequences. It does not collapse those facts into one root cause unless Bifrost canonically records such a fact under defined semantics.
+
+### Browser-owned explorer state
+
+Browser presentation state may include current view, selected frame or record, expanded hierarchy nodes, filters, search query and continuation, detail expansion, scroll position, and local pane sizing if panes are used. This state does not extend artifact retention, survive `targetScopeId` rotation as valid evidence, or become a durable cross-process workspace.
+
+## Target connection and browser pairing experience
+
+The initial console uses a paired-browser-first target workflow with a protected terminal prompt as an explicit alternative for application-key entry. Non-secret target defaults may live in the static profile YAML; browser-entered target changes remain process-local.
+
+### Startup pairing
+
+After profile and workspace validation, the console starts its loopback listener, generates a cryptographically strong short-lived one-time pairing secret, attempts to open the default browser for an interactive desktop launch, and always prints the pairing URL as a fallback. A non-secret `--no-open-browser` option suppresses automatic opening. Failure to open a browser does not fail the console.
+
+The pairing URL carries the one-time secret in its fragment, conceptually:
+
+```text
+http://127.0.0.1:<port>/#/pair/<one-time-secret>
+```
+
+The fragment is not sent in the initial HTTP request and therefore does not enter ordinary server access logs. The browser application reads it in memory, immediately removes it from the visible URL and current browser-history entry with `history.replaceState`, submits it once in the body of a same-origin pairing request, and clears it from application state after the exchange.
+
+Successful exchange invalidates the secret and establishes the existing `HttpOnly`, `SameSite=Strict` browser session. The paired bootstrap response also returns the session-bound CSRF token retained only in browser memory. The one-time secret also becomes invalid on expiry or console shutdown and never becomes a reusable browser credential. Exact entropy and lifetime are implementation-planning constants, but generation must be cryptographically secure and lifetime short.
+
+Tabs in the same browser profile share the paired session cookie and do not pair independently. A paired, CSRF-authenticated browser may deliberately create another short-lived single-use pairing link for a different browser profile. This operation does not reveal or replace an existing browser session, expose the application key, rotate `targetScopeId`, or interrupt another tab, and its response uses `Cache-Control: no-store`. Exact browser-session count, lifetime, refresh, expiry, and recovery behavior remains the separate Browser Session Behavior decision.
+
+### Target defaults and persistence
+
+The versioned static YAML may contain a non-secret default target's HTTP or HTTPS scheme, host and port, externally visible servlet or reverse-proxy context path, timeouts, custom CA configuration, and other settled connection-authority settings. Here, scheme means the URL transport prefix `http` or `https`. The application observability key never appears in YAML.
+
+A target entered or changed through the browser is process-local and is not written back to static YAML. On restart, the YAML default is selected again when configured, a browser-only target selection is forgotten, and the application key is always absent. This preserves the restart-only configuration model and prevents the browser from becoming a configuration-file editor.
+
+After pairing, Overview presents the applicable target entry state:
+
+- **No target selected:** target-address form and connection guidance.
+- **Default target selected with authentication required:** application-key entry and protected-terminal alternative.
+- **Target established in this process:** independent target facts and navigation into available evidence.
+
+The target address identifies the application base, including any externally visible context path; Go appends the fixed observability namespace. Before selection or scope rotation, Go rejects unsupported schemes, embedded user information, malformed or ambiguous authority, unsupported path form, fragments, and other invalid syntax. The initial target client does not discover a target by following redirects.
+
+### Browser application-key entry
+
+The paired form keeps the target address and application key as distinct inputs. Submission is same-origin and CSRF-protected. Go accepts the target into `TargetContext`, places the key behind its process-memory credential provider, and performs the authenticated instance-status probe. The browser clears the key input and submission state when the request completes. Exact Java/Go compatibility is established before any other observability operation.
+
+The browser never displays the current application key after submission. Replacement requires entering a complete new key; there is no partial reveal or retained visible suffix. Documentation states that browser entry necessarily exposes the key briefly to the browser process, JavaScript request state, developer tools, and sufficiently privileged extensions even though it is never persisted in browser storage.
+
+### Protected terminal alternative
+
+A developer may request a no-echo interactive prompt through a non-secret option such as:
+
+```text
+bifrost-console --prompt-for-application-key
+```
+
+The key does not appear in command-line arguments, shell history, logs, or ordinary configuration. This path requires a target default from YAML or another already selected non-secret target address and populates the same in-memory credential provider used by browser and enabled MCP operations. The paired browser observes only the resulting authentication and compatibility facts. There is no terminal-owned target session or separate credential lifecycle.
+
+### Runtime replacement
+
+Replacing the selected target, its connection-authority settings, or its application credential follows the settled `TargetContext` rotation rules. It cancels prior-scope operations and clears prior-scope live state, recent activity, acquired traces, indexes, and browser runtime views.
+
+When current-scope evidence exists, the paired browser explains that consequence before the developer confirms replacement. The operation is CSRF-protected. Go does not compare old and new credential values; accepting a replacement credential rotates scope even if the submitted value happens to equal the previous secret.
+
+Runtime replacement remains supported rather than requiring console restart. Application-runtime identity changes already require the same scope, cancellation, and stale-result protections, while restart-only replacement would unnecessarily discard the entire console session, interrupt browser and MCP clients, and make a mistyped or rotated key harder to correct.
+
+### Target result presentation
+
+Overview presents independent target facts rather than one combined connection-health state:
+
+| Fact or result | Presentation |
+|---|---|
+| Reachable and authenticated | Show connection, authentication, exact compatibility, and runtime identity separately. |
+| `TARGET_AUTHENTICATION_REQUIRED` | State that the Bifrost observability key is missing or rejected and request a complete replacement key. |
+| `TARGET_ACCESS_BLOCKED` | Explain that host application security or an upstream proxy likely rejected access before Bifrost key authentication. |
+| `TARGET_UNAVAILABLE` | Show a sanitized transport category and retain the selected target for retry. |
+| `INCOMPATIBLE_TARGET` | Show the console and application release strings and prohibit partial protocol use. |
+| HTTP target | Display a persistent **Unencrypted** label and the precise network-exposure warning without repeated confirmation. |
+| TLS trust failure | Distinguish safe categories such as untrusted issuer, hostname mismatch, expired or not-yet-valid certificate, or other handshake failure when available; never offer a verification bypass. |
+| Redirect response | State that redirects are disabled and were not followed. |
+| Observability namespace not found | Suggest checking the target base/context path and whether the application adapter is enabled. |
+| Live monitoring unavailable | Preserve successful target, skill, and trace facts while showing live monitoring as independently unavailable. |
+
+Errors remain sanitized and never echo credentials, authentication headers, raw diagnostic payloads, or sensitive internal exception details.
+
+### Retry and reconnect
+
+Temporary transport failure retains the selected target and current `targetScopeId`. Go retries with bounded backoff, and Overview also provides a manual retry action.
+
+- Authentication rejection waits for replacement credentials rather than retrying the same key continuously.
+- Exact incompatibility remains until a later explicit recheck or target/release change.
+- A reconnect preserving target, credential context, and revalidated `instanceId` preserves scope.
+- A revalidated changed `instanceId` rotates scope before any new-runtime result is published.
+- Previously acquired complete evidence retains its settled acquisition-time authorization behavior.
+
+Retry never weakens TLS verification, follows a redirect, changes the target origin silently, or treats a host-security rejection as an invalid Bifrost key.
+
+## Browser sessions and local trace storage
+
+### Browser session limits and lifetime
+
+The initial process admits at most eight paired browser sessions and sixteen concurrently registered browser tabs across those sessions. Tabs in one browser profile normally share the same session cookie but retain independent navigation, selection, activity cursor, follow state, filters, hierarchy expansion, and scroll state. Each registered tab owns at most one live relay connection. An excess pairing or tab registration receives an actionable browser-local `LIMIT_EXCEEDED` result without displacing another session or tab or affecting Go's one upstream SSE connection.
+
+A browser session has an eight-hour idle timeout and no lifetime beyond the current console process. A successful authenticated browser request refreshes the idle time, and an admitted authenticated live relay keeps the session active while connected. Expiration rejects later browser requests, closes that session's tab relays, and clears its server-owned session/tab state. It does not rotate `targetScopeId`, clear Go's shared recent-activity interval, stop the upstream SSE connection, delete acquired traces merely because that browser expired, or affect another browser or MCP client.
+
+A page refresh reuses a valid `HttpOnly` session cookie and calls paired bootstrap again. Bootstrap supplies the current `ConsoleStatusSnapshot`, `targetScopeId`, a fresh session-bound CSRF token for browser memory, and the current facts needed to reload the requested route. Refresh does not require re-pairing while the server session remains valid.
+
+The browser may use `sessionStorage` only for scope-bound presentation state: route, selected trace/frame/record identifiers, selected explorer view, expanded hierarchy identifiers, filters and search text, pane sizes, and scroll-restoration hints. It never stores pairing secrets, application or MCP keys, session cookies, CSRF tokens, activity envelopes, skill YAML, trace records, raw payloads, prompts, model responses, tool inputs or outputs, or complete diagnostic responses. Stored presentation state carries enough console-process and target-scope context to be discarded before use after console restart or scope mismatch.
+
+Each tab registers an in-memory tab identifier during bootstrap. A slow or suspended tab may lose its local relay allowance and recover from the current baseline without affecting another tab or the upstream connection. Closing a tab releases its registration and relay state after ordinary connection closure or a bounded stale-tab timeout; the exact detection cadence is an implementation constant.
+
+### Re-pairing after session expiration
+
+An expired browser returns to the unpaired page without restarting the console. Another paired, CSRF-authenticated session may create a new one-time fragment link. If no paired session remains, the unpaired same-origin page may request a manual pairing challenge: Go prints a new one-time secret to the owning console terminal but does not return it to the unpaired HTTP response, and the developer pastes it into the pairing page.
+
+The unauthenticated challenge request still passes loopback Host and same-origin Origin validation, permits only one current challenge, is rate-limited against terminal-output spam, returns no secret or diagnostic data, and does not touch the target, application credential, upstream SSE connection, acquired traces, or other sessions. Successful exchange creates a new browser session but does not revive expired server-owned presentation state.
+
+### User-controlled local trace cache
+
+Acquired trace copies and their derived analysis files form a visible console-local cache rather than a small hidden trace-count pool. The initial cache has no trace-count limit and no separate per-trace byte ceiling. Two restart-time YAML settings control aggregate retention:
+
+```yaml
+trace-workspace:
+  max-bytes: 4GiB
+  idle-ttl: 4h
+```
+
+`max-bytes` accepts an explicit `unlimited` value, and `idle-ttl` accepts an explicit `never` value. Numeric zero is invalid and is not an alias for either. The default `4GiB` ceiling applies to the aggregate bytes of complete trace copies, partial acquisitions, indexes, reconstructed-payload files, validation state, search-supporting files, and other application-derived content under `transient`. Marker and lock metadata outside `transient` are not charged. The four-hour TTL is measured from the installed trace's last successful browser or MCP use; both adapters refresh the same last-used time.
+
+With `max-bytes: unlimited`, the console performs no aggregate-capacity eviction and accepts that available filesystem space is the practical capacity. With `idle-ttl: never`, time-based expiration is disabled. Target-scope rotation and console shutdown still cancel users, invalidate handles, and remove current transient contents, and startup still cleans rather than adopts prior-process state.
+
+### Admission and automatic cleanup
+
+The centralized artifact service admits a new trace against the current configured aggregate ceiling. A known response length may permit an early capacity decision; unknown or growing content is charged incrementally. Before returning workspace `LIMIT_EXCEEDED`, the service attempts to create enough room in this order:
+
+1. remove expired unpinned traces; and
+2. remove least-recently-successfully-used unpinned traces until the new complete copy and required derived files fit.
+
+There is no count-based eviction. A query pins its installed trace for that query, and Go never removes a pinned trace merely to admit another acquisition. Workspace `LIMIT_EXCEEDED` therefore occurs only when cleanup cannot create enough configured capacity, including when pinned traces occupy the required space or the new trace and required derived files cannot fit even in an otherwise empty cache. Bounded error details identify the workspace ceiling and safe observed values. Other application, response, payload, or concurrency limits may independently return the same shared code with details identifying their own bound.
+
+When `max-bytes` is `unlimited`, aggregate workspace policy does not return `LIMIT_EXCEEDED`. An operating-system disk-full or write-capacity failure instead fails that acquisition with an actionable sanitized local-storage error and removes its partial state when possible. If cleanup restores safe workspace operation, already complete traces remain available and the console may continue. If the workspace can no longer satisfy its process-wide lock, path-safety, or required I/O invariants, the existing fatal workspace-failure rule applies.
+
+Removing or evicting a trace invalidates its shared browser/MCP handle, and a later handle-based call receives `ARTIFACT_EXPIRED`. Reacquisition remains possible only when the selected application's current-instance catalog still offers the artifact and current application authentication permits a new download. Partial acquisition state is removed on failure, cancellation, validation rejection, or target-scope rotation.
+
+### Trace Storage page
+
+The paired browser provides a console-local **Trace Storage** page. It presents facts about the resolved work directory, configured maximum or `Unlimited`, current aggregate bytes, configured idle TTL or `Never`, number of acquired traces, and for each local trace its trace ID, acquired time, last-used time, aggregate local bytes including derived files, calculated expiry when applicable, application availability, local-handle availability, and whether an active query currently pins it.
+
+The page may remove one or more selected unused traces, clear expired traces, or clear all unused traces. Removal invalidates the shared handle. An in-use trace is not removable until its active queries finish; the initial page does not force-cancel them. These operations affect only Go's local cache. They never delete the application's canonical trace or a raw artifact the developer downloaded to another location.
+
+The initial cache does not add permanent pinning, per-browser or per-MCP ownership, reserved adapter capacity, a never-evict flag separate from the configured policies, or adoption of prior-process files. Browser and MCP use the same installed copy, handle, pinning, last-used time, cleanup result, and capacity policy.
 
 ## Initial product areas
 
@@ -490,7 +911,7 @@ There is no initial pending-artifact workflow or later trace-available event. If
 
 If Phase 1 reports `EXECUTION_OBSERVATION_ENDED` with reason `CORE_FINALIZATION_FAILED`, the UI removes the execution from its active view and states only that execution observation ended incompletely and no finalized application trace is available. It must not render the event as an execution success or execution failure unless a separate reliably established outcome is present, and it must not fabricate a retry, finalizing, or artifact-recovery workflow. The detailed finalization cause remains in application diagnostics. Failure of Phase 1 to publish this exceptional terminal event makes live monitoring unavailable under the existing fail-closed rule rather than allowing another execution to disappear silently from a supposedly trustworthy view.
 
-Once Go has acquired a finalized trace, its bounded transient workspace may continue serving that copy after the application artifact expires while its artifact handle, current console process, and `targetScopeId` remain valid. The copy remains non-authoritative and becomes eligible for eviction after its idle timeout; it is also removed on target-scope rotation or console shutdown. A console restart cleans rather than adopts the prior process's copies before serving diagnostic operations. Responses report application trace availability separately and include an `artifactHandle` only when Go holds a usable acquired copy. The application adapter stops admitting new downloads at the core-calculated expiration; a download opened before expiration may finish even though core deletion becomes due.
+Once Go has acquired a finalized trace, its transient cache may continue serving that copy after the application artifact expires while its artifact handle, current console process, and `targetScopeId` remain valid. The copy remains non-authoritative and follows the configured aggregate byte ceiling and idle TTL, including explicit `unlimited` and `never`, plus deliberate Trace Storage removal; it is also removed on target-scope rotation or console shutdown. A console restart cleans rather than adopts the prior process's copies before serving diagnostic operations. Responses report application trace availability separately and include an `artifactHandle` only when Go holds a usable acquired copy. The application adapter stops admitting new downloads at the core-calculated expiration; a download opened before expiration may finish even though core deletion becomes due.
 
 The same acquired copy may remain locally inspectable after the application rejects the currently held upstream credential. The UI must show the selected target's authentication-required status and retain the evidence's original observation facts; it must not suggest that successful cached inspection proves the application is still reachable or authorized. Replacing the application credential rotates target scope and removes the old copy under the ordinary lifecycle rule.
 
@@ -574,7 +995,7 @@ The following should remain true throughout UI design and implementation:
 15. Application authentication is enforced for each new upstream acquisition, while complete evidence already admitted into Go remains governed by local authentication and its normal scope, handle, capacity, and process lifecycle. Upstream rejection does not silently purge it or permit it to masquerade as current state.
 16. One config profile, including its static YAML, sibling MCP credential, and managed work directory, is exclusively locked by one Go console process. Static YAML remains restart-only and contains no MCP enablement or MCP access key. The sibling key file is the sole persistent MCP enabled state, and one credential store inside the owning process manages its mutation and process-local authentication generation. Multiple browser sessions and MCP clients may use that process; additional console processes require separate profiles, credentials, and work directories.
 17. The production browser assets and Go browser API ship atomically in one executable. The initial product has no browser/API version negotiation, service-worker-preserved application, or browser failure that is reported as Java target incompatibility.
-18. Browser and MCP interactive trace analysis use one centralized Go artifact service, one installed immutable copy and handle per current-scope trace reference, and one shared workspace-capacity and eviction policy. Neither adapter maintains an independent analysis cache or retention lifecycle.
+18. Browser and MCP interactive trace analysis use one centralized Go artifact service, one installed immutable copy and handle per current-scope trace reference, and one shared user-controlled cache, TTL, cleanup, pinning, and manual-removal policy. Neither adapter maintains an independent analysis cache or retention lifecycle.
 19. Browser and MCP status adapt from the same side-effect-free `ConsoleStatusSnapshot` of independent target, identity, and live-monitoring facts. The snapshot performs no probes, contains no aggregate health state, and never replaces operation-specific admission or errors. Workspace health is a process invariant rather than a reported degraded state.
 20. Go, browser handlers, and browser state do not become execution-lifecycle owners. They consume Phase 1 snapshots, activity, and catalog results produced through the exactly-once per-execution observation handle and never independently declare that a Bifrost execution started, completed, or failed.
 21. Go's recent-activity window contains events from exactly one continuous upstream interval. An upstream `STALE_CURSOR`, changed `instanceId`, or target-scope rotation clears the window before new activity is admitted. Browser and MCP results may report the reset boundary, but never combine events from opposite sides of a discontinuity.
@@ -608,10 +1029,10 @@ The initial threat model protects the Go listener from unauthenticated local or 
 
 ## Resource and lifecycle expectations
 
-The console must remain bounded and disposable:
+The console must remain operationally controlled and disposable. The trace cache is bounded by default and may be made explicitly unlimited by the developer; all other resources retain their required bounds:
 
-- no unbounded event queues, trace workspaces or indexes, goroutines, browser sessions, or upstream connections;
-- acquired artifacts, retained bytes, payload ranges, continuations, and search work are bounded, and an acquired copy is never deleted during an in-flight query merely to admit new workspace work;
+- no unbounded event queues, goroutines, browser sessions, upstream connections, response payloads, continuations, or search work;
+- acquired trace and derived-file bytes follow `trace-workspace.max-bytes`, defaulting to `4GiB` and permitting the explicit developer choice `unlimited`; no acquired copy is deleted during an in-flight query merely to admit new workspace work;
 - cancellation and timeouts propagate when the browser disconnects or `targetScopeId` rotates;
 - `TargetContext` rotation cancels operations from the prior scope, closes obsolete SSE streams, and clears all application-derived operational and transient trace state as defined by the authoritative ownership section;
 - the console uses only its verified, exclusively locked `bifrost-console-work/transient` subtree for disk-backed analysis, cleans it before serving each process, and never adopts prior-process cache entries;
@@ -621,65 +1042,13 @@ The console must remain bounded and disposable:
 - large traces do not require loading the entire trace into Go or browser memory; and
 - ordinary errors in one browser session, artifact, or target response do not terminate the console host; detected workspace-wide failure does.
 
-These console-local bounds and Phase 1's two fixed long-lived-operation admission limits are not a claim of comprehensive aggregate resource-exhaustion protection. General request-rate limiting, authenticated-client fairness, adaptive budgets, bandwidth governance, and coordinated capacity management across the application, Go console, browser, and MCP clients remain outside the initial personal developer product.
+These console-local controls and Phase 1's two fixed long-lived-operation admission limits are not a claim of comprehensive aggregate resource-exhaustion protection. An explicitly unlimited trace cache accepts filesystem exhaustion as a developer-controlled risk. General request-rate limiting, authenticated-client fairness, adaptive budgets, bandwidth governance, and coordinated capacity management across the application, Go console, browser, and MCP clients remain outside the initial personal developer product.
 
-Implementation planning should set concrete limits and test them rather than leave “bounded” qualitative.
+Implementation planning should set and test concrete values for the resources that remain bounded rather than leave “bounded” qualitative. It must also test the explicit unlimited-cache disk-full path and the distinction between a recoverable acquisition failure and an unrecoverable workspace-wide failure.
 
 ## Still-open Phase 2 product decisions for a future clean context
 
-The cross-phase ownership and lifecycle decisions above are settled. A future clean Phase 2 design context should work through the following product decisions before producing an implementation plan.
-
-### Information architecture
-
-- What is the primary landing view?
-- What global navigation best connects Overview, Skills, Live Executions, and Traces?
-- Should active executions remain visible globally while inspecting another area?
-- What information deserves persistent screen space versus drill-down detail?
-
-### Core developer workflows
-
-- What are the fastest paths for understanding a currently slow execution, a failed execution, an unexpectedly expensive execution, and an unfamiliar skill tree?
-- How should the UI transition from a live execution to its retained completed trace?
-- What should happen when the persistence policy does not retain that completed trace?
-
-### Live execution presentation
-
-- What activity becomes narrative text, a status update, a tree transition, or hidden detail?
-- How should nested skills, planning, model calls, and tool calls appear without overwhelming the developer?
-- What update frequency and animation make the system feel alive without creating visual noise?
-
-### Trace explorer organization
-
-- Should the primary detailed view be tree-first, timeline-first, or a synchronized split view?
-- How are raw payloads, concise summaries, and framework metadata layered?
-- How should very large traces and payloads be paged, searched, and virtualized?
-- How should the browser present the failure and usage correlations computed by Go shared services?
-
-### Target connection experience
-
-- How does a developer enter, select, and reconnect to a target?
-- Is the non-sensitive target URL persisted, and if so, where?
-- How are unavailable targets, incompatible versions, HTTP transport, and certificate failures explained?
-- How do the paired-browser application-key entry and protected console prompt coexist without leaving the key in browser state or command-line history?
-
-### Browser pairing details
-
-- Should startup open the browser automatically?
-- Should the one-time secret use a URL fragment, manual code, or another exchange that avoids logs and history?
-- How are multiple tabs and browser restarts handled within one console process?
-
-### Browser session behavior
-
-- How many paired browser sessions and tabs may coexist?
-- What short-lived state is retained while the browser refreshes?
-- How are expired browser sessions re-paired without interrupting the upstream SSE connection?
-
-### Frontend foundation
-
-- Which TypeScript framework and component strategy best support the expected trace complexity?
-- What browser support baseline is required?
-- What accessibility, keyboard navigation, responsive layout, and theme requirements belong in the first release?
-- Which visualization libraries, if any, are justified for timelines and execution trees?
+The cross-phase ownership and lifecycle decisions above are settled. The initial core developer workflows, their live-to-completed transition, unavailable-trace behavior, and cross-workflow requirements are settled in [Bifrost Console — Developer Workflows](./bifrost_console_workflows.md). The landing view, global navigation, persistent context, drill-down boundaries, live-execution presentation, trace-explorer organization, target connection, browser pairing, browser-session behavior, local trace-cache policy, and frontend foundation are settled above. A future clean Phase 2 design context should work through the remaining product decisions below before producing an implementation plan.
 
 ### Project placement, build, and distribution
 
@@ -695,23 +1064,12 @@ The cross-phase ownership and lifecycle decisions above are settled. A future cl
 - Which types are generated for Go and TypeScript, and which remain deliberately hand-authored view models?
 - How are exact-version compatibility, protocol fixtures, malformed events, and version mismatches tested across the Java, Go, and browser boundaries?
 
-### Transient trace workspace limits
-
-- What byte, trace-count, and idle-time limits bound the transient workspace?
-- What eviction policy is used when those limits are reached?
-- How does the UI explain that a trace is available only from the console cache after the application copy expires?
-
 ## Recommended next planning sequence
 
 Continue Phase 2 design in this order:
 
-1. define the primary developer workflows and landing-page information hierarchy;
-2. sketch navigation and relationships among Skills, Live Executions, and Traces;
-3. design the live-to-completed execution transition;
-4. choose the trace explorer's primary mental model;
-5. settle target connection and browser pairing workflows;
-6. decide browser-session and transient-workspace behavior; and
-7. choose the frontend framework and libraries after the interaction requirements are clear.
+1. settle project placement, build, and distribution; and
+2. settle protocol tooling and cross-boundary fixture composition.
 
 This order keeps technology selection subordinate to the developer experience the console must provide.
 
