@@ -96,7 +96,7 @@ The initial theme choices are light, dark, and follow-system. Theme selection is
 
 The initial frontend does not adopt a general charting, graph, or visualization library. Execution hierarchy uses semantic HTML and accessible tree behavior. Timelines begin with HTML and SVG derived from recorded timestamps and deterministic durations; usage views use tables and simple CSS or SVG presentation; raw records remain structured content. Specialized visualization dependencies require an implementation-proven accessibility or rendering need and must not redefine hierarchy, ordering, evidence relationships, or diagnostic meaning.
 
-Frontend verification uses Vitest, React Testing Library, and Playwright. Component tests cover deterministic presentation and interaction behavior; browser tests cover routing, keyboard paths, accessibility-critical behavior, live updates, target-scope resets, and the approved workflows. Exact test composition within the repository build is settled with the project/build/distribution decision below.
+Frontend verification uses Vitest, React Testing Library, and Playwright. Component tests cover deterministic presentation and interaction behavior; browser tests cover routing, keyboard paths, accessibility-critical behavior, live updates, target-scope resets, and the approved workflows. The console build runs frontend tests and creates a clean production asset tree before Go tests and compilation; release verification rejects missing or stale embedded assets.
 
 ### Spring web adapter
 
@@ -125,11 +125,59 @@ The existing `bifrost-cli` is a deprecated proof of concept. It may be consulted
 
 Its filesystem-oriented trace loading, Go record types, filename parsing, and CLI presentation state model predate the supported Phase 1 web protocol. Implementation planning may deliberately salvage an algorithm or test idea, but new console code must not depend on the CLI project or preserve its types, directory discovery, architecture, commands, or behavior merely to ease migration. Phase 2 does not copy artifacts into a CLI directory or provide cross-process CLI discovery. A developer may manually point the legacy CLI at a specific readable directory while it still exists, but that is opportunistic raw-file inspection outside the supported console lifecycle.
 
-## Packaging and operational independence
+## Project placement, build, distribution, and operational independence
 
-The compiled browser assets should be embedded into the Go executable so the initial console can be distributed as one compact artifact. The production browser and Go host are consequently one atomically built and distributed component, not independently versioned peers. The initial product has no browser API compatibility version or runtime browser-to-Go negotiation.
+The console initially lives in this repository as the top-level `bifrost-console/` project. It is an independent Go module, not a Maven module and not a continuation of `bifrost-cli`. Its initial source layout is:
 
-The Java Bifrost artifacts and Go console executable form one coordinated Bifrost release unit. They always receive the same product release version and are published together through the Maven release process, including when a release changes only the console or only the Java implementation. They remain separate runtime components despite this release coupling.
+```text
+bifrost-console/
+  go.mod
+  go.sum
+  cmd/bifrost-console/
+  internal/
+  web/
+    package.json
+    package-lock.json
+```
+
+`cmd/bifrost-console` is the executable entry point, `internal` contains the transport-neutral services plus browser and MCP adapters, and `web` contains the React/TypeScript/Vite source and frontend tests. The exact internal package subdivision and generated-asset directory are implementation details, but generated production assets remain inside the Go module where a dedicated asset package can embed them.
+
+Keeping Java, Go, browser, MCP, fixtures, and release automation in one repository allows one change and one release tag to update the consumed contract and every consumer atomically. Moving the console to another repository would require a future independent-version and cross-repository compatibility design.
+
+The compiled browser assets are embedded into the Go executable so the initial console is distributed as one compact runtime artifact. The production browser and Go host are consequently one atomically built and distributed component, not independently versioned peers. The initial product has no browser API compatibility version or runtime browser-to-Go negotiation.
+
+The Java Bifrost artifacts and Go console executable form one coordinated Bifrost release unit. They receive the same product release version and the repository release pipeline builds and publishes them from the same tag, including when a release changes only the console or only Java. Maven continues to build and publish the Java artifacts; ordinary Java development and `mvn test` do not require Go or Node unless the console build is explicitly requested. The components remain separate at runtime despite release coupling.
+
+### Toolchains and reproducibility
+
+Implementation scaffolding pins one exact current stable Go patch and one exact current Active LTS Node.js patch plus npm version. The Go module/toolchain declaration, `go.sum`, Node version declaration, `package.json` package-manager and engine declarations, and committed `package-lock.json` make those selections explicit. CI and the release build use exactly those versions. The initial project does not claim support for a range of build toolchains; toolchain changes are intentional dependency-maintenance changes.
+
+Node and npm are build-time dependencies only. The runtime executable contains the compiled browser assets and requires neither Node nor a frontend package installation.
+
+### Build and verification composition
+
+A production console build performs this sequence:
+
+1. install the locked frontend dependency graph;
+2. run Vitest and React Testing Library coverage;
+3. clean the prior generated production asset tree and run the Vite production build;
+4. verify that the expected entry document and content-addressed asset manifest were produced;
+5. run Go tests, including embedded-asset and shared-service tests; and
+6. compile the versioned Go executable using only the freshly generated assets.
+
+Playwright workflow and browser integration tests run in repository CI before release packaging. The release pipeline never trusts a pre-existing generated asset directory, and verification fails when assets are absent, stale, or carry a different product version. Java/Go contract fixtures and adapter-parity tests run in the same tagged source state even though the Java and console build commands remain independently usable.
+
+### Initial release targets and packages
+
+The initial release publishes:
+
+- Windows x86-64;
+- Linux x86-64; and
+- macOS Apple Silicon.
+
+Other operating systems or architectures may build from source but are not initially published, tested, or claimed as supported. Adding another supported target requires its release build and representative platform validation, not merely a successful untested cross-compilation.
+
+Each target is packaged as one console executable with the applicable license and short runtime README, plus published checksums. The initial release does not add an installer, operating-system package-manager integration, automatic updater, container image, separate browser deployment, or npm package. The deprecated `bifrost-cli` is not included.
 
 Running the console should not require:
 
@@ -139,9 +187,11 @@ Running the console should not require:
 - shared filesystem access to the observed application; or
 - a database.
 
-The frontend toolchain is a build-time concern only.
+### Development hot reload
 
-Development may run the frontend development server separately for hot reload, but the production/release artifact must serve only the compiled embedded assets. The implementation plan should define a reproducible build that prevents stale frontend assets from being embedded accidentally. Production static assets should use content-addressed names and may be cached immutably, while the entry document must be revalidated or not stored so it cannot keep selecting an earlier asset set after a console restart. The initial product must not install a service worker or other offline cache that can preserve an earlier SPA independently of the executable. A page holding a process-local browser session against a restarted console bootstraps again, re-pairs, or reloads; it does not negotiate an old browser DTO contract with the new process. Independently deploying the browser would require a future explicit compatibility design.
+Development may run Vite separately for hot reload. Vite binds only to loopback, is the browser's development origin, and proxies only the browser console API and live-event paths to the loopback Go host. Go remains the sole component that contacts the selected Bifrost application, owns application credentials, and supplies browser runtime semantics. MCP clients connect directly to the Go listener and never through Vite. The Go host explicitly accepts only the configured loopback Vite development origin in this mode; the proxy does not weaken production Host, Origin, pairing, CSRF, or authentication rules.
+
+The development proxy and its allowances are excluded from production builds. The production/release artifact serves only compiled embedded assets. Production static assets use content-addressed names and may be cached immutably, while the entry document must be revalidated or not stored so it cannot keep selecting an earlier asset set after a console restart. The initial product does not install a service worker or other offline cache that can preserve an earlier SPA independently of the executable. A page holding a process-local browser session against a restarted console bootstraps again, re-pairs, or reloads; it does not negotiate an old browser DTO contract with the new process. Independently deploying the browser requires a future explicit compatibility design.
 
 ## State ownership
 
@@ -264,7 +314,17 @@ The Go host should not create a second semantic activity protocol merely because
 - Phase 1 removes `TraceRecord.schemaVersion`; raw NDJSON records contain no independent version property. Go interprets a trace only under the exact umbrella match and `targetScopeId` from which it was acquired.
 - A `consoleCompatibilityVersion` mismatch produces `INCOMPATIBLE_TARGET` before the UI attempts partial rendering or trace analysis. Invalid trace content produces `INVALID_ARTIFACT`, not negotiation of another version.
 
-The implementation plan must decide whether protocol DTOs are generated from an API description or maintained explicitly. In either case, the Phase 1 protocol—not internal Java classes—is authoritative.
+The initial implementation keeps protocol tooling deliberately small:
+
+- the application adapter uses explicit hand-authored Java boundary DTOs rather than serializing internal classes;
+- the Go target client uses corresponding hand-authored wire structs and maps them into transport-neutral services;
+- the browser-facing Go and TypeScript DTOs are hand-authored for the local same-release API rather than generated from the Java boundary;
+- Java adapter integration tests produce reviewed representative JSON snapshot, JSON problem, SSE activity, and native NDJSON fixtures;
+- Go contract tests consume the Java-produced application fixtures and assert compatibility gating, parsing, cursor/problem behavior, and shared semantic results;
+- frontend mocks and tests consume browser-facing Go fixtures rather than pretending to call the Phase 1 Java API directly; and
+- exact route names, serialized field spelling, fixture-directory layout, and test-harness organization are settled while implementing the boundary.
+
+The initial release does not add OpenAPI, a separate SSE schema language, JSON Schema, a schema registry, or generated Java, Go, or TypeScript protocol models. The plans already define the semantic agreement and the coordinated release model makes executable fixtures the useful drift guard. Generation may be reconsidered only if implementation demonstrates meaningful repetition or drift that the reviewed fixture tests do not control cleanly.
 
 ## Go `TargetContext` ownership
 
@@ -354,7 +414,7 @@ Browser HTTP handlers map shared errors to suitable HTTP status codes and a comm
 
 ## Console-local browser API boundary
 
-The browser-to-Go API is an explicit local adapter over transport-neutral Go services. Browser HTTP handlers must not become the owners of target connection semantics, trace parsing, failure and usage calculations, or other runtime facts that MCP later consumes. Conversely, Go is not required to build a complete browser-ready materialized mirror of Bifrost state.
+The browser-to-Go API is an explicit local adapter over transport-neutral Go services. Browser HTTP handlers must not become the owners of target connection semantics, trace parsing, failure and usage calculations, or other runtime facts that MCP later consumes. Conversely, Go is not required to build a complete browser-ready materialized mirror of Bifrost state. Future MCP SDK types remain confined to the Phase 3 adapter and do not enter these services. Browser/MCP adapter parity fixtures must be able to assert the same identifiers, calculations, availability, direct limitation facts, and shared domain-error meanings from one service result while allowing only protocol-wrapper and presentation differences.
 
 This API is still explicit and tested, but it is not an independently supported cross-release protocol. Its browser caller is the asset set embedded in the same Go executable. Browser API DTO changes therefore require an atomic Go-and-assets build plus browser adapter tests, not a new compatibility number. A stale or unauthenticated page must be sent through reload, bootstrap, or pairing behavior and must never be classified as `INCOMPATIBLE_TARGET`, which is reserved for the Java-to-Go boundary.
 
@@ -643,7 +703,7 @@ These are browser views over the same artifact handle and analysis services, not
 
 Opening a trace from the catalog normally selects the execution root in Hierarchy. Each hierarchy item presents supported recorded or mechanically calculated facts such as frame or skill name, frame type, route, recorded outcome, timestamps, inclusive and self duration, direct and descendant usage, and recorded failure or validation indicators.
 
-The exact shared duration, usage, attempt, retry, failure, and completeness definitions remain separate open calculation decisions below the browser adapter. The hierarchy displays those common Go results and never calculates competing browser-specific values.
+Shared Go services calculate frame `inclusiveDuration` from matching canonical `FRAME_OPENED` and `FRAME_CLOSED` timestamps and `selfDuration` by subtracting immediate-child inclusive durations. They also build the settled flat failure and validation reference indexes during parsing. Direct, descendant, inclusive, attempt, retry, and unattributed usage use the settled workflow definitions and Phase 1's explicit trace relationships; final outcome and terminal-failure attribution likewise consume the Phase 1 contract. The hierarchy displays those common Go results and never calculates competing browser-specific values.
 
 The hierarchy distinguishes runtime invocation from registered skill definition, direct child from descendant, repeated invocations of the same skill, canonical order from parent-child structure, and recorded failure from inferred root cause. Every frame in a valid acquired trace remains available. The initial product imposes no hierarchy-specific depth limit, node limit, truncation rule, or partial-tree mode. Specialized very-deep-tree rendering or hierarchy virtualization is deferred until demonstrated necessary.
 
@@ -665,7 +725,7 @@ A failure-focused entry does not label the selected item a root cause. It presen
 
 ### Shared selected-item detail
 
-Every view coordinates with one selected-item detail area. Depending on the selected execution, frame, interval, attempt, or record, it presents supported facts including stable identifiers, parent and child relationships, route and frame type, timestamps and duration, direct/descendant/inclusive usage, attempts and retries, validation outcomes, recorded errors, plan creation and update facts, model and tool transitions, evidence/quota/timeout/guardrail outcomes, related canonical record sequences, evidence completeness, and registered skill YAML when a recorded skill name maps to a currently available registered definition.
+Every view coordinates with one selected-item detail area. Depending on the selected execution, frame, interval, attempt, or record, it presents supported facts including stable identifiers, parent and child relationships, route and frame type, timestamps and duration, direct/descendant/inclusive usage, attempts and retries, validation outcomes, recorded errors, plan creation and update facts, model and tool transitions, evidence/quota/timeout/guardrail outcomes, related canonical record sequences, direct gap or lifecycle limitations, and registered skill YAML when a recorded skill name maps to a currently available registered definition.
 
 The detail area presents facts and explicit relationships. It does not generate a diagnosis, importance ranking, causal narrative, root-cause claim, or recommended action.
 
@@ -713,7 +773,7 @@ These mechanisms do not omit hierarchy frames, create a guessed relevance filter
 
 ### Failure and validation navigation
 
-The shared Go failure and validation indexes provide facts and navigation rather than conclusions. The explorer may present the mechanically established execution-ending failure, every recorded error location, failed tool calls, validation failures, rejected actions, retry relationships, affected frames, and related record sequences. It does not collapse those facts into one root cause unless Bifrost canonically records such a fact under defined semantics.
+The shared Go failure and validation indexes are flat record-reference lists built during parsing. Failure references cover `ERROR_RECORDED`, `TOOL_CALL_FAILED`, and failed or aborted `FRAME_CLOSED` records; validation references cover the settled planning, evidence-validation, linter, structured-output, and step-action record types. Each reference retains its canonical sequence, timestamp, record type, frame, and only the applicable recorded route, failure, attempt, retry, status, or severity facts. The explorer may navigate these references and marks a failure terminal only through the recorded `terminalFailureId`. It does not group, deduplicate, rank, normalize, or collapse them into a root cause.
 
 ### Browser-owned explorer state
 
@@ -1046,36 +1106,13 @@ These console-local controls and Phase 1's two fixed long-lived-operation admiss
 
 Implementation planning should set and test concrete values for the resources that remain bounded rather than leave “bounded” qualitative. It must also test the explicit unlimited-cache disk-full path and the distinction between a recoverable acquisition failure and an unrecoverable workspace-wide failure.
 
-## Still-open Phase 2 product decisions for a future clean context
+## Phase 2 design status
 
-The cross-phase ownership and lifecycle decisions above are settled. The initial core developer workflows, their live-to-completed transition, unavailable-trace behavior, and cross-workflow requirements are settled in [Bifrost Console — Developer Workflows](./bifrost_console_workflows.md). The landing view, global navigation, persistent context, drill-down boundaries, live-execution presentation, trace-explorer organization, target connection, browser pairing, browser-session behavior, local trace-cache policy, and frontend foundation are settled above. A future clean Phase 2 design context should work through the remaining product decisions below before producing an implementation plan.
-
-### Project placement, build, and distribution
-
-- Does the separate console live as a top-level project in this repository initially or in its own repository?
-- Which Go and Node toolchain versions are supported and pinned for reproducible builds?
-- Which operating systems and CPU architectures receive initial binaries?
-- How are frontend tests, Go tests, embedded-asset verification, and release packaging composed?
-- How does development hot reload proxy to the Go host without creating a production direct-browser-to-Bifrost path?
-
-### Protocol tooling
-
-- Is the Phase 1 REST/SSE contract described using OpenAPI plus an explicit SSE schema, another interface description, or reviewed handwritten DTOs?
-- Which types are generated for Go and TypeScript, and which remain deliberately hand-authored view models?
-- How are exact-version compatibility, protocol fixtures, malformed events, and version mismatches tested across the Java, Go, and browser boundaries?
-
-## Recommended next planning sequence
-
-Continue Phase 2 design in this order:
-
-1. settle project placement, build, and distribution; and
-2. settle protocol tooling and cross-boundary fixture composition.
-
-This order keeps technology selection subordinate to the developer experience the console must provide.
+The Phase 2 product and architecture decisions required before implementation planning are settled. The initial implementation uses hand-authored boundary DTOs and executable cross-boundary fixtures without adding a schema or code-generation system. Exact route and field spelling, fixture paths, test harnesses, response-framing constants, and representative client interoperability values are implementation work within the settled contracts rather than additional product-design topics.
 
 ## Handoff to future implementation planning
 
-Do not begin Phase 2 integration by reverse-engineering controllers. A future implementation-planning context should first revalidate this document, then use the Phase 1 external agreement, current Java writer and enums, Java-produced NDJSON golden fixtures, cursor behavior, and exact `consoleCompatibilityVersion` policy as explicit inputs. Fixtures assert the logical reconstruction, hierarchy, timing, usage attribution, failure attribution, validation/retry outcomes, and invalid-artifact results the console actually provides rather than proving only JSON parsing. Go shared services own parsing, chunk reconstruction, and derived analysis; unconsumed metadata remains opaque and requires no parallel Go model.
+Do not begin Phase 2 integration by reverse-engineering controllers. A future implementation-planning context should first revalidate this document, then use the Phase 1 external agreement, current Java writer and enums, Java-produced JSON, problem-response, SSE, and NDJSON fixtures, cursor behavior, and exact `consoleCompatibilityVersion` policy as explicit inputs. Fixtures assert transport behavior plus the logical reconstruction, hierarchy, timing, usage attribution, failure attribution, validation/retry outcomes, and invalid-artifact results the console actually provides rather than proving only JSON parsing. Go shared services own parsing, chunk reconstruction, and derived analysis; unconsumed metadata remains opaque and requires no parallel Go model.
 
 UI work may proceed against reviewed protocol fixtures or a mock Phase 1 server, but final integration must use the supported Spring web adapter. The mock must model reconnect gaps, trace expiration, failures in nested skill frames, large payloads, exact-version rejection, and unavailable targets rather than only the happy path.
 

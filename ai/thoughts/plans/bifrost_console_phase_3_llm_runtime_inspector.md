@@ -46,11 +46,11 @@ The responsibilities are:
 
 - **LLM:** performs contextual reasoning and relates runtime evidence to repository code.
 - **Agent Skill:** supplies the investigation playbook, Bifrost mental model, evidence rules, and answer format.
-- **MCP server:** supplies authenticated, structured, bounded runtime evidence.
+- **MCP server:** supplies authenticated, structured, caller-directed runtime evidence through finite continuable results.
 
 The skill is procedural guidance, not a security boundary or authoritative computation engine. Deterministic facts and calculations belong in Bifrost or the Go console runtime services.
 
-Phase 3 assumes a capable frontier-class tool-using IDE model. The server should provide correct structure, identifiers, calculations, schemas, evidence relationships, bounded retrieval, and useful errors rather than attempting to reproduce model reasoning in deterministic console logic. The design is based on capability, not on any particular model vendor or version.
+Phase 3 assumes a capable frontier-class tool-using IDE model. The server should provide correct structure, identifiers, calculations, schemas, evidence relationships, continuable retrieval, and useful errors rather than attempting to reproduce model reasoning in deterministic console logic. The design is based on capability, not on any particular model vendor or version.
 
 ## Chosen architecture
 
@@ -81,7 +81,21 @@ Bifrost SSE connection
         -> recent activity query service
 ```
 
-The exact service names are illustrative. The boundary is mandatory: browser handlers must not own the runtime semantics that MCP later needs.
+The exact service names are illustrative. The boundary is mandatory: browser handlers must not own the runtime semantics that MCP later needs, and MCP handlers must not create parallel runtime semantics merely because their protocol DTOs differ.
+
+Both adapters consume the same `TargetContext`, selected-target authentication and compatibility state, current-scope skill service, active-execution service, recent-activity window, trace catalog/acquisition service, acquired-artifact cache, artifact handles, parser, payload reconstruction, indexes, deterministic calculations, query primitives, continuations, and shared domain errors. Neither adapter independently contacts the Bifrost application, acquires or caches a trace, parses NDJSON, reconstructs chunks, calculates usage/duration/outcome/failure facts, retains another activity history, or changes a shared error's meaning.
+
+The adapters own only their protocol boundary:
+
+| Browser adapter | MCP adapter |
+|---|---|
+| Browser session, pairing, CSRF, same-origin API mapping, navigation state, and live presentation | MCP access-key and protocol session, tool/resource schemas, structured MCP content, and concise text fallback |
+| Live relay from the single shared upstream interval | On-demand snapshots over the shared recent-activity query service |
+| Browser-oriented response formatting | MCP resource links and continuation formatting |
+
+The browser live relay versus MCP snapshot query is a deliberate delivery difference, not a second activity model. Both preserve the same interval, cursor, gap, reset-boundary, target-scope, and observation facts.
+
+Adapter parity tests feed the same transport-neutral service result or Java-produced trace fixture through browser and MCP mappings and assert identical Bifrost identifiers, calculations, availability, direct limitation facts, and domain-error meanings. Only protocol wrappers and presentation fields may differ. This parity coverage supplements, rather than replaces, service-level semantic tests and MCP protocol conformance.
 
 The browser's in-memory live view is not a Go or MCP source of truth. MCP calls transport-neutral Go runtime, trace, and recent-activity query services directly and remains snapshot-oriented. Go retains one bounded current-scope recent-activity window for browser relay and reconnect plus bounded on-demand queries from either adapter. That window contains exactly one continuous upstream interval and is cleared on an upstream application `STALE_CURSOR`, changed `instanceId`, or target-scope rotation before new activity is admitted; the shared service may retain one bounded reset boundary but not multiple continuity segments. It does not materialize durable activity history or a complete duplicate of application runtime state. Target scope, connection state, compatibility, credentials, and deterministic trace calculations remain below both adapters; browser navigation and live presentation state remain browser-owned.
 
@@ -119,6 +133,35 @@ Useful specification references at planning time:
 - [MCP tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
 - [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
 
+## Go MCP SDK
+
+Bifrost Console uses the official [`github.com/modelcontextprotocol/go-sdk/mcp`](https://github.com/modelcontextprotocol/go-sdk) SDK. It is the MCP project's Tier 1 Go implementation, provides the current stable protocol surface, embeds in `net/http`, supports Streamable HTTP, typed tool input and output schemas, structured tool results, resources and templates, context cancellation, in-memory test transports, and the official conformance suite. At this planning point the stable module release is `v1.6.1`; implementation pins an exact stable release, revalidates the then-current stable MCP specification and SDK compatibility table, and does not adopt a prerelease merely because one is newer.
+
+The SDK is confined to a thin MCP adapter package. SDK request, result, session, tool, resource, and error types do not enter transport-neutral runtime services. A tool or resource handler validates and maps its protocol input, calls one shared service, and maps the shared result or domain error back to MCP. It does not reimplement target access, acquisition, caching, continuation, evidence calculation, or error classification.
+
+The SDK's `StreamableHTTPHandler` is mounted beneath Bifrost-owned route middleware on the existing shared loopback `net/http` listener; Bifrost does not start an SDK-owned listener. The initial server uses stateful Streamable HTTP sessions and the SDK's default cryptographically random session identities. It does not configure an MCP event store because the initial product has no server-initiated live feed or subscription requiring stream resumption.
+
+Bifrost retains authority over the security boundary:
+
+- exact listener-authority and `Origin` validation run before MCP session lookup or request-body processing;
+- the SDK's localhost/DNS-rebinding protection remains enabled as defense in depth;
+- cross-origin acceptance does not depend on an SDK default, which has changed across SDK releases;
+- Bifrost's static MCP bearer-key middleware, not the SDK OAuth packages, authenticates the route; and
+- SDK OAuth, sampling, elicitation, prompts, server-initiated subscriptions, and event replay are not advertised or enabled unless a later approved workflow requires them.
+
+Typed `mcp.AddTool` registration is preferred for stable request and structured-result schemas. Resource templates use the SDK resource APIs, but the essential workflow remains available through tools where representative clients expose resources inconsistently. Bifrost wraps handler results so shared domain failures retain their documented codes and safe details as unsuccessful tool/resource results rather than becoming generic SDK errors.
+
+The official SDK's in-memory transports support fast protocol-adapter tests. The assembled Streamable HTTP endpoint also runs the official MCP server conformance suite, Bifrost authority/authentication tests, browser/MCP parity tests, and representative-client compatibility tests. An SDK upgrade must pass the same suite before its pinned version changes.
+
+One lifecycle acceptance spike is required before implementation commits to the adapter:
+
+1. retain the SDK `ServerSession` and active request cancellations under the current MCP authentication generation;
+2. prove that key regeneration and disablement cancel old-generation work, close established sessions, and suppress raced results;
+3. prove that console shutdown terminates MCP sessions and streams cleanly; and
+4. prove reconnect and reinitialization behavior with the representative clients.
+
+The current SDK exposes individual `ServerSession.Close` but not a public handler-wide shutdown operation. A small Bifrost-owned generation/session registry is the expected solution and remains adapter infrastructure, not shared runtime state. If the spike finds a material protocol or lifecycle blocker that cannot be isolated or fixed upstream, `github.com/mark3labs/mcp-go` is the fallback candidate. Its convenience API alone is not a reason to prefer a pre-v1 third-party surface over the official Tier 1 SDK, and Bifrost does not maintain two SDK implementations.
+
 ## MCP transport direction
 
 ### Primary transport: Streamable HTTP
@@ -139,7 +182,7 @@ The MCP endpoint must:
 - require a distinct high-entropy local MCP access key;
 - never accept the upstream Bifrost credential as its own credential;
 - never disclose either credential through MCP results, resources, errors, or logs;
-- apply request deadlines, rate limits, concurrency limits, and output-size limits;
+- apply request deadlines, cancellation, protocol framing validation, and finite continuable result serialization without introducing an MCP request-rate, traffic, client-count, cumulative-traversal, or second concurrency quota;
 - close transport sessions and derived session state when the console exits while leaving the canonical MCP access-key file in place when that file says MCP is enabled; and
 - remain unavailable remotely while the console listener is HTTP-only.
 
@@ -196,7 +239,11 @@ State ownership is deliberately divided:
 
 Inside the one profile-owning Go process, one MCP credential-store component exclusively owns the canonical key path, file validation, persistent mutation, in-memory key, enabled state, mutation serialization, and authentication generation. Browser handlers request enable, reveal, regenerate, or disable operations through that component. The YAML loader, MCP transport handlers, and browser handlers must not write or delete the file independently. A second console process cannot read, host, regenerate, disable, or otherwise operate that profile's MCP credential while the owner holds the profile lock. There is no separate “invalidate but remain enabled without a key” operation: regeneration means enabled with a new key, and disablement means no canonical key file and no accepted MCP credential.
 
-The canonical key file contains only the generated high-entropy static API key in one strict documented text encoding. It is a regular file, not a symbolic link or Windows reparse point, and uses owner-only permissions or the closest enforceable platform equivalent. The credential store rejects malformed, empty, oversized, unsafe, weakly protected, or unreadable canonical files and fails MCP closed. It does not silently overwrite a questionable file or generate a replacement that would unexpectedly disconnect an IDE. The MCP client supplies the key through `Authorization: Bearer <key>` because that header is broadly configurable by intended MCP clients. The key must never appear in URLs, page source, logs, trace data, generated skill content, ordinary configuration examples, or MCP responses. A paired, CSRF-protected credential-management response may deliberately reveal it and uses `Cache-Control: no-store`.
+The credential store generates 32 bytes from the operating system's cryptographically secure random source and encodes them as the literal prefix `bfmcp_` followed by 43 characters of unpadded base64url. The canonical file contains exactly that 49-character ASCII key followed by one LF byte. The LF is file framing and is not part of the bearer value. Authentication rejects every other encoding and compares the complete presented key in constant time. Regeneration creates an independently random value rather than deriving from the previous key.
+
+The canonical key is a regular file, not a symbolic link or Windows reparse point. On POSIX systems the console-created profile directory is mode `0700`, the canonical file and every temporary replacement are mode `0600`, the file belongs to the current effective user, and neither the profile nor file may be writable by group or others. Stricter permissions are accepted. On Windows the profile and key use protected DACLs whose permitted principals are the current user, `SYSTEM`, and built-in Administrators; an allow entry for `Everyone`, `Users`, `Authenticated Users`, another ordinary user, or another broad unprivileged principal is unsafe. The current user must retain the access required for atomic replacement and deletion. These platform checks apply before the key is accepted and to every temporary sibling before canonical commit.
+
+The credential store rejects malformed, empty, oversized, unsafe, weakly protected, wrongly owned, or unreadable canonical files and fails MCP closed. It does not silently repair permissions, overwrite a questionable file, or generate a replacement that would unexpectedly disconnect an IDE. The MCP client supplies the key through `Authorization: Bearer <key>` because that header is broadly configurable by intended MCP clients. The key must never appear in URLs, page source, logs, trace data, generated skill content, ordinary placeholder examples, or MCP responses. A paired, CSRF-protected credential-management response may deliberately reveal it and uses `Cache-Control: no-store`.
 
 This static access-key mechanism is not an implementation of MCP OAuth authorization. The console has no authorization server, protected-resource or authorization-server discovery metadata, dynamic client registration, browser redirect or consent flow, scopes, authorization grant, access/refresh token exchange, token refresh, or user identity. It must not advertise OAuth discovery or instruct a client to begin an OAuth flow when access-key authentication fails. Using the standard `Authorization: Bearer` header describes only how the manually configured API key is carried on HTTP requests; it does not change the credential into an OAuth token. OAuth requires a separate future design and should be reconsidered only if remote or multi-user MCP access becomes a real feature.
 
@@ -225,6 +272,43 @@ The enablement and key screen keeps a prominent warning visible before and after
 All authenticated MCP HTTP responses carrying diagnostic content use `Cache-Control: no-store`, including diagnostic errors and raw artifacts when exposed through HTTP. This prevents ordinary HTTP caching where clients honor the header; it does not prevent an authorized MCP client or model provider from retaining content after receipt.
 
 Successful MCP access-key authentication is logged without recording the key, upstream application observability key, request payload, or diagnostic content. Per-tool or resource-access logging is not initially required.
+
+### Browser MCP setup experience
+
+The paired browser exposes one **Settings → MCP Integration** view with exactly three presentation states:
+
+- **Disabled:** the canonical key file is absent and MCP accepts no client.
+- **Enabled:** the canonical key file and in-memory authentication snapshot are valid.
+- **Disabled — invalid key file:** a canonical file exists but failed format, ownership, permission, path-safety, or readability validation. This is a disabled state with a configuration diagnostic, never an invalid-but-enabled state.
+
+The view keeps the diagnostic-data disclosure warning above visible before and after enablement and implements these deliberate operations:
+
+- **Enable:** after acknowledgement, atomically create the key and immediately present the usable value, **Copy key**, and client-specific setup tabs. Enable never replaces an existing canonical file.
+- **Reveal:** require an explicit user gesture and return the current key only through the paired, CSRF-protected, `no-store` response. The browser retains it only in component memory until the developer hides it, navigates, refreshes, unpairs, or the session expires. It is never retained in browser storage, a route, history, page source, or diagnostics.
+- **Regenerate:** require a confirmation that all configured MCP clients will disconnect and their old configuration will fail. Report success only after the canonical replacement and authentication-generation transition complete, then reveal the new key and setup tabs.
+- **Disable:** require a confirmation that all clients will disconnect. Report success only after the canonical file has been deleted and the disabled authentication generation published.
+- **Remove invalid file:** when startup finds an invalid canonical file, offer a separately confirmed removal that deletes only that exact validated canonical path and leaves MCP disabled. Enable is offered again only after successful removal. The console never reveals or tries to salvage invalid contents.
+
+The UI does not display a masked suffix or derived fingerprint. Copying a key produces a transient success notice but Bifrost does not attempt unreliable clipboard auto-clearing. It does not automatically edit, merge, or download another product's configuration because those files, their permissions, and their merge semantics belong to the client.
+
+### Client setup and local-surface scope
+
+The setup tabs generate the actual current endpoint as `http://127.0.0.1:<actual-port>/mcp`. They target user/global client configuration only. A key or literal authenticated entry must never be placed in a repository-level `.mcp.json`, `.cursor/mcp.json`, `.agents/mcp_config.json`, `.codex/config.toml`, checked-in example, skill package, or command that would persist in shell history. A client configuration that embeds the literal key becomes another sensitive user-owned copy; Bifrost warns about that fact but does not claim to validate or manage the client's file.
+
+The initial compatibility target means local client surfaces capable of reaching the loopback listener: the Codex desktop app, CLI, and IDE extension; Claude Code; local Antigravity 2.0, IDE, and CLI; local Cursor; and Devin Desktop/Windsurf/Cascade or a locally running Devin CLI. Hosted Codex, hosted Devin, and other remote agents cannot reach the loopback-only endpoint and are not initial compatibility targets. Supporting them requires the separately deferred remote-console transport and authentication design, not a client-specific Bifrost MCP server.
+
+The generated setup guidance follows each client's documented current configuration contract:
+
+| Client | Initial generated configuration |
+|---|---|
+| Codex local surfaces | User-level `[mcp_servers.bifrost]`, the current `url`, and `bearer_token_env_var = "BIFROST_MCP_ACCESS_KEY"`. Offer a clearly marked literal `http_headers` fallback only when the launch environment is impractical. Codex's local app, CLI, and IDE extension share this configuration. |
+| Claude Code | User-scoped HTTP server with the current `url` and `Authorization: Bearer ${BIFROST_MCP_ACCESS_KEY}`. Do not recommend a literal `--header` shell command that records the key in shell history. |
+| Cursor | Global `~/.cursor/mcp.json` remote server with the current `url` and literal `Authorization` header. The initial guide does not invent environment or file interpolation that Cursor's public MCP contract does not document. |
+| Antigravity | Global `~/.gemini/config/mcp_config.json` entry using the required `serverUrl` field and literal `Authorization` header. Do not use the workspace `.agents/mcp_config.json`. |
+| Devin Desktop/Windsurf/Cascade | Global client entry using `serverUrl` and `Authorization: Bearer ${file:<canonical-key-path>}` so the local client reads the protected canonical key without creating another secret copy. The generated JSON escapes the platform path correctly. |
+| Local Devin CLI | Prefer its documented file interpolation, then environment interpolation, over a literal header in a shared configuration. |
+
+The non-secret canonical skill remains identical across these clients and never contains an endpoint, key, environment-variable value, or client-specific semantic instruction. Setup documentation is a thin client-owned configuration shim. Current vendor references used to validate the initial examples are [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp), [Claude Code MCP](https://code.claude.com/docs/en/mcp), [Cursor MCP](https://cursor.com/docs/mcp.md), [Antigravity MCP](https://antigravity.google/docs/mcp), and [Devin Desktop/Cascade MCP](https://docs.devin.ai/desktop/cascade/mcp).
 
 ## Selected-target semantics
 
@@ -264,48 +348,38 @@ These are Go/MCP surface guarantees. Runtime strings are never reinterpreted as 
 
 Any future control-plane capability requires a separate phase, explicit user-confirmation model, authorization design, and threat assessment.
 
-## Debugging scenario catalog
+## Workflow-based verification
 
-Maintain a separate, reviewable Phase 3 debugging-scenario catalog. Scenarios are long-lived product examples, protocol fixtures, agent evaluations, and acceptance-test sources.
+[Bifrost Console — Developer Workflows](./bifrost_console_workflows.md) is the canonical, separately reviewable investigation catalog for both browser and MCP. Phase 3 does not create another scenario document, identifier namespace, format, or registry. It verifies the MCP adapter and portable skill against the approved workflow IDs, their stable requirement IDs, and their existing normal, variant, degraded, and exceptional paths.
 
-Each scenario should record:
+Representative implementation fixtures and tests use the applicable workflow or requirement ID in their name or test metadata and live beside the code that owns them. Java-produced trace fixtures, scripted live-state fixtures, shared Go calculation tests, browser/MCP adapter-parity tests, and selected agent evaluations may cover different layers of one workflow without duplicating the workflow prose. The workflow document may link to important coverage once concrete project paths exist, but it does not embed fixture payloads or become a machine-read test manifest.
 
-- stable scenario ID and title;
-- developer question;
-- runtime and skill-topology setup;
-- evidence available and unavailable;
-- structural facts the server must expose or calculate;
-- conclusions supported by the evidence;
-- conclusions that would be overclaims;
-- identifiers expected in a grounded answer;
-- important variants and edge cases; and
-- corresponding protocol fixture and eventual automated coverage.
+Phase 3 evaluation does not require every workflow variant on every supported client. General protocol behavior is tested below the clients; a small representative client set validates interoperability; and selected agent evaluations assess factual grounding, useful diagnosis, stable-identifier citation, appropriate uncertainty, and resistance to adversarial runtime instructions. Authentication, Host/Origin enforcement, malformed input, key lifecycle, cache behavior, cancellation, and SDK conformance remain protocol, security, or service tests rather than new debugging workflows.
 
-Scenarios must not require an exact MCP call sequence or exact prose answer. The model may use any reasonable combination of general inspection primitives. Evaluation should focus on factual grounding, useful diagnosis, appropriate uncertainty, and whether the MCP surface supplied enough evidence.
-
-Candidate initial scenario families include failure in a nested skill frame, quota termination, exhausted validation retries, an apparently stalled active execution, usage concentrated in nested planning, and a successful execution whose finalized trace expires after its completion grace window.
+No verification prescribes an exact MCP call sequence or exact prose answer. The model may use any reasonable combination of the general inspection primitives. Quota termination, exhausted validation retries, nested-frame failure, trace expiration, and similar cases remain variants of the existing workflows unless they introduce a genuinely different developer goal.
 
 ## Resources and tools strategy
 
-Use MCP resources for identifiable runtime context and a small set of general, composable tools for bounded discovery and inspection.
+Use a small set of general, composable MCP tools for the complete investigation path and supplementary resources for identifiable, relatively small materialized views.
 
-Scenarios validate that these primitives provide sufficient evidence. They must not become server branches, prescribed tool sequences, or one specialized tool per anticipated debugging question.
+The approved workflows validate that these primitives provide sufficient evidence. They must not become server branches, prescribed tool sequences, or one specialized tool per workflow or variant.
 
 The essential debugging workflow should remain possible through tools alone because clients may expose optional MCP capabilities differently. Resources provide useful stable links and browseable context where supported.
 
-The exact surface remains a Phase 3 planning task. Candidate resource templates include:
+The initial resource templates are:
 
 ```text
-bifrost://targets/{targetScopeId}/instance/status
 bifrost://targets/{targetScopeId}/skills/{skillName}
-bifrost://targets/{targetScopeId}/executions/{sessionId}/summary
-bifrost://targets/{targetScopeId}/executions/{sessionId}/activity
-bifrost://targets/{targetScopeId}/traces/{traceId}/summary
-bifrost://targets/{targetScopeId}/traces/{traceId}/frames/{frameId}
-bifrost://targets/{targetScopeId}/traces/{traceId}/records/{sequence}
+bifrost://targets/{targetScopeId}/artifacts/{artifactHandle}/summary
+bifrost://targets/{targetScopeId}/artifacts/{artifactHandle}/frames/{frameId}
+bifrost://targets/{targetScopeId}/artifacts/{artifactHandle}/records/{sequence}
 ```
 
-Candidate tools include:
+The skill resource returns the registered skill metadata and unchanged UTF-8 YAML. The artifact summary, frame, and record resources are immutable acquired-evidence views addressed by the same scope-bound `artifactHandle` as the tools. A record resource returns the logical record envelope and its payload descriptor; it does not automatically expand a large payload.
+
+The initial release does not expose runtime status, active execution summary, or recent activity as resources because those views are volatile, availability-sensitive, and sometimes continuable. It does not expose a raw-artifact resource because MCP resource reads materialize content and do not provide the caller-selected byte-range behavior needed for arbitrarily large artifacts. Those facts remain available through the tools below. Resources are conveniences, never prerequisites for an investigation.
+
+The exact initial tools are:
 
 - `bifrost_get_runtime`
 - `bifrost_list_skills`
@@ -315,8 +389,27 @@ Candidate tools include:
 - `bifrost_get_execution_activity`
 - `bifrost_list_traces`
 - `bifrost_get_trace`
-- `bifrost_get_trace_frame`
+- `bifrost_query_trace_frames`
 - `bifrost_query_trace_records`
+- `bifrost_read_trace_payload`
+- `bifrost_read_trace_artifact`
+
+Their boundaries are:
+
+| Tool | Authoritative purpose |
+| --- | --- |
+| `bifrost_get_runtime` | Return the shared side-effect-free `ConsoleStatusSnapshot`, selected target scope, MCP transport metadata, and named Bifrost capabilities. |
+| `bifrost_list_skills` | List concise metadata for skills in the selected application's current registered catalog. |
+| `bifrost_get_skill` | Retrieve one registered skill's metadata and unchanged YAML by registered skill name. |
+| `bifrost_list_executions` | List current active-execution snapshots from the shared registry service. |
+| `bifrost_get_execution` | Look up one current active-execution snapshot directly by `sessionId`. |
+| `bifrost_get_execution_activity` | Query the recent in-memory activity window for one active execution with explicit gap and reset-boundary facts. |
+| `bifrost_list_traces` | List the shared trace inventory, preserving application-catalog availability and Go-acquired-copy availability as separate facts. |
+| `bifrost_get_trace` | Acquire or reuse one finalized trace and return its neutral summary, scope-bound immutable `artifactHandle`, and root-frame references. |
+| `bifrost_query_trace_frames` | Filter and mechanically order frame summaries for hierarchy, duration, usage, outcome, route, skill, attempt, retry, validation, and failure investigation. |
+| `bifrost_query_trace_records` | Filter canonical logical records by structured evidence fields and return payload descriptors without requiring automatic payload expansion. |
+| `bifrost_read_trace_payload` | Read reconstructed logical payload content through an opaque payload reference and caller-selected ranges. |
+| `bifrost_read_trace_artifact` | Read exact finalized NDJSON storage content from the acquired copy through caller-selected ranges. |
 
 `bifrost_list_skills` returns the registered skill name, normalized skills-root-relative `sourcePath`, and server-generated link for each entry. `bifrost_get_skill` and the corresponding skill resource add the unchanged UTF-8 YAML content supplied by the application. MCP does not replace the YAML with an effective-definition DTO, workspace reconstruction, parsed defaults, runtime-resolved configuration, or sensitivity-filtered representation.
 
@@ -328,30 +421,40 @@ The current execution-summary operation uses Phase 1's direct active lookup by `
 
 The recent-activity service and MCP adapter preserve Phase 1's exceptional `EXECUTION_OBSERVATION_ENDED` activity. When its reason is `CORE_FINALIZATION_FAILED`, MCP may state only that observation ended incompletely and that no finalized application trace is available. It must not infer execution success, execution failure, root cause, or a recoverable pending artifact from this event. Any independently established execution outcome remains a separate fact, and detailed finalization cause remains in application diagnostics rather than MCP content.
 
-`bifrost_query_trace_records` should use structured filters rather than an arbitrary query language. Candidate filters include trace identity, record types, frame IDs, route or skill, sequence range, time range, status or level, text search, explicit payload inclusion, page size, and cursor. Each response remains bounded, but artifact-handle-bound record and payload continuations make every matching item addressable while the artifact handle and target scope remain valid.
+`bifrost_list_traces` returns one shared inventory rather than making the model reconcile competing browser and MCP catalogs. Each entry keeps distinct whether the selected application currently advertises the trace, whether Go currently holds an acquired copy, the artifact handle when present, and current acquisition or parsing status. It never converts those independent facts into a combined lifecycle state.
 
-Tool names and exact schemas remain provisional. The final surface should prefer a small composable set over overlapping aliases or scenario-specific helpers such as `get_failure_context`.
+`bifrost_get_trace` accepts exactly one of `traceId` or `artifactHandle`. A `traceId` request acquires or reuses the artifact currently offered by the application catalog. An `artifactHandle` request reopens the current-scope immutable copy without new application access. Every downstream frame, record, payload, and raw-artifact tool requires `artifactHandle`, not `traceId`, so one investigation cannot accidentally combine different acquisitions or changing application-catalog state.
+
+`bifrost_query_trace_frames` uses structured filters and mechanical ordering rather than a scenario-specific summary. It can select exact frame IDs or filter by parent, frame type, route, skill, outcome, attempt, retry, validation, or failure facts, and can order canonically or by shared duration and usage calculations. `bifrost_get_trace` supplies root-frame references; frame results supply parent and immediate-child references so the complete hierarchy remains traversable. This general query replaces a separate `bifrost_get_trace_frame` alias and supports the workflow requirements to find slow or usage-concentrated frames without hard-coding a diagnosis.
+
+`bifrost_query_trace_records` uses structured filters rather than an arbitrary query language. Filters include record types, frame IDs, route or skill, sequence range, time range, status or level, text search, explicit payload inclusion, page size, and cursor. Each response is one finite materialized result, but artifact-handle-bound record and payload continuations make every matching item addressable while the artifact handle and target scope remain valid.
+
+`bifrost_read_trace_payload` accepts an `artifactHandle`, opaque `payloadRef`, byte offset, and optional caller-selected maximum bytes. It reads the reconstructed logical `data` of one selected canonical record, hides the NDJSON payload envelope and `PAYLOAD_CHUNK_APPENDED` storage representation, and reports content type, encoding, actual byte range, total logical length, and whether the read is complete. Text reads adjust boundaries when needed to avoid returning a broken UTF-8 character and report the actual byte range; exact arbitrary bytes may use base64. The operation preserves whether the reconstructed value is JSON or text but does not silently truncate or treat a separately parsed value as more authoritative than the reconstructed content.
+
+Raw artifact access is a different forensic surface. `bifrost_read_trace_artifact` accepts an `artifactHandle`, byte offset, and optional caller-selected maximum bytes and returns the exact selected range from the immutable finalized NDJSON copy acquired from Bifrost, including record envelopes, storage chunk records, ordering, and delimiters. It reports the actual byte range, total artifact length, and whether the read is complete; UTF-8 and base64 representations follow the same boundary rule as payload reads. It is intended for parser investigation, unsupported raw fields, and exact storage-level inspection rather than ordinary prompt, response, tool, or validation reading. It never creates a second acquisition or cache entry, parses or summarizes the returned range, or overlaps the logical-payload operation.
+
+There are no initial MCP prompts and no scenario-specific helpers such as `get_failure_context`. The reviewed portable skill owns the investigation instructions, while the server exposes only the neutral evidence primitives above. The tool names are compatibility commitments governed by the named capabilities below. Their implementation schemas may evolve additively without changing those names or weakening their settled semantic boundaries.
 
 Every tool should have:
 
 - a precise purpose and description;
 - strict JSON Schema input validation;
-- bounded pagination or record windows;
+- caller-selected pagination or record windows with explicit continuation;
 - structured output with an output schema where appropriate, plus a concise text fallback for clients that do not present structured content well;
-- read-only and non-destructive annotations where the MCP implementation supports them;
+- read-only, non-destructive, idempotent, and closed-world annotations where the MCP implementation supports them, without treating those hints as authorization;
 - explicit observation timestamps;
 - stable Bifrost identifiers;
 - truncation and current availability metadata;
 - stable shared domain-error codes with safe messages; and
 - resource links for progressive drill-down where useful.
 
-The large Phase 1/browser collection pages are an upstream transport optimization, not an MCP result-size promise. Shared Go services may retrieve up to the application collection maximum internally, while MCP list tools apply their smaller MCP-specific item and byte limits before content enters model context. The starting MCP defaults remain `100` records/items and `256 KiB` per result, subject to later client validation; MCP continuations remain scope-bound and must not expose application pagination cursors as interchangeable client tokens.
+The large Phase 1/browser collection pages are an upstream transport optimization, not an MCP result-size promise. Shared Go services may retrieve up to the application collection maximum internally, while MCP operations materialize one finite protocol result at a time. Caller-selected page or range boundaries and artifact-handle-bound continuations define individual result framing; they do not impose a cumulative evidence, traversal, traffic, or byte quota. The initial design has no MCP-specific default such as `100` records or `256 KiB`, and it does not silently reduce a caller's requested evidence for model-context policy. Implementation validation against representative clients determines the largest interoperable per-result framing, which the server advertises and reports explicitly when continuation is required. MCP continuations remain scope-bound and must not expose application pagination cursors as interchangeable client tokens.
 
 ## MCP mapping of shared service errors
 
 MCP uses Phase 2's [transport-neutral Go service error contract](./bifrost_console_phase_2_ui_console.md#transport-neutral-go-service-error-contract). A valid authenticated tool call that reaches a shared service and fails for a target or diagnostic-domain reason returns a bounded error result containing the same stable `code`, safe `message`, optional `targetScopeId`, and permitted code-specific details. It is marked as an unsuccessful tool result using the selected MCP SDK's standard mechanism. The MCP adapter must not rename a shared code, infer a different cause from message text, or turn the safe message into instructions for the model to execute.
 
-This includes `LIMIT_EXCEEDED` returned by Phase 1 when its fixed SSE-subscription or trace-download admission capacity is occupied and the same code produced by configured Go-owned bounds. Code-specific details must identify the bounded operation sufficiently to avoid confusing application admission, Phase 2 cache capacity after cleanup, and MCP result-size or concurrency limits, without exposing internal exception or credential data. Phase 2 `LOCAL_STORAGE_UNAVAILABLE` remains a separate shared code for an artifact-specific disk/write-capacity failure whose cleanup restored safe workspace operation; an unrecoverable workspace-wide failure closes the service instead of returning that code.
+This includes `LIMIT_EXCEEDED` returned by Phase 1 when its fixed SSE-subscription or trace-download admission capacity is occupied and the same code produced by configured shared Go service or cache bounds. Code-specific details must identify the bounded operation sufficiently to avoid confusing application admission, Phase 2 cache capacity after cleanup, and one-result framing or shared-work admission, without exposing internal exception or credential data. Phase 2 `LOCAL_STORAGE_UNAVAILABLE` remains a separate shared code for an artifact-specific disk/write-capacity failure whose cleanup restored safe workspace operation; an unrecoverable workspace-wide failure closes the service instead of returning that code.
 
 An unexpected shared Go service failure with no more specific code returns `CONSOLE_ERROR` with the same sanitized bounded message used by the browser adapter. MCP preserves that code in the unsuccessful tool or resource result. It does not expose the internal Go error, stack trace, path, credential, or diagnostic payload, and it does not relabel the failure as target unavailability or as the MCP protocol's own internal-error response.
 
@@ -361,23 +464,23 @@ The Agent Skill may explain the documented response to a specific code, such as 
 
 ## Progressive disclosure
 
-Progressive disclosure is an efficiency default, not a restriction on evidence. Initial summary calls should not automatically inject an entire runtime or large trace into LLM context. After Go has successfully acquired and parsed a trace, an authenticated client may deliberately request any record or reconstructed payload while the artifact handle and target scope remain valid. It may select broad ranges, use the largest allowed response window, and follow record or payload continuations. This is complete addressability through a temporary local copy governed by Phase 2's configured cache policy, not a promise that an arbitrarily long traversal will finish before the handle, target scope, console process, or evidence availability ends. An implementation may also expose the raw trace artifact as a resource or attachment where client support and response bounds make that useful; it must not require Go to guess which evidence is relevant. Raw records and artifacts may include a filesystem path already recorded by the canonical trace implementation. MCP returns that authenticated raw diagnostic content unchanged under the Phase 1 exception, but does not expose the path as a resource identifier, accept it as tool input, or use it for filesystem access.
+Progressive disclosure is an efficiency default, not a restriction on evidence. Initial summary calls should not automatically inject an entire runtime or large trace into LLM context. After Go has successfully acquired and parsed a trace, an authenticated client may deliberately request any record, reconstructed payload, or exact raw-artifact range while the artifact handle and target scope remain valid. It may select broad ranges, use the largest allowed response window, and follow record, payload, or artifact continuations. This is complete addressability through a temporary local copy governed by Phase 2's configured cache policy, not a promise that an arbitrarily long traversal will finish before the handle, target scope, console process, or evidence availability ends. The initial MCP surface uses `bifrost_read_trace_artifact`, not a raw-artifact resource, and does not require Go to guess which evidence is relevant. Raw records and artifacts may include a filesystem path already recorded by the canonical trace implementation. MCP returns that authenticated raw diagnostic content unchanged under the Phase 1 exception, but does not expose the path as a resource identifier, accept it as tool input, or use it for filesystem access.
 
 The recommended investigation shape is:
 
 1. retrieve runtime or execution status;
 2. identify the relevant session or trace;
 3. inspect its neutral structural summary;
-4. query a specific frame, record type, activity range, or record window; and
+4. query specific frames, record types, an activity range, or a record window; and
 5. retrieve detailed payloads only when summarized evidence is insufficient.
 
 This is guidance, not a mandatory call sequence. A capable IDE model may start with raw detail, request a broad range, or attempt to traverse the entire trace when that better fits its question and available context. Go supplies neutral structure and caller-selected filters; it must not silently suppress records or payloads it considers irrelevant.
 
 The default investigation shape reduces latency, repeated transmission, accidental context consumption, and large-trace processing cost. Those benefits remain useful even for models with very large context windows, but they must be balanced by complete caller-directed addressability while the artifact handle remains valid.
 
-Per-response byte, record-count, nesting, and time bounds protect Go stability and MCP-client interoperability. They are not redaction, sanitization, authorization, or data-egress controls. A truncated or partial result says so and provides an artifact-handle-bound continuation path whenever the immutable acquired evidence and query progress remain available. A payload larger than one result is retrieved through bounded byte or UTF-8-safe ranges using an opaque payload reference tied to the same artifact handle. Handle expiration, target change, or console shutdown may end retrieval explicitly rather than imposing an invisible semantic filter.
+Each operation returns one finite, materialized MCP result. Caller-selected page sizes or ranges, safe serialization limits, cancellation, and deadlines protect Go stability and MCP-client interoperability; they are response-framing and shared-service concerns, not traffic quotas, evidence limits, redaction, sanitization, authorization, or data-egress controls. A partial result says so and provides an artifact-handle-bound continuation path whenever the immutable acquired evidence and query progress remain available. A payload larger than one interoperable result is retrieved through byte or UTF-8-safe ranges using an opaque payload reference tied to the same artifact handle. There is no cumulative traversal limit. Handle expiration, target change, or console shutdown may end retrieval explicitly rather than imposing an invisible semantic filter.
 
-Every bounded result should indicate:
+Every partial or continuable result should indicate:
 
 - whether more data exists;
 - whether any data was truncated;
@@ -403,11 +506,11 @@ The shared Go profile and workspace contract also applies across console crashes
 
 The LLM should not be asked to reconstruct facts the server can calculate reliably.
 
-Candidate Go console-derived facts include:
+Go console-derived facts include:
 
 - final execution outcome and recorded error or validation locations;
 - hierarchical skill/frame path;
-- inclusive and self duration for frames and executions;
+- inclusive and self duration for frames;
 - direct and descendant usage totals, including usage precision;
 - configured limits and observed values;
 - attempts, retries, and validation outcomes;
@@ -419,6 +522,41 @@ The Go shared services should not initially decide root cause, likely developer 
 The browser and MCP adapters should consume the same authoritative computations. They may format them differently but must not derive contradictory results independently.
 
 These computations use the current Java writer and enums, the few documented invariants and consumed fields, and Java-produced executable fixtures covered by `consoleCompatibilityVersion`. Go owns deterministic calculations and developer-facing views derived from the Java records. Metadata and data Go does not interpret remain opaque diagnostic JSON. Phase 3 does not add a second trace parser, preserve historical trace formats, or introduce a separate MCP trace model. If shared Go trace services reject an artifact because its consumed structure or semantics are invalid, MCP reports that analysis failure explicitly and may link to the unchanged raw artifact when available; it does not return a best-effort semantic prefix.
+
+Phase 1's consumed trace contract supplies explicit `attemptId`, `retrySequenceId`, normalized per-response usage, a terminal usage snapshot, `outcome`, and `terminalFailureId`. Go uses those recorded relationships for attempt/retry membership, direct and descendant usage, usage reconciliation, final outcome, and terminal-failure attribution. It never substitutes record adjacency, equal attempt numbers, matching messages, or timestamp proximity.
+
+### Initial debugging-summary calculations
+
+The initial release keeps shared debugging summaries deliberately mechanical and small. It adds only two frame-duration values and two flat indexes while parsing a valid acquired artifact. These are in-memory query structures over the parsed records, not new persisted trace models.
+
+For a frame:
+
+- `inclusiveDuration` is the canonical outer `FRAME_CLOSED.timestamp` minus the matching outer `FRAME_OPENED.timestamp`;
+- `selfDuration` is `inclusiveDuration` minus the sum of the `inclusiveDuration` values of its immediate children; and
+- execution duration, when shown, is the root frame's `inclusiveDuration`, not a separately calculated timing measure.
+
+The existing strict frame stack means children are nested and immediate siblings cannot overlap. Semantic analysis requires exactly one matching open and close for each frame, a nonnegative interval, every child interval contained by its parent, and no overlap between immediate children. Violation rejects the semantic artifact with `INVALID_ARTIFACT`. The initial release does not add interval-union logic, concurrency timing, unframed-trace duration, alternate timestamp selection, or new Phase 1 timing fields.
+
+The flat failure index includes references to:
+
+- every `ERROR_RECORDED`;
+- every `TOOL_CALL_FAILED`; and
+- every `FRAME_CLOSED` whose recorded status is failed or aborted.
+
+Each failure reference contains the canonical record `sequence`, outer `timestamp`, `recordType`, `frameId`, available recorded frame/route facts, and `failureId` when present. It marks `terminal: true` only when that recorded `failureId` equals `TRACE_COMPLETED.terminalFailureId`. The index does not invent failure kinds, severity, groups, deduplication, ranking, related-record graphs, causes, or root-cause conclusions.
+
+The flat validation index includes references to:
+
+- `PLAN_VALIDATION_FAILED`, `PLAN_RETRY_REQUESTED`, and `PLAN_QUALITY_WARNING`;
+- `EVIDENCE_VALIDATION_PASSED` and `EVIDENCE_VALIDATION_FAILED`;
+- `LINTER_RECORDED` and `STRUCTURED_OUTPUT_RECORDED`; and
+- `STEP_ACTION_VALIDATED` and `STEP_ACTION_REJECTED`.
+
+Each validation reference contains the canonical record `sequence`, outer `timestamp`, `recordType`, `frameId`, recorded status or severity when present, and applicable recorded `attemptId`, attempt number, and `retrySequenceId`. It does not normalize these heterogeneous records into a new validation-kind or validation-outcome vocabulary. Detailed issues remain in the record and are retrieved only through explicit record or payload inspection.
+
+There is no aggregate `evidenceCompleteness` model, completeness score, dimension list, or new completeness reason vocabulary. Existing direct facts express the limitations the initial product needs: `INVALID_ARTIFACT`, unavailable reconstructed-response counts, unattributed usage, result `hasMore` and continuation state, live continuity or reset facts, artifact availability and handle lifecycle errors, and explicit payload references. Missing facts remain unknown rather than becoming zero or a guessed aggregate state.
+
+These definitions require no additional Phase 1 trace changes beyond the already settled identifiers, usage, outcome, terminal-failure relationships, frame timestamps/status, and validation records. Both browser and MCP expose these shared Go results without adding adapter-specific calculations.
 
 The Java-produced fixtures used at the Java/Go boundary also protect MCP semantics. Their expected hierarchy, timing, usage, failure attribution, and validation/retry outcomes agree with the shared Go results exposed to both browser and MCP. A Java change to a consumed field or meaning and any Go correction update the affected fixtures and ship together under the containing product release string; unconsumed metadata additions require no MCP or Go model. There is no separate decision to preserve or increment `consoleCompatibilityVersion`; it always equals that release string.
 
@@ -601,7 +739,7 @@ The Go server and MCP schemas:
 - encode MCP results according to the protocol requirements; and
 - return raw detail only when the authenticated caller explicitly requests it, without requiring the request to be semantically narrow or intentionally preventing traversal while the artifact handle remains valid.
 
-The Go MCP server has no repository-browsing surface and cannot retrieve unrelated IDE-workspace files. Its managed filesystem access remains confined to the verified console workspace and fixed configuration and credential locations through their dedicated components. An explicit raw download is streamed to the authenticated client; Go does not choose or write the client's destination path. Its upstream network access remains confined to the selected target through `TargetContext`; application-provided content cannot supply or alter that authority. These are testable server guarantees.
+The Go MCP server has no repository-browsing surface and cannot retrieve unrelated IDE-workspace files. Its managed filesystem access remains confined to the verified console workspace and fixed configuration and credential locations through their dedicated components. An explicit browser raw download may stream to the authenticated browser, while MCP exposes exact raw content through finite caller-selected ranges; Go does not choose or write either client's destination path. Its upstream network access remains confined to the selected target through `TargetContext`; application-provided content cannot supply or alter that authority. These are testable server guarantees.
 
 Explicit payload selection and bounded responses reduce accidental context volume and protect service stability; they are not sensitive-data controls. If a payload is authorized and retained, the client can retrieve it in full through one or more requests. Returning that content as data is consistent with the server guarantee even when the content contains malicious instructions.
 
@@ -624,6 +762,14 @@ An IDE agent may independently have repository, filesystem, shell, network, sour
 
 Structured fields, labels, read-only MCP tools, and skill instructions reduce ambiguity and exposure but do not guarantee prompt-injection resistance or that a model will follow the guidance. The initial product therefore guarantees only the server-side non-execution and authority boundaries above. Agent evaluations may measure whether representative IDE models follow the skill guidance under adversarial content, but passing those evaluations is not a claim that Go controls client behavior or eliminates residual model risk.
 
+## Representative IDE clients and portable skill
+
+The initial compatibility target is one Bifrost MCP server and one canonical runtime-debugging skill used from local Codex desktop/CLI/IDE surfaces, Claude Code, local Antigravity 2.0/IDE/CLI, local Cursor, and Devin Desktop/Windsurf/Cascade or local Devin CLI. These clients exercise the same Bifrost tools, resources, identifiers, calculations, and evidence semantics. Bifrost does not fork the MCP surface or maintain client-specific debugging procedures. Hosted clients that cannot reach the loopback listener remain outside the initial transport scope.
+
+Client products may differ in where they store MCP server configuration, how they install or reference skills or instruction packages, whether they display structured content, and whether they support authenticated resources consistently. Bifrost may therefore provide small documented installation/configuration shims or an export helper for those client-owned formats. A shim contains no independent semantic content: the reviewed canonical skill remains the source, and a client incompatibility is handled through capability detection or a narrowly scoped transport/presentation fallback rather than a client-specific server or skill fork.
+
+Compatibility and end-to-end tests cover all five initial clients to the extent their supported automation permits. They verify authenticated Streamable HTTP setup, tool discovery and structured results, canonical skill installation, continuation behavior, and resource support. The essential workflow remains tool-capable so inconsistent optional resource presentation does not split the framework.
+
 ## Multiple MCP clients
 
 One profile-owning Go console process hosts one local MCP server. The initial expected topology is one IDE client connected to it, but the server should tolerate multiple independent MCP clients without exclusive client ownership. These are multiple clients of the same server and key, not multiple MCP server processes sharing one profile.
@@ -631,7 +777,7 @@ One profile-owning Go console process hosts one local MCP server. The initial ex
 Each client:
 
 - presents the same persistent local MCP access key on its own connection;
-- receives bounded results;
+- receives finite results with independent continuation state;
 - has independent request cancellation and deadlines;
 - cannot delay Bifrost, the browser, or another MCP client; and
 - shares no LLM conversation state through the console.
@@ -640,9 +786,9 @@ Phase 3 does not require client discovery, shared conversations, durable per-cli
 
 The shared access key authenticates access to the local MCP endpoint but does not establish distinct client identities. Per-client keys, attribution, and revocation are future features.
 
-## Local configuration and operational limits
+## Local configuration and operational behavior
 
-Phase 2 owns the versioned, strictly validated local YAML configuration file, exclusive profile ownership, and disposable `bifrost-console-work` lifecycle. Phase 3 extends the static YAML with an `mcp` section containing only non-secret operational settings and places the canonical `mcp-access-key` file beside the resolved configuration file. The resolved configuration file's parent directory is the profile directory. If `--config` selects another profile directory, that profile has its own lock and MCP credential and, by default, its own stable work directory beneath the platform-appropriate per-user local state or cache root; it must resolve a different managed work directory from any running console. Neither persistent file is stored under `bifrost-console-work`, whose `transient` subtree is deleted at console startup.
+Phase 2 owns the versioned, strictly validated local YAML configuration file, exclusive profile ownership, and disposable `bifrost-console-work` lifecycle. Phase 3 extends the static YAML with an `mcp` section containing only non-secret listener and protocol settings and places the canonical `mcp-access-key` file beside the resolved configuration file. The resolved configuration file's parent directory is the profile directory. If `--config` selects another profile directory, that profile has its own lock and MCP credential and, by default, its own stable work directory beneath the platform-appropriate per-user local state or cache root; it must resolve a different managed work directory from any running console. Neither persistent file is stored under `bifrost-console-work`, whose `transient` subtree is deleted at console startup.
 
 Static YAML configuration behavior should initially be:
 
@@ -650,7 +796,6 @@ Static YAML configuration behavior should initially be:
 - unknown fields rejected;
 - durations and byte sizes expressed with units;
 - invalid, nonpositive, or unsafe values rejected clearly;
-- operational limits documented and locally overridable within validated ranges; and
 - no MCP `enabled` field, access key, authentication generation, or mutable credential state in YAML.
 
 Credential-store enable, regenerate, and disable operations are immediate runtime mutations and do not rewrite or reload the YAML. While MCP is enabled, the canonical access-key file is present beside, but not inside, the resolved configuration. It is absent after successful disablement:
@@ -662,26 +807,13 @@ Credential-store enable, regenerate, and disable operations are immediate runtim
     mcp-access-key
 ```
 
-The profile-lock and key-file basenames are fixed initially rather than configurable. The profile lock is retained by the owning console process until shutdown; it is not a credential. Fixed paths keep profile ownership and key-file presence authoritative and avoid aliases that could disagree with enablement. Static MCP limits apply after restart; the currently loaded limits continue unchanged across key enablement, regeneration, and disablement.
+The profile-lock and key-file basenames are fixed initially rather than configurable. The profile lock is retained by the owning console process until shutdown; it is not a credential. Fixed paths keep profile ownership and key-file presence authoritative and avoid aliases that could disagree with enablement.
 
-Candidate starting defaults for later implementation validation are:
+The initial MCP server has no requests-per-minute rate limit, per-client traffic or byte quota, cumulative traversal cap, trace-depth cap, total-record inspection cap, or MCP-specific client-count limit. It does not introduce a second concurrency budget over work already admitted by the transport-neutral Go services. Multiple callers share those services' cancellation, acquisition joining, workspace/cache policy, and admission for genuinely expensive work, so the browser and MCP cannot create contradictory capacity behavior.
 
-| Setting | Starting default |
-|---|---:|
-| Maximum MCP clients | 4 |
-| Concurrent requests per client | 4 |
-| Global concurrent MCP requests | 12 |
-| MCP request body | 64 KiB |
-| MCP result size | 256 KiB |
-| Records per query | 100 |
-| Search results per query | 50 |
-| General tool timeout | 30 seconds |
-| Trace search timeout | 60 seconds |
-| Maximum search text | 4 KiB |
+Ordinary HTTP/MCP parsing still validates framing, headers, request bodies, numeric ranges, cancellation, and deadlines, and one tool result must fit the implementation's safely serializable and representative-client-interoperable response envelope. These are generic correctness and one-response framing requirements, not traffic governance. When a requested record collection, search result, payload, or artifact range needs more than one result, the response returns an explicit continuation without a cumulative call or byte ceiling.
 
-These are planning defaults, not final performance claims. Representative traces and scenario tests should tune them. MCP request, result, concurrency, timeout, and payload-range bounds remain finite validated values, and numeric `0` does not mean unlimited for them. Phase 2 separately settles the shared trace cache at `4GiB` aggregate bytes and a `4h` idle TTL by default, with no trace-count or per-trace ceiling and the explicit configuration values `unlimited` and `never`; those words, not numeric zero, select the developer-controlled unbounded behaviors.
-
-The MCP limits, Phase 2's configured trace-cache policy, and Phase 1's fixed SSE-subscription and trace-download admission limits protect specific owned resources. An explicitly unlimited Phase 2 cache accepts filesystem exhaustion as a developer-controlled risk. These controls do not provide comprehensive aggregate resource-exhaustion protection across the observed application, shared listener, Go console, browser, MCP clients, model clients, network, or operating system. General rate limiting, per-client fairness or attribution, adaptive admission, and coordinated cross-layer resource budgets are outside the initial release.
+Phase 2 separately settles the shared trace cache at `4GiB` aggregate bytes and a `4h` idle TTL by default, with no trace-count or per-trace ceiling and the explicit configuration values `unlimited` and `never`; those words, not numeric zero, select the developer-controlled unbounded behaviors. Phase 1's fixed SSE-subscription and trace-download admission limits and Phase 2's cache policy continue to protect the resources they own. General MCP rate limiting, per-client fairness or attribution, adaptive admission, bandwidth governance, and coordinated cross-layer resource budgets are outside the initial release.
 
 ## Version and compatibility model
 
@@ -702,9 +834,33 @@ A Go console upgrade ends the old process's MCP transports and sessions. Existin
 
 ### Named Bifrost MCP capabilities
 
-One small bootstrap/status operation is the stable entry point for the Bifrost-specific MCP surface. Its exact wire name is settled with the exact tool/resource design, after which its identity is a compatibility commitment. It returns the same transport-neutral `ConsoleStatusSnapshot` used by Phase 2 browser status plus a bounded deterministic set of named Bifrost capabilities and any MCP transport metadata needed by that adapter. The MCP adapter must not independently derive target selection, connection, authentication, Java compatibility, runtime identity, or live-monitoring state. Illustrative capability families are runtime-status inspection, skill inspection, active-execution inspection, recent-activity inspection, and current-process trace inspection; the exact initial catalog is chosen with the exact MCP surface rather than inferred from these examples.
+`bifrost_get_runtime` is the stable bootstrap/status entry point for the Bifrost-specific MCP surface. It returns the same transport-neutral `ConsoleStatusSnapshot` used by Phase 2 browser status plus a bounded deterministic set of named Bifrost capabilities and any MCP transport metadata needed by that adapter. The MCP adapter must not independently derive target selection, connection, authentication, Java compatibility, runtime identity, or live-monitoring state.
 
-A capability denotes stable workflow semantics exposed through one or more tools or resources. It does not merely repeat an individual tool name, and it does not assert that target data is currently obtainable. For example, a console may advertise current-process trace inspection while returning `TARGET_AUTHENTICATION_REQUIRED`, `INCOMPATIBLE_TARGET`, or `ARTIFACT_EXPIRED` for a particular request. Those are current target or evidence facts, not changes to the Go implementation's MCP capability set. A workspace-wide failure closes the MCP service and terminates the console instead of becoming another capability or target state.
+The exact initial capability catalog is:
+
+```text
+bifrost.runtime-status.v1
+bifrost.skill-inspection.v1
+bifrost.active-execution-inspection.v1
+bifrost.recent-activity-inspection.v1
+bifrost.trace-inspection.v1
+bifrost.raw-artifact-inspection.v1
+```
+
+The capabilities commit to these tool families:
+
+| Capability | Required tools |
+| --- | --- |
+| `bifrost.runtime-status.v1` | `bifrost_get_runtime` |
+| `bifrost.skill-inspection.v1` | `bifrost_list_skills`, `bifrost_get_skill` |
+| `bifrost.active-execution-inspection.v1` | `bifrost_list_executions`, `bifrost_get_execution` |
+| `bifrost.recent-activity-inspection.v1` | `bifrost_get_execution_activity` |
+| `bifrost.trace-inspection.v1` | `bifrost_list_traces`, `bifrost_get_trace`, `bifrost_query_trace_frames`, `bifrost_query_trace_records`, `bifrost_read_trace_payload` |
+| `bifrost.raw-artifact-inspection.v1` | `bifrost_read_trace_artifact` |
+
+The supplementary resources do not become required operations of these named capabilities because the essential compatibility contract remains tool-first. The portable skill requires the first five capabilities for its essential workflows and treats `bifrost.raw-artifact-inspection.v1` as an optional storage- and parser-forensics enhancement. Normal debugging remains complete through parsed trace summaries, frames, records, and reconstructed payloads. Each capability denotes all required operations and semantics in its family rather than merely repeating an individual tool name.
+
+A capability denotes stable workflow semantics exposed through one or more tools. It does not merely repeat an individual tool name, and it does not assert that target data is currently obtainable. For example, a console may advertise `bifrost.trace-inspection.v1` while returning `TARGET_AUTHENTICATION_REQUIRED`, `INCOMPATIBLE_TARGET`, or `ARTIFACT_EXPIRED` for a particular request. Those are current target or evidence facts, not changes to the Go implementation's MCP capability set. A workspace-wide failure closes the MCP service and terminates the console instead of becoming another capability or target state.
 
 Named Bifrost capabilities, shared console status, and operation results remain three different layers. Capabilities describe what the installed Go MCP implementation knows how to do. `ConsoleStatusSnapshot` reports the console's current known independent target and local-service facts without probing. An operation result reports whether one request succeeded under conditions at that time. None is converted into a single MCP or target health value, and the Agent Skill must not treat one as a substitute for another.
 
@@ -785,92 +941,41 @@ Phase 3 is complete when a representative IDE-based LLM can, through the local G
 
 Completion also requires proving that MCP remains usable without the skill, that the skill responds safely when MCP is unavailable or a required capability is absent, that optional capability absence permits reduced behavior, and that a console restart with a valid persistent MCP key but no in-memory application credential accepts local MCP authentication while reporting `TARGET_AUTHENTICATION_REQUIRED` only for operations that need new target access. Tests must distinguish unsupported MCP protocol, missing Bifrost capability, `INCOMPATIBLE_TARGET`, and currently unavailable evidence rather than collapsing them into one compatibility failure. Server tests prove that adversarial runtime content cannot cross Go's operation and authority boundaries; representative agent evaluations assess the separate skill guidance without claiming that Bifrost controls IDE tools or model behavior.
 
-## Still-open Phase 3 decisions for a future clean context
+## Phase 3 design status
 
-The cross-phase runtime, trace, authentication, and transport ownership decisions are settled. A future clean Phase 3 design context should resolve the following MCP- and skill-specific decisions before implementation planning. Each item preserves the current starting bias.
-
-### Representative IDE clients
-
-Which IDE agents are used for compatibility and end-to-end testing?
-
-Starting bias: choose a small representative set based on real project users. Verify Agent Skill support, authenticated Streamable HTTP support, structured content handling, resource support, and static MCP access-key configuration through the documented `Authorization` header.
-
-### Go MCP SDK
-
-Which maintained Go SDK or protocol implementation should be used?
-
-Starting bias: evaluate conformance to the then-current stable MCP specification, transport support, cancellation, structured outputs, testability, release cadence, dependency weight, and security posture. Do not choose solely by popularity or avoid an SDK solely to reduce dependencies.
-
-### Exact resources and tools
-
-Which candidate operations are resources, tools, or Go console-derived summary fields?
-
-Starting bias: validate the proposed general tools against the debugging-scenario catalog. Keep the essential workflow tool-first, resources supplementary, the surface small, and every expensive or large query bounded. Add a convenience operation only when repeated evidence shows it is needed and its semantics can be authoritative; do not create one operation per scenario.
-
-### Raw payload access
-
-How should MCP expose detailed trace payloads within the initial all-content-allowed policy?
-
-Starting bias: MCP may expose every developer-audit detail the console UI can access from a finalized trace successfully acquired into the Go transient workspace. Raw records and reconstructed payloads require explicit caller selection so summaries do not include them accidentally, but requests need not be semantically narrow. Per-response truncation, pagination, size, and time limits protect operation rather than disclosure; artifact-handle-bound record and payload-range continuation makes every item addressable while the handle and target scope remain valid, and a suitable client may use broad ranges or a raw-artifact resource. “Full status” means complete inspectability through that bounded temporary copy, not automatic inclusion of every payload in every response or guaranteed completion after evidence becomes unavailable.
-
-### MCP access-key setup experience
-
-What protected-file permissions, browser reveal/copy/regenerate flow, and IDE `Authorization: Bearer <key>` setup examples make the persistent static MCP access key safe and convenient across supported platforms without suggesting an OAuth flow?
-
-Starting bias: preserve the settled credential-store contract above while deciding only the remaining presentation and platform-specific setup details. MCP begins disabled because the canonical sibling `mcp-access-key` file is absent. Enable atomically creates that protected file, regeneration atomically replaces it and disconnects prior-generation clients, and disablement deletes it before reporting success. File presence is the only persisted enabled state; YAML contains only restart-time operational settings. The browser may reveal and copy the current key deliberately, regenerate it with a clear warning, or disable MCP immediately. There is no separate invalid-but-enabled state. Never place the key in URLs, logs, traces, page source, skill content, or MCP results.
-
-### Skill installation
-
-Which clients receive documented installation instructions or an export helper first?
-
-Starting bias: publish one canonical portable skill package and support explicit developer-controlled installation. Avoid client-specific forks until incompatibility is demonstrated.
-
-### Go console-derived debugging summaries
-
-What are the exact shared definitions for inclusive and self duration, direct and descendant usage, attempts and retries, final execution outcome, error and validation indexes, and evidence completeness?
-
-Starting bias: implement mechanical facts that must be correct or shared with the UI below both adapters. Keep root-cause judgment, likely developer mistakes, code-change recommendations, contextual repository comparison, and explanatory reasoning in the LLM/skill.
-
-### Scenario catalog location and format
-
-Where does the separately reviewable debugging-scenario catalog live, and how are its entries linked to protocol fixtures and automated evaluations?
-
-Starting bias: keep it version controlled near these design documents with stable scenario IDs and a lightweight human-readable template. Do not encode scenarios as MCP server branches or require exact tool-call sequences or prose.
-
-### Rate and concurrency limits
-
-What bounds apply per client and across all MCP clients?
-
-Starting bias: begin with the proposed defaults in this document, then validate them against representative traces and scenario tests. Keep every operational limit locally overridable within safe validated ranges, reject unlimited sentinels, and fail with actionable bounded errors rather than degrading the Go process.
+The Phase 3 product and architecture decisions required before implementation planning are settled. The existing developer-workflow catalog is canonical; implementation links representative fixtures, tests, and evaluations to its workflow and requirement IDs without adding another scenario system.
 
 ## Handoff to future implementation planning
 
 A future Phase 3 implementation-planning context should begin by:
 
-1. revalidating the current stable MCP and Agent Skills specifications;
-2. selecting representative IDE clients and recording their actual transport/skill capabilities;
+1. revalidating the current stable MCP and Agent Skills specifications and pinning the then-current stable official Go MCP SDK;
+2. validating the selected local Codex, Claude Code, Antigravity, Cursor, and Devin Desktop/Windsurf or local Devin CLI surfaces and recording their actual transport/skill capabilities;
 3. verifying that Phase 2 exposes transport-neutral runtime services and representative fixtures;
-4. creating and reviewing an initial debugging-scenario catalog;
-5. validating the proposed general resource/tool surface against those scenarios without deriving scenario-specific tools;
+4. selecting representative variants from the approved developer workflows and mapping their requirement IDs to fixtures, tests, and agent evaluations;
+5. validating the settled general resource/tool surface against those workflows without deriving workflow-specific tools or weakening its semantic boundaries;
 6. defining structured output, evidence, pagination, and size contracts;
 7. specifying and threat-modeling the persistent access-key and pairing experience; and
 8. validating the skill against both normal and adversarial runtime content.
 
-Do not start by wrapping every Phase 1 endpoint as an MCP tool, creating one tool per scenario, or hard-coding diagnoses in the console. MCP surface design should optimize for safe, efficient developer investigation rather than mirror REST mechanically.
+Do not start by wrapping every Phase 1 endpoint as an MCP tool, creating one tool per workflow variant, or hard-coding diagnoses in the console. MCP surface design should optimize for safe, efficient developer investigation rather than mirror REST mechanically.
 
 The implementation plan should separate at least these workstreams:
 
-1. MCP transport, lifecycle, access-key management, local configuration, standard protocol negotiation, and Bifrost bootstrap capability reporting;
+1. official Go MCP SDK integration, shared-listener transport, session lifecycle, access-key management, local configuration, standard protocol negotiation, and Bifrost bootstrap capability reporting;
 2. resource/tool schemas and runtime-service adapters;
 3. pagination, structured results, evidence links, and error semantics;
 4. untrusted-content and resource-limit hardening;
 5. portable Agent Skill and reference authoring;
 6. skill distribution and client setup documentation;
 7. representative IDE compatibility testing; and
-8. scenario fixtures, agent evaluations, and cross-phase end-to-end debugging coverage.
+8. workflow-linked fixtures, agent evaluations, and cross-phase end-to-end debugging coverage.
 
-Required test scenarios should include:
+Required test coverage should include:
 
+- the pinned official Go MCP SDK passes the applicable official server conformance suite, and a version upgrade cannot merge with an unexpected conformance regression;
+- MCP SDK types remain confined to the adapter package and browser/MCP parity tests prove identical shared identifiers, calculations, availability, direct limitation facts, and domain-error meanings for the same service results and Java-produced trace fixtures;
+- access-key regeneration, disablement, and console shutdown cancel old-generation requests, close SDK sessions and streams, suppress raced results, and permit clean representative-client reinitialization where applicable;
 - a second console selecting an already locked profile fails startup before reading or mutating its MCP credential, and a console using another profile but the same locked work directory also fails startup;
 - separate profiles with separate work directories and MCP credentials can run concurrently and may observe the same Bifrost application;
 - each profile's default work directory resolves beneath the platform-appropriate per-user local state or cache location, remains stable across launch working directories, and does not collide with another profile's default;
@@ -890,7 +995,12 @@ Required test scenarios should include:
 - disablement removes the canonical key before reporting success, rejects later MCP authentication, and suppresses raced old-generation results;
 - simulated interruption before and after each canonical filesystem commit produces the documented old-or-new crash outcome without a conflicting enabled flag;
 - a malformed, symlinked or reparse-point, unreadable, oversized, or insufficiently protected canonical key file fails MCP closed without silent replacement;
+- the exact `bfmcp_` plus 43-character unpadded-base64url key and one-LF file format round-trips, every malformed variant fails closed, and authentication compares only the complete key without logging it;
+- POSIX ownership and `0700` profile/`0600` file protections and Windows protected-DACL rules accept the intended principals and reject broad or foreign access for canonical and temporary files;
 - recognizable temporary sibling files never enable MCP and may be cleaned only through exact safe-path handling;
+- the paired browser's disabled, enabled, and disabled-invalid states and enable, reveal, regenerate, disable, and invalid-file-removal operations preserve the documented memory, confirmation, `no-store`, and filesystem-commit behavior;
+- generated user/global configurations connect the local Codex, Claude Code, Cursor, Antigravity, and Devin Desktop/Windsurf or local Devin CLI targets without writing a key into a repository, skill, URL, shell-history example, or automatic client-config mutation;
+- hosted clients are documented as unable to reach the loopback endpoint rather than being reported as protocol-compatible local targets;
 - restart with a valid canonical MCP key and no process-local application credential permits MCP initialization and console status but returns `TARGET_AUTHENTICATION_REQUIRED` for new target access until the browser supplies the application key;
 - MCP available with a selected, reachable, authenticated, compatible target while live monitoring is available;
 - the browser and MCP expose the same shared status facts for no target, authentication required, host access blocked, compatibility not checked, exact incompatibility, target unavailable, and live monitoring unavailable;
@@ -905,6 +1015,10 @@ Required test scenarios should include:
 - active execution with nested skill frames;
 - successful trace cataloged by the current application process;
 - failed trace cataloged by the current application process;
+- nested-frame fixtures prove `inclusiveDuration`, immediate-child-subtraction `selfDuration`, and root-frame execution duration identically through browser and MCP;
+- duplicate frame boundaries, negative or parent-exceeding intervals, and overlapping immediate siblings produce `INVALID_ARTIFACT` rather than alternate timing logic;
+- failure and validation fixtures prove the exact flat record membership and fields, including terminal marking only by `terminalFailureId`, without grouping, normalization, ranking, or diagnosis;
+- unavailable responses, unattributed usage, continuations, live discontinuities, and artifact lifecycle failures remain separate direct facts with no aggregate completeness result;
 - completed execution whose trace has expired;
 - an upstream replay gap while Go still holds pre-gap activity, proving that the shared window is cleared, browser and MCP expose the same reset boundary, and neither returns events from both sides of the discontinuity;
 - the same shared-service failure observed through browser and MCP with the same domain code, including an unexpected Go failure that becomes sanitized `CONSOLE_ERROR` without leaking its cause;

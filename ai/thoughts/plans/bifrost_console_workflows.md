@@ -38,7 +38,15 @@ Requirements discovered by a workflow should first be satisfied through the exis
 | `WF-EXPENSIVE-EXECUTION` | Explain unexpectedly high usage or cost | Approved |
 | `WF-UNFAMILIAR-SKILL-PATH` | Understand an unfamiliar nested skill path | Approved |
 
-The initial workflow set and its cross-workflow consequences have been reviewed together. No workflow requires reopening a settled Phase 1–3 foundation. The Phase 2 core-developer-workflows product decision is settled by this document. Phase 2 now also settles the resulting information architecture, global navigation, live-execution presentation, and hierarchy-first trace-explorer organization; calculation definitions and implementation choices remain open where identified below.
+The initial workflow set and its cross-workflow consequences have been reviewed together. No workflow requires reopening a settled Phase 1–3 foundation. The Phase 2 core-developer-workflows product decision is settled by this document. Phase 2 also settles the resulting information architecture, global navigation, live-execution presentation, and hierarchy-first trace-explorer organization; remaining choices identified below are implementation details within those decisions.
+
+### Verification linkage
+
+This document is also the canonical investigation catalog used to verify the browser, MCP adapter, and portable debugging skill. Phase 3 does not maintain a duplicate scenario catalog or identifier namespace.
+
+Representative fixtures, tests, and agent evaluations reference the applicable workflow ID or the most specific requirement ID already defined here. They live beside their owning Java, Go, browser, MCP, or evaluation code and may be linked from this document after project paths exist. This document does not copy fixture payloads, prescribe exact MCP calls or answer prose, or act as a machine-readable test manifest.
+
+Normal, variant, degraded, and exceptional paths remain part of their parent workflow. A separate workflow is added only for a genuinely different developer goal, not merely for another recorded failure kind or protocol edge case. Protocol conformance, transport security, credentials, malformed input, cache behavior, and cancellation remain implementation test coverage rather than additional developer workflows.
 
 ## Cross-workflow synthesis
 
@@ -75,7 +83,7 @@ The Phase 2 information architecture uses Overview as the stable landing page an
 | `WF-X-R2` | Use one live-execution experience and one finalized-trace inspection experience. | Workflow-specific entry states do not create separate stores, parsers, handles, or contradictory calculations. |
 | `WF-X-R3` | Preserve selected context across live updates and execution completion. | Activity does not steal selection or scroll position, and completion does not navigate automatically. |
 | `WF-X-R4` | Keep active evidence visibly provisional and finalized-trace evidence explicitly validated. | A bounded active path or recent interval is never presented as a complete execution hierarchy or history. |
-| `WF-X-R5` | Keep execution outcome, application trace availability, local artifact availability, target authentication, connection state, and evidence completeness separate. | No aggregate health or combined lifecycle label substitutes for the underlying facts. |
+| `WF-X-R5` | Keep execution outcome, application trace availability, local artifact availability, target authentication, connection state, and direct gap or lifecycle facts separate. | No aggregate health, lifecycle, or evidence-completeness label substitutes for the underlying facts. |
 | `WF-X-R6` | Expose observation time and continuity boundaries wherever live facts are presented. | A retained or refreshed snapshot is not mislabeled as current, continuous, or lossless. |
 | `WF-X-R7` | Give browser and MCP the same transport-neutral deterministic calculations and domain-error meanings. | Adapter presentation may differ, but hierarchy, timing, usage, failure, retry, validation, and continuity facts do not. |
 | `WF-X-R8` | Navigate related facts through current-scope identifiers and relationships already established by the plans. | The workflow set adds no copying, exporting, evidence packaging, filesystem lookup, or additional retention feature. |
@@ -88,7 +96,7 @@ The Phase 2 information architecture uses Overview as the stable landing page an
 
 The review found no conflict among the four workflows and no requirement that cannot be satisfied through the settled Phase 1–3 ownership and lifecycle boundaries. In particular, the workflow set does not require active-trace inspection, durable execution history, a second trace representation, provider health or pricing, console-side repository access, source provenance, automatic diagnosis, execution control, or broader evidence retention.
 
-The remaining open decisions are downstream choices already identified by the phase plans: frontend and build foundation, protocol tooling, shared calculation definitions, MCP surface, and operational limits.
+The Phase 1–3 product and architecture decisions required before implementation planning are settled. Exact route and field spelling, fixture paths, test harnesses, response-framing constants, and representative one-response client interoperability values remain implementation work within those contracts.
 
 ## `WF-FAILED-EXECUTION`: Diagnose a failed completed execution
 
@@ -101,7 +109,7 @@ Help the developer establish:
 3. what happened immediately before it;
 4. whether retries, validation, quota, timeout, or guardrail behavior contributed;
 5. where time and usage accumulated; and
-6. whether the available evidence is complete enough to support a conclusion.
+6. which direct gaps or lifecycle limitations constrain a conclusion.
 
 The console supplies authoritative mechanical facts and evidence relationships. Root-cause judgment, likely developer mistakes, repository comparison, and code-change recommendations remain developer or IDE-LLM reasoning rather than authoritative console calculations.
 
@@ -122,7 +130,7 @@ When a finalized artifact is available, these paths converge on the same transpo
 2. **Preserve immediate context.** The execution remains selected when the developer is watching it. The terminal view shows the last safe activity, session and trace identifiers, failed phase when known, elapsed time, and application trace availability. Failure does not automatically navigate away from the live view.
 3. **Offer deliberate trace inspection.** When the application reports a trace as available, the terminal view presents a prominent **Inspect trace** action. The console does not acquire every failed trace automatically because acquisition consumes bounded workspace capacity.
 4. **Acquire through the shared service.** Go downloads, validates, installs, and issues the current-scope artifact handle through the centralized artifact service used by browser and MCP. Partial or invalid acquisition never becomes inspectable evidence.
-5. **Open a failure-focused trace view.** The initial trace explorer state presents the final execution outcome, execution-ending failure, attributed frame and skill path, preceding validation failures and retries, nearby model or tool activity, timing and usage facts, evidence-completeness warnings, and stable evidence identifiers.
+5. **Open a failure-focused trace view.** The initial trace explorer state presents the final execution outcome, execution-ending failure, attributed frame and skill path, preceding validation failures and retries, nearby model or tool activity, timing and usage facts, direct gap or lifecycle limitations, and stable evidence identifiers.
 6. **Expand through related evidence.** The developer can move from the selected failure into its surrounding timeline, hierarchy, attempts, records, and explicitly requested raw payloads. The UI exposes mechanically related evidence without presenting a speculative cause as an authoritative fact.
 7. **Navigate supporting evidence.** The developer can move among the trace, frame, canonical record sequence, failure, and relevant attempt or validation facts through their displayed identifiers. Browser deep links remain navigation conveniences within the current `targetScopeId`, not durable bookmarks.
 
@@ -146,8 +154,8 @@ Failure-focused mode should initially expose:
 - attributed frame, route, and nested skill path;
 - preceding validation failures, attempts, and retries;
 - temporally and hierarchically related model or tool activity;
-- inclusive and self duration plus direct and descendant usage once their shared definitions are settled;
-- evidence completeness and truncation facts; and
+- settled inclusive and self duration plus direct and descendant usage;
+- direct invalid, unavailable, unattributed, continuation, continuity, lifecycle, and payload-reference facts when applicable; and
 - stable identifiers suitable for navigation and citation.
 
 Raw records and reconstructed payloads remain explicitly requested detail. They are not placed automatically into summaries, but every successfully parsed item remains addressable through the existing bounded pagination and payload-range contracts while its artifact handle and target scope remain valid.
@@ -201,16 +209,16 @@ If the developer was not watching, the trace was not retained, and the bounded r
 | `WF-FE-R9` | Preserve acquired evidence under acquisition-time authorization without presenting it as current target state. | `TargetContext`, artifact-handle lifecycle, and shared status facts. |
 | `WF-FE-R10` | Never turn recent activity into an implied durable or lossless failure history. | Bounded single-continuity activity window and explicit replay-gap behavior. |
 
-### Decisions intentionally left to later open topics
+### Implementation choices
 
 This workflow establishes the required failure-focused behavior but does not yet choose:
 
 - exact typography, animation, component library, or frontend framework;
-- exact shared definitions for duration, usage, attempts, retries, failure indexes, and evidence completeness;
-- exact recent-activity and response-size values; or
-- the exact Phase 3 MCP resource and tool surface.
+- exact recent-activity and interoperable one-response framing values.
 
-Those choices remain in their existing Phase 2 or Phase 3 still-open topics and should consume this workflow as a requirement rather than reopen its settled foundations.
+Those choices remain implementation work and should consume this workflow as a requirement rather than reopen its settled foundations. Shared duration calculations and flat failure and validation indexes are settled in Phase 3; the initial product intentionally has no aggregate evidence-completeness model.
+
+The exact Phase 3 MCP resource and tool surface is settled. Implementation validates its general trace, frame, record, payload, execution, activity, and skill operations against this workflow without creating a scenario-specific failure tool.
 
 ## `WF-SLOW-EXECUTION`: Diagnose a currently slow execution
 
@@ -328,17 +336,18 @@ Present `EXECUTION_OBSERVATION_ENDED` with `CORE_FINALIZATION_FAILED` without in
 | `WF-SE-R9` | Give browser and MCP the same active snapshot and recent-activity continuity semantics. | Transport-neutral Go runtime and recent-activity services. |
 | `WF-SE-R10` | Reserve complete hierarchy, duration, and usage attribution for finalized-trace analysis. | Finalized immutable artifact and shared Go trace services. |
 
-### Decisions intentionally left to later open topics
+### Implementation choices
 
 This workflow does not yet choose:
 
 - the exact responsive arrangement of the three live-detail areas;
 - precise activity animation, refresh intervals, or recent-window limits;
 - the frontend framework, component library, or visualization libraries;
-- the final transport DTOs for observation freshness and continuity notices; or
-- the exact Phase 3 MCP operations used to retrieve active summaries and recent activity.
+- the final transport DTOs for observation freshness and continuity notices.
 
-Those choices remain in their existing Phase 2 or Phase 3 still-open topics. They should satisfy this workflow without adding active-trace tailing, historical baselines, provider probes, or an execution-health classification.
+Those choices remain implementation-level UI and DTO work. They should satisfy this workflow without adding active-trace tailing, historical baselines, provider probes, or an execution-health classification.
+
+The settled Phase 3 surface exposes active summaries and recent activity through `bifrost_list_executions`, `bifrost_get_execution`, and `bifrost_get_execution_activity`; implementation still defines their additive schema details without reopening those operation boundaries.
 
 ## `WF-EXPENSIVE-EXECUTION`: Explain unexpectedly high usage or cost
 
@@ -351,7 +360,7 @@ Make the recorded usage and its execution attribution visible so the developer c
 3. how usage is distributed across skills, frames, model interactions, and attempts;
 4. how much usage is direct versus accumulated through descendants;
 5. what usage is associated with recorded retries and validation attempts; and
-6. whether the available evidence is complete enough for those calculations.
+6. which direct missing-response or attribution facts constrain those calculations.
 
 “Unexpectedly expensive” remains the developer's characterization. The console does not classify usage as important, surprising, excessive, wasteful, or justified, and the initial product has no historical baseline or expected-cost model.
 
@@ -383,7 +392,7 @@ A currently active execution may expose provisional accumulated usage through it
 
 1. **Select the execution.** The terminal or trace summary shows recorded total usage and configured limits when available. It does not label the execution expensive or excessive.
 2. **Acquire the finalized trace.** The developer deliberately opens the trace through the centralized artifact service. Browser and MCP calculations use the same immutable acquired copy.
-3. **Open the usage view.** The view presents total usage by recorded unit, configured limits and arithmetic proportion consumed, direct and descendant usage by skill or frame path, model interactions sorted by attributed usage, usage by attempt, recorded retry and validation relationships, duration as a separate fact, and evidence-completeness facts.
+3. **Open the usage view.** The view presents total usage by recorded unit, configured limits and arithmetic proportion consumed, direct and descendant usage by skill or frame path, model interactions sorted by attributed usage, usage by attempt, recorded retry and validation relationships, duration as a separate fact, and direct missing-response or unattributed-usage facts.
 4. **Inspect usage attribution.** The developer can sort or navigate skill paths, frames, model interactions, and attempts by mechanically attributed usage. Selecting an item reveals its position in the execution hierarchy and timeline without labeling it important or causal.
 5. **Inspect attempts, retries, and validation sequences.** The view presents recorded relationships and exact usage amounts for the applicable attempts. For example, it may show three model attempts, the usage attributed to each, and that two preceded recorded validation failures. It does not decide whether the attempts were necessary or the validation behavior was correct.
 6. **Inspect supporting evidence.** The developer can navigate related records, concise summaries, validation outcomes, model metadata, and explicitly requested payloads. Raw prompts and responses are not included automatically merely because the usage view was opened.
@@ -393,24 +402,24 @@ A currently active execution may expose provisional accumulated usage through it
 
 The trace explorer provides three coordinated information layers:
 
-- **Usage summary:** recorded totals, configured limits, recorded units, arithmetic proportions, and completeness facts.
+- **Usage summary:** recorded totals, configured limits, recorded units, arithmetic proportions, and direct missing-response or unattributed-usage facts.
 - **Attribution view:** hierarchical direct and descendant usage by skill or frame path.
 - **Contributor detail:** the recorded model interactions, attempts, retries, validation outcomes, timing, and evidence identifiers associated with the selected item.
 
 A usage-sorted view may complement the hierarchy, but it preserves the underlying path. Flattened presentation must not make descendant usage appear to be direct usage or allow overlapping inclusive totals to be added together incorrectly.
 
-### Attribution definitions to settle
+### Attribution definitions
 
-The shared Go calculations require exact mechanical definitions for:
+The shared Go calculations use these exact mechanical definitions:
 
 - **Direct usage:** usage attributed to activity owned by the selected frame, excluding descendants.
 - **Descendant usage:** usage attributed to frames below the selected frame.
 - **Inclusive usage:** direct plus descendant usage for the selected subtree.
-- **Attempt usage:** usage attributed to one model or validation attempt through recorded trace relationships.
-- **Retry usage:** usage from attempts mechanically identified as members of a recorded retry sequence.
+- **Attempt usage:** normalized usage carried by a model response with the selected `attemptId`; a validation outcome may relate to that attempt but does not itself create model usage.
+- **Retry usage:** the sum of attempt usage whose records carry the selected `retrySequenceId`, without adding overlapping frame-inclusive totals.
 - **Unattributed usage:** recorded usage that cannot be assigned safely to a more specific supported hierarchy.
 
-These definitions belong below browser and MCP so both adapters report identical arithmetic. The calculations prevent double counting and expose unattributed usage rather than silently discarding it. Their exact definitions remain part of the existing Phase 3 Go console-derived debugging summaries decision.
+Direct attribution follows the model response's recorded `frameId`; ancestor traversal supplies descendant and inclusive values. Attempt and retry membership follows only the recorded `attemptId` and `retrySequenceId`. Record adjacency, matching messages, equal attempt numbers, and timestamp proximity are not relationships. The calculations prevent double counting and expose unattributed usage rather than silently discarding it. The terminal recorded usage snapshot is the reconciliation total, and browser and MCP consume the same shared Go arithmetic.
 
 ### Interpretation rules
 
@@ -481,22 +490,21 @@ Continue valid handle-based local analysis while reporting current target authen
 | `WF-UE-R8` | Keep hierarchical attribution and usage-sorted presentation navigably connected. | Browser trace-explorer presentation over shared results. |
 | `WF-UE-R9` | Present retry and validation relationships without judging necessity, correctness, or causality. | Recorded trace relationships and product north star. |
 | `WF-UE-R10` | Keep duration separate from usage. | Shared Go timing and usage calculations. |
-| `WF-UE-R11` | Represent missing usage as unknown rather than zero. | Evidence completeness contract. |
+| `WF-UE-R11` | Represent missing usage as unknown rather than zero. | Direct unavailable-response and unattributed-usage facts. |
 | `WF-UE-R12` | Do not calculate monetary cost without a future authoritative pricing contract. | Settled current-release scope and canonical trace facts. |
 | `WF-UE-R13` | Do not generate causal explanations, importance judgments, or recommendations from usage facts. | Product north star; reasoning remains with the developer or IDE LLM. |
 
-### Decisions intentionally left to later open topics
+### Implementation choices
 
 This workflow does not yet choose:
 
-- the exact direct, descendant, inclusive, attempt, retry, and unattributed-usage calculation rules;
 - the visual form of hierarchical and usage-sorted attribution;
-- the exact units and semantic fields consumed from the current Java trace vocabulary;
 - response and search limits;
-- the frontend visualization library; or
-- the exact Phase 3 MCP operations that expose usage facts and evidence references.
+- the frontend visualization library.
 
-Those choices remain in their existing Phase 2 or Phase 3 still-open topics. They must follow the product north star and must not introduce historical baselines, provider pricing, billing estimates, automatic importance rankings, causal diagnoses, or change recommendations.
+Those choices remain implementation-level presentation and framing work. They must follow the product north star and must not introduce historical baselines, provider pricing, billing estimates, automatic importance rankings, causal diagnoses, or change recommendations.
+
+Direct, descendant, inclusive, attempt, retry, and unattributed usage and the Phase 1 model-usage fields they consume are settled. The settled Phase 3 trace, frame-query, record-query, and payload-read operations expose those facts and evidence references; implementation still defines additive schemas and interoperable one-response framing.
 
 ## `WF-UNFAMILIAR-SKILL-PATH`: Understand an unfamiliar nested skill path
 
@@ -531,7 +539,7 @@ An active execution exposes only its bounded current path and recent activity. A
 1. **Select an execution or frame.** The developer begins with an execution, selected nested frame, or evidence link from another workflow.
 2. **Show the recorded hierarchy.** The trace view displays the deterministic hierarchy calculated from frame and parent-frame identifiers. It preserves canonical ordering and distinguishes skills, plans, model interactions, tools, validations, and other supported frame types.
 3. **Orient the selected frame.** The selected frame shows a root-to-selection breadcrumb containing recorded skill names, frame types, routes, and identifiers. Repeated or recursive invocations remain distinct because their frame IDs are distinct.
-4. **Inspect frame facts.** The selected frame exposes its frame and parent-frame identifiers, frame type, route, registered skill name when recorded, canonical record range, timestamps, supported duration and usage calculations, attempts, retries, validation outcomes, failure locations, final frame outcome when established, and evidence-completeness facts.
+4. **Inspect frame facts.** The selected frame exposes its frame and parent-frame identifiers, frame type, route, registered skill name when recorded, canonical record range, timestamps, supported duration and usage calculations, attempts, retries, validation outcomes, failure locations, final frame outcome when established, and applicable direct gap or lifecycle facts.
 5. **Inspect the registered skill definition.** When the frame identifies a registered skill, the developer can open the application-provided skill entry by registered name. The console displays the unique registered skill name, normalized skills-root-relative `sourcePath`, and unchanged UTF-8 YAML content. It may display or syntax-highlight the YAML as text but does not construct an effective-definition model or resolve defaults.
 6. **Navigate related runtime facts.** The developer can move among the selected frame, its parent, children, related timeline interval, records, failures, attempts, validation outcomes, and usage attribution. Every relationship is supported by recorded identifiers or deterministic shared calculations.
 
@@ -645,14 +653,14 @@ The IDE investigation presents the difference as comparison context, not deploym
 | `WF-SP-R13` | Do not add copy, export, evidence-package, or additional retention behavior through this workflow. | Existing current-scope navigation and artifact lifecycle. |
 | `WF-SP-R14` | Do not explain routing intent, semantic causality, design correctness, or recommended restructuring. | Product north star. |
 
-### Decisions intentionally left to later open topics
+### Implementation choices
 
 This workflow does not yet choose:
 
 - the exact visual treatment of frame types, routes, repeated invocations, and breadcrumbs;
 - specialized rendering behavior for very deep hierarchies if a demonstrated need emerges;
-- the exact shared duration, usage, attempt, retry, failure, and completeness calculations;
-- the frontend framework or component strategy; or
-- the exact Phase 3 MCP operations used to expose hierarchy, frame, skill, and workspace-comparison facts.
+- the frontend framework or component strategy.
 
-Those choices remain in their existing Phase 2 or Phase 3 still-open topics. They must follow the product north star and must not add a parsed effective skill model, active-trace inspection, console-side repository access, source mapping, deployment attestation, hierarchy-specific truncation, or console-generated judgments.
+Those choices remain implementation work. Duration, flat failure and validation indexes, usage, attempt/retry membership, final outcome, terminal-failure attribution, and the absence of an aggregate evidence-completeness model are settled by Phase 3's shared definitions and Phase 1 consumed trace relationships. The remaining choices must follow the product north star and must not add a parsed effective skill model, active-trace inspection, console-side repository access, source mapping, deployment attestation, hierarchy-specific truncation, or console-generated judgments.
+
+The settled Phase 3 trace, frame-query, record-query, and skill-inspection operations expose the hierarchy, frame, and skill facts this workflow consumes. Their implementation schemas may evolve additively; workspace comparison remains client-owned.

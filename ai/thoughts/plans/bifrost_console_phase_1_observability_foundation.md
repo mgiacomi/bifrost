@@ -564,6 +564,45 @@ Every Bifrost release receives its own release-derived `consoleCompatibilityVers
 
 Java-produced golden fixtures are the executable cross-language agreement. They cover representative successful and failed traces, nested frames, chunked payloads, validation and retry behavior, and malformed artifacts, with expected Go results for the calculations the console actually provides rather than parse success alone. Go owns those derived console calculations, and browser and MCP consume the same results. There is no schema registry, generated cross-language model, migration system, historical reader, or exhaustive public specification.
 
+### Consumed attempt, usage, and terminal-failure relationships
+
+Phase 1 must make the relationships required by shared browser/MCP calculations explicit in the canonical trace. Go must not pair records merely because they are adjacent, have similar messages, or happen to share an attempt number.
+
+The current framework already calculates model usage. `ModelUsageRecord` contains `promptUnits`, `completionUnits`, `totalUnits`, `precision`, and provider-native usage; `UsagePrecision` is `EXACT`, `HEURISTIC`, or `UNAVAILABLE`. `SessionUsageSnapshot` aggregates model calls and usage units, Micrometer publishes model-call and usage counters when present, and session quotas consume the aggregate values. This existing accounting model remains authoritative. Phase 1 does not invent a second definition of model usage.
+
+The current trace does not persist those normalized usage facts, however, and current outer model-call tracing may contain multiple advisor-driven provider attempts inside one prepared/sent/received sequence. Existing linter, structured-output, and advisor facts record attempt numbers and statuses, but an attempt number alone is not a unique relationship across nested frames, validators, advisors, or retry loops.
+
+The canonical writer and its fixtures therefore add these consumed relationships:
+
+- one opaque `retrySequenceId` identifies a logical model/validation retry loop;
+- one opaque `attemptId`, plus its positive `attemptNumber`, identifies each physical model attempt within that loop;
+- the prepared request, sent request, received response, normalized usage fact, validation/advisor outcome, and retry-requested fact carry the applicable identifiers;
+- ordinary non-retried model calls still have one attempt identity, so consumers do not need separate correlation rules;
+- instrumentation occurs at the physical provider-interaction seam when an advisor can issue multiple downstream calls, rather than collapsing several provider attempts into one outer trace fact; and
+- a missing usage fact remains unknown and is exposed through the direct `unavailableResponseCount` or unattributed-usage result rather than inferred, scored, or treated as zero.
+
+For each physical model response whose usage can be calculated, the trace persists the same normalized `promptUnits`, `completionUnits`, `totalUnits`, and `precision` used by session accounting and metrics, linked to the response's `frameId` and `attemptId` and to `retrySequenceId` when applicable. The initial contract places this normalized usage on `MODEL_RESPONSE_RECEIVED`; a separate `MODEL_USAGE_RECORDED` record is justified only if implementation proves that usage becomes available at a genuinely separate lifecycle seam. Provider-native usage remains opaque and is not a required Go-consumed field.
+
+`TRACE_COMPLETED` also persists the terminal `SessionUsageSnapshot` totals needed to reconcile the trace. Shared Go calculations require:
+
+```text
+sum(attributed usage) + unattributed usage = terminal recorded total
+```
+
+The snapshot includes the existing model-call, prompt-unit, completion-unit, usage-unit, and exact/heuristic/unavailable-response counts. Go rejects internally contradictory consumed values, but exposes legitimately unattributed or unavailable usage instead of distributing it across nearby records. Changes needed to account for physical retry attempts update session quotas and Micrometer from the same normalized fact so trace, aggregate, and metric accounting do not diverge.
+
+Terminal outcome and terminal cause are also explicit and separate:
+
+- `TRACE_COMPLETED.outcome` is `SUCCEEDED`, `FAILED`, or `ABORTED`;
+- the failure boundary creates one opaque `failureId`;
+- the terminal `ERROR_RECORDED`, failed or aborted root `FRAME_CLOSED`, and `TRACE_COMPLETED.terminalFailureId` carry that same identity;
+- non-terminal errors may have their own `failureId` but are not referenced as the terminal failure; and
+- successful completion has no `terminalFailureId`.
+
+The existing `errored` completion fact may remain for core compatibility, but Go does not derive the final outcome or terminal cause from it, from the last error, from repeated safe messages, or from record adjacency. The observability-only `EXECUTION_OBSERVATION_ENDED` event for `CORE_FINALIZATION_FAILED` remains outside this canonical relationship: it reports incomplete observation and unavailable trace finalization without inventing an outcome or failure link that core completion did not establish.
+
+Golden fixtures cover a normal single model call, multiple physical attempts in one retry sequence, nested retry sequences with overlapping attempt numbers, exact/heuristic/unavailable and unattributed usage, terminal usage reconciliation, non-terminal errors followed by success, a linked terminal failure, abort, validation exhaustion, and core-finalization failure. Expected Go results assert the identifiers and calculations, not merely the presence or order of records.
+
 ### Required identity facts
 
 Phase 1 exposes:
