@@ -1,6 +1,8 @@
 package com.lokiscale.bifrost.internal.runtime.attachment;
 
 import com.lokiscale.bifrost.autoconfigure.AiDriver;
+import com.lokiscale.bifrost.internal.core.ModelExecutionIdentity;
+import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.runtime.SimpleChatClient;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
 import org.junit.jupiter.api.Test;
@@ -41,7 +43,7 @@ class SpringAiMissionUserMessageSenderTest
                         resource)),
                 Map.of("image", Map.of("attachment", true)));
 
-        sender.send(chatClient, "system", renderedInput, List.of(), "skill", config()).content();
+        sender.send(chatClient, "system", renderedInput, List.of(), "skill", config(), traceContext()).content();
 
         assertThat(chatClient.getUserMessagesSeen()).containsExactly("Input descriptor");
         assertThat(chatClient.getUserMediaSeen()).hasSize(1);
@@ -55,7 +57,7 @@ class SpringAiMissionUserMessageSenderTest
         SimpleChatClient chatClient = new SimpleChatClient(null, "ok");
 
         sender.send(chatClient, "system", new RenderedMissionInput("Plain input", List.of(), Map.of()),
-                List.of(), "skill", config()).content();
+                List.of(), "skill", config(), traceContext()).content();
 
         assertThat(chatClient.getUserMessagesSeen()).containsExactly("Plain input");
         assertThat(chatClient.getUserMediaSeen()).isEmpty();
@@ -64,5 +66,10 @@ class SpringAiMissionUserMessageSenderTest
     private EffectiveSkillExecutionConfiguration config()
     {
         return new EffectiveSkillExecutionConfiguration("model", "test-connection", AiDriver.OPENAI, "gpt-4.1-mini", null);
+    }
+
+    private ModelTraceContext traceContext()
+    {
+        return new ModelTraceContext(ModelExecutionIdentity.from(config()), "skill", "mission");
     }
 }

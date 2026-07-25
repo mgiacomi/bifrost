@@ -9,6 +9,9 @@ import com.lokiscale.bifrost.internal.core.AdvisorTraceRecorder;
 import com.lokiscale.bifrost.internal.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaValidator;
+import com.lokiscale.bifrost.internal.runtime.state.DefaultExecutionStateService;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.internal.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.internal.skill.YamlSkillDefinition;
 import com.lokiscale.bifrost.internal.skill.YamlSkillManifest;
@@ -27,6 +30,7 @@ import org.springframework.core.io.ByteArrayResource;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Clock;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,9 +153,10 @@ class SpringAiSkillChatClientFactoryTests {
         CapturedFactoryResult result = captureFactoryInvocation(definition, ignored -> List.of(advisor));
 
         assertThat(result.options()).isInstanceOf(OpenAiChatOptions.class);
-        assertThat(result.advisors()).containsExactly(advisor);
+        assertThat(result.advisors().getFirst()).isSameAs(advisor);
+        assertThat(result.advisors().getLast()).isInstanceOf(ModelAttemptCallAdvisor.class);
         verify(result.builder()).defaultOptions(any(ChatOptions.class));
-        verify(result.builder()).defaultAdvisors(List.of(advisor));
+        verify(result.builder()).defaultAdvisors(anyList());
         verify(result.builder()).build();
     }
 
@@ -166,9 +171,9 @@ class SpringAiSkillChatClientFactoryTests {
         CapturedFactoryResult result = captureFactoryInvocation(definition, new NoOpSkillAdvisorResolver());
 
         assertThat(result.client()).isSameAs(result.factoryClient());
-        assertThat(result.advisors()).isEmpty();
+        assertThat(result.advisors()).singleElement().isInstanceOf(ModelAttemptCallAdvisor.class);
         verify(result.builder()).defaultOptions(any(ChatOptions.class));
-        verify(result.builder(), never()).defaultAdvisors(anyList());
+        verify(result.builder()).defaultAdvisors(anyList());
     }
 
     @Test
@@ -187,12 +192,16 @@ class SpringAiSkillChatClientFactoryTests {
                         passthroughAdvisor,
                         outputSchemaAdvisor(),
                         linterAdvisor()),
+                stateService(),
+                new ModelUsageExtractor(),
+                new NoOpSessionUsageService(),
                 builderFactory);
 
         ChatClient created = factory.createForStepExecution(definition);
         CapturedFactoryResult result = builderFactory.result(created);
 
-        assertThat(result.advisors()).containsExactly(passthroughAdvisor);
+        assertThat(result.advisors().getFirst()).isSameAs(passthroughAdvisor);
+        assertThat(result.advisors().getLast()).isInstanceOf(ModelAttemptCallAdvisor.class);
         verify(result.builder()).defaultOptions(any(ChatOptions.class));
         verify(result.builder()).defaultAdvisors(anyList());
     }
@@ -239,7 +248,10 @@ class SpringAiSkillChatClientFactoryTests {
         SpringAiSkillChatClientFactory factory = new SpringAiSkillChatClientFactory(
                 new DefaultSkillChatModelResolver(Map.of("openai-main", mock(ChatModel.class))),
                 SpringAiSkillChatClientFactory.defaultAdapters(),
-                new NoOpSkillAdvisorResolver());
+                new NoOpSkillAdvisorResolver(),
+                stateService(),
+                new ModelUsageExtractor(),
+                new NoOpSessionUsageService());
 
         assertThatThrownBy(() -> factory.create(definition(new EffectiveSkillExecutionConfiguration(
                 "ollama-llama3",
@@ -272,6 +284,9 @@ class SpringAiSkillChatClientFactoryTests {
                 chatModelResolver,
                 SpringAiSkillChatClientFactory.defaultAdapters(),
                 skillAdvisorResolver,
+                stateService(),
+                new ModelUsageExtractor(),
+                new NoOpSessionUsageService(),
                 builderFactory);
 
         ChatClient created = factory.create(definition);
@@ -280,6 +295,10 @@ class SpringAiSkillChatClientFactoryTests {
 
     private SkillChatModelResolver resolver(Map<String, ChatModel> modelsByConnection) {
         return new DefaultSkillChatModelResolver(modelsByConnection);
+    }
+
+    private static DefaultExecutionStateService stateService() {
+        return new DefaultExecutionStateService(Clock.systemUTC());
     }
 
     private YamlSkillDefinition definition(EffectiveSkillExecutionConfiguration configuration) {

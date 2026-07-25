@@ -1,0 +1,29 @@
+{
+  "case" : "unavailable-usage",
+  "valid" : true,
+  "traceId" : "trace-unavailable-usage",
+  "sessionId" : "session-unavailable-usage",
+  "outcome" : "SUCCEEDED",
+  "terminalFailureId" : null,
+  "attributedUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "terminalUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "unattributedUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "attempts" : [ {
+    "retrySequenceId" : "retry-1",
+    "attemptId" : "attempt-1",
+    "attemptNumber" : 1
+  } ],
+  "validationLinks" : [ ]
+}

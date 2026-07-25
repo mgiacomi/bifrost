@@ -66,7 +66,11 @@ class BifrostSessionJsonTest {
                 Map.of("message", "boom"));
 
         session.markTraceErrored();
-        session.finalizeTrace(Map.of("status", "failed"));
+        session.finalizeTrace(new TraceCompletion(
+                TraceOutcome.FAILED,
+                com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot.empty(),
+                "failure-json",
+                Map.of()));
 
         JsonNode json = OBJECT_MAPPER.readTree(OBJECT_MAPPER.writeValueAsString(session));
 

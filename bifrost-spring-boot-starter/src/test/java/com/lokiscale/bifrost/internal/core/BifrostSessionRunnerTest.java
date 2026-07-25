@@ -107,10 +107,17 @@ class BifrostSessionRunnerTest {
             assertThat(records.getLast().recordType()).isEqualTo(TraceRecordType.TRACE_COMPLETED);
             assertThat(records.getLast().metadata())
                     .containsEntry("errored", true)
-                    .containsEntry("status", "failed")
-                    .containsEntry("exceptionType", IllegalArgumentException.class.getName())
-                    .containsEntry("message", "Session execution failed")
+                    .containsEntry("outcome", "FAILED")
+                    .containsKey("terminalFailureId")
                     .doesNotContainValue("boom");
+            TraceRecord error = records.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.ERROR_RECORDED)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(error.metadata().get("failureId"))
+                    .isEqualTo(records.getLast().metadata().get("terminalFailureId"));
+            assertThat(error.data().path("exceptionType").asText()).isEqualTo(IllegalArgumentException.class.getName());
+            assertThat(error.data().path("message").asText()).isEqualTo("Session execution failed");
         }
         finally {
             Files.deleteIfExists(tracePath);

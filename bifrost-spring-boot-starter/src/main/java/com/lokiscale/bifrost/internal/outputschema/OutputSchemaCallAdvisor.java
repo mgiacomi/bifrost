@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.internal.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceFact;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceRecorder;
 import com.lokiscale.bifrost.internal.core.BifrostSession;
+import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.skill.YamlSkillManifest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,7 +87,7 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor
                 .build();
 
         advisorTraceRecorder.record(AdvisorTraceFact.schemaApplied(
-                new AdvisorTraceContext(getName(), skillName, 1, "schema-applied")));
+                new AdvisorTraceContext(getName(), skillName, 1, "schema-applied", java.util.Map.of())));
 
         CallAdvisorChain downstreamChain = callAdvisorChain.copy(this);
         int attempt = 1;
@@ -100,7 +101,8 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor
             if (result.valid())
             {
                 advisorTraceRecorder.record(AdvisorTraceFact.passed(
-                        new AdvisorTraceContext(getName(), skillName, attempt, "passed"),
+                        new AdvisorTraceContext(getName(), skillName, attempt, "passed",
+                                ModelTraceContext.attemptFrom(response.context())),
                         candidate));
 
                 return record(response, outcome(attempt, OutputSchemaOutcomeStatus.PASSED, null, List.of()));
@@ -122,7 +124,8 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor
                         result.issues());
 
                 advisorTraceRecorder.record(AdvisorTraceFact.exhausted(
-                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted"),
+                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted",
+                                ModelTraceContext.attemptFrom(response.context())),
                         result.issues()));
 
                 recordOnSession(exhaustedOutcome);
@@ -146,7 +149,8 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor
             record(response, outcome(attempt, OutputSchemaOutcomeStatus.RETRYING, result.failureMode(), result.issues()));
 
             advisorTraceRecorder.record(AdvisorTraceFact.retryRequested(
-                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying"),
+                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying",
+                            ModelTraceContext.attemptFrom(response.context())),
                     result.issues()));
 
             currentRequest = currentRequest.mutate()

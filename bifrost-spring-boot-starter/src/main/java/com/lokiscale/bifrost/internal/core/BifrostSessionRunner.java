@@ -111,29 +111,56 @@ public class BifrostSessionRunner
 
     private void finalizeSessionTrace(BifrostSession session, @Nullable Throwable failure)
     {
+        if (session.getExecutionTrace().completed())
+        {
+            return;
+        }
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("entryPoint", "session-runner");
         metadata.put("remainingFrames", session.getFramesSnapshot().size());
 
         if (!session.getFramesSnapshot().isEmpty())
         {
-            session.markTraceErrored();
-            metadata.put("status", "failed");
-            metadata.put("message", "Standalone session completed with open execution frames");
-            session.finalizeTrace(Map.copyOf(metadata));
-
-            throw new IllegalStateException(
+            IllegalStateException openFrameFailure = new IllegalStateException(
                     "Cannot finalize standalone session '%s' with %d open execution frame(s)."
                             .formatted(session.getSessionId(), session.getFramesSnapshot().size()));
+            String failureId = UUID.randomUUID().toString();
+            session.markTraceErrored();
+            session.appendTraceRecord(
+                    TraceRecordType.ERROR_RECORDED,
+                    Map.of("failureId", failureId),
+                    Map.of(
+                            "exceptionType", openFrameFailure.getClass().getName(),
+                            "message", "Standalone session completed with open execution frames"));
+            session.finalizeTrace(new TraceCompletion(
+                    TraceOutcome.FAILED,
+                    session.getSessionUsage().orElse(
+                            com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot.empty()),
+                    failureId,
+                    Map.copyOf(metadata)));
+            throw openFrameFailure;
         }
 
-        metadata.put("status", failure == null ? "completed" : "failed");
+        String terminalFailureId = null;
         if (failure != null)
         {
-            TraceFailureMetadata.addTo(metadata, failure, "Session execution failed");
+            terminalFailureId = UUID.randomUUID().toString();
+            LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+            TraceFailureMetadata.addTo(payload, failure, "Session execution failed");
+            session.appendTraceRecord(
+                    TraceRecordType.ERROR_RECORDED,
+                    Map.of("failureId", terminalFailureId),
+                    Map.copyOf(payload));
         }
 
-        session.finalizeTrace(Map.copyOf(metadata));
+        session.finalizeTrace(new TraceCompletion(
+                failure == null
+                        ? TraceOutcome.SUCCEEDED
+                        : (Thread.currentThread().isInterrupted() ? TraceOutcome.ABORTED : TraceOutcome.FAILED),
+                session.getSessionUsage().orElse(
+                        com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot.empty()),
+                terminalFailureId,
+                Map.copyOf(metadata)));
     }
 
     private void completeSession(BifrostSession session, @Nullable Throwable failure)

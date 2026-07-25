@@ -51,7 +51,6 @@ class NdjsonExecutionTraceReaderTest {
         Path tracePath = Files.createTempFile("out-of-order-chunks", ".ndjson");
         try {
             TraceRecord envelope = new TraceRecord(
-                    1,
                     "trace-1",
                     "session-1",
                     1,
@@ -69,7 +68,6 @@ class NdjsonExecutionTraceReaderTest {
                             "contentType", "text/plain"),
                     null);
             TraceRecord chunk2 = new TraceRecord(
-                    1,
                     "trace-1",
                     "session-1",
                     4,
@@ -83,7 +81,6 @@ class NdjsonExecutionTraceReaderTest {
                     java.util.Map.of("payloadId", "payload-1", "chunkIndex", 2, "chunkCount", 3, "contentType", "text/plain"),
                     OBJECT_MAPPER.getNodeFactory().textNode("gamma"));
             TraceRecord chunk0 = new TraceRecord(
-                    1,
                     "trace-1",
                     "session-1",
                     2,
@@ -97,7 +94,6 @@ class NdjsonExecutionTraceReaderTest {
                     java.util.Map.of("payloadId", "payload-1", "chunkIndex", 0, "chunkCount", 3, "contentType", "text/plain"),
                     OBJECT_MAPPER.getNodeFactory().textNode("alpha"));
             TraceRecord chunk1 = new TraceRecord(
-                    1,
                     "trace-1",
                     "session-1",
                     3,
@@ -137,7 +133,6 @@ class NdjsonExecutionTraceReaderTest {
         Path tracePath = Files.createTempFile("partial-trace", ".ndjson");
         try {
             TraceRecord envelope = new TraceRecord(
-                    1,
                     "trace-1",
                     "session-1",
                     1,
@@ -174,7 +169,6 @@ class NdjsonExecutionTraceReaderTest {
         Path tracePath = Files.createTempFile("partial-line-trace", ".ndjson");
         try {
             TraceRecord completeRecord = new TraceRecord(
-                    1,
                     "trace-1",
                     "session-1",
                     1,
@@ -189,7 +183,7 @@ class NdjsonExecutionTraceReaderTest {
                     OBJECT_MAPPER.getNodeFactory().textNode("ok"));
             Files.writeString(
                     tracePath,
-                    OBJECT_MAPPER.writeValueAsString(completeRecord) + System.lineSeparator() + "{\"schemaVersion\":1,\"traceId\":\"trace-1\"",
+                    OBJECT_MAPPER.writeValueAsString(completeRecord) + System.lineSeparator() + "{\"traceId\":\"trace-1\"",
                     StandardCharsets.UTF_8);
 
             List<TraceRecord> records = new ArrayList<>();
@@ -210,7 +204,6 @@ class NdjsonExecutionTraceReaderTest {
             StringBuilder content = new StringBuilder();
             for (int index = 0; index < 250; index++) {
                 TraceRecord record = new TraceRecord(
-                        1,
                         "trace-1",
                         "session-1",
                         index + 1L,

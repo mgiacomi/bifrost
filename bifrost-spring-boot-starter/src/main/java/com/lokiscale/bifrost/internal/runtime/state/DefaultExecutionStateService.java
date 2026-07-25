@@ -6,17 +6,17 @@ import com.lokiscale.bifrost.internal.core.ExecutionFrame;
 import com.lokiscale.bifrost.internal.core.ExecutionPlan;
 import com.lokiscale.bifrost.internal.core.DefaultExecutionTraceRecorder;
 import com.lokiscale.bifrost.internal.core.ExecutionTraceRecorder;
-import com.lokiscale.bifrost.internal.core.ModelTraceCallback;
 import com.lokiscale.bifrost.internal.core.ModelTraceContext;
-import com.lokiscale.bifrost.internal.core.ModelTraceResult;
 import com.lokiscale.bifrost.internal.core.OperationType;
 import com.lokiscale.bifrost.internal.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.internal.core.TraceFrameType;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
+import com.lokiscale.bifrost.internal.core.TraceCompletion;
 import com.lokiscale.bifrost.internal.core.ToolTraceContext;
 import com.lokiscale.bifrost.internal.linter.LinterOutcome;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcome;
 import com.lokiscale.bifrost.internal.runtime.usage.NoOpSessionUsageService;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageRecord;
 import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageService;
 
 import java.time.Clock;
@@ -233,59 +233,43 @@ public class DefaultExecutionStateService implements ExecutionStateService
     }
 
     @Override
-    public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload)
     {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelRequestPrepared(
                 session,
                 Objects.requireNonNull(frame, "frame must not be null"),
                 Objects.requireNonNull(context, "context must not be null"),
+                attempt,
                 payload);
     }
 
     @Override
-    public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload)
     {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelRequestSent(
                 session,
                 Objects.requireNonNull(frame, "frame must not be null"),
                 Objects.requireNonNull(context, "context must not be null"),
+                attempt,
                 payload);
     }
 
     @Override
-    public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, ModelUsageRecord usage, Object payload)
     {
         Objects.requireNonNull(session, "session must not be null");
         traceRecorder.recordModelResponseReceived(
                 session,
                 Objects.requireNonNull(frame, "frame must not be null"),
                 Objects.requireNonNull(context, "context must not be null"),
+                attempt,
+                Objects.requireNonNull(usage, "usage must not be null"),
                 payload);
-    }
-
-    @Override
-    public <T> T traceModelCall(BifrostSession session,
-            ExecutionFrame frame,
-            ModelTraceContext context,
-            Object preparedPayload,
-            ModelTraceCallback<T> callback)
-    {
-        Objects.requireNonNull(session, "session must not be null");
-        Objects.requireNonNull(frame, "frame must not be null");
-        Objects.requireNonNull(context, "context must not be null");
-        Objects.requireNonNull(callback, "callback must not be null");
-        traceRecorder.recordModelRequestPrepared(session, frame, context, preparedPayload);
-
-        ModelTraceResult<T> result = callback.execute(sentPayload -> traceRecorder.recordModelRequestSent(session, frame, context, sentPayload));
-        traceRecorder.recordModelResponseReceived(
-                session,
-                frame,
-                context,
-                result == null ? null : result.responsePayload());
-
-        return result == null ? null : result.result();
     }
 
     @Override
@@ -415,10 +399,21 @@ public class DefaultExecutionStateService implements ExecutionStateService
     }
 
     @Override
-    public void logError(BifrostSession session, Map<String, Object> payload)
+    public String logError(BifrostSession session, Map<String, Object> payload)
+    {
+        String failureId = UUID.randomUUID().toString();
+        logError(session, failureId, payload);
+        return failureId;
+    }
+
+    @Override
+    public void logError(BifrostSession session, String failureId, Map<String, Object> payload)
     {
         Objects.requireNonNull(session, "session must not be null");
-        traceRecorder.recordError(session, payload == null ? Map.of() : Map.copyOf(payload));
+        traceRecorder.recordError(
+                session,
+                Objects.requireNonNull(failureId, "failureId must not be null"),
+                payload == null ? Map.of() : Map.copyOf(payload));
     }
 
     @Override
@@ -434,10 +429,10 @@ public class DefaultExecutionStateService implements ExecutionStateService
     }
 
     @Override
-    public void finalizeTrace(BifrostSession session, Map<String, Object> metadata)
+    public void finalizeTrace(BifrostSession session, TraceCompletion completion)
     {
         Objects.requireNonNull(session, "session must not be null");
-        traceRecorder.finalizeTrace(session, com.lokiscale.bifrost.internal.core.TraceCompletion.of(metadata));
+        traceRecorder.finalizeTrace(session, Objects.requireNonNull(completion, "completion must not be null"));
     }
 
     private String currentFrameId(BifrostSession session)

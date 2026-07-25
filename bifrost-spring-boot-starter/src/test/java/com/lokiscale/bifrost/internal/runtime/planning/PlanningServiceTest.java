@@ -106,22 +106,19 @@ class PlanningServiceTest {
     }
 
     @Test
-    void recordsPlanningModelUsageAgainstTheSession() {
+    void doesNotPerformDuplicateOuterPlanningUsageAccounting() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         RecordingSessionUsageService usageService = new RecordingSessionUsageService();
         DefaultPlanningService planningService = new DefaultPlanningService(
                 new DefaultPlanTaskLinker(),
-                stateService,
-                usageService,
-                new ModelUsageExtractor());
+                stateService);
         BifrostSession session = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("session-usage", 3);
         ExecutionPlan plan = plan("plan-usage", PlanTaskStatus.PENDING);
 
         assertThat(planningService.initializePlan(session, "hello", null, rootDefinition(), new SimpleChatClient(plan, "done"), List.of()))
                 .contains(plan);
-        assertThat(usageService.lastSkillName).isEqualTo("rootVisibleSkill");
-        assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(1);
-        assertThat(usageService.snapshot(session).usageUnits()).isGreaterThan(0);
+        assertThat(usageService.lastSkillName).isNull();
+        assertThat(usageService.snapshot(session).modelCalls()).isZero();
     }
 
     @Test
@@ -185,10 +182,6 @@ class PlanningServiceTest {
 
         List<TraceRecord> records = readRecords(session);
 
-        TraceRecord modelRequest = records.stream()
-                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED)
-                .findFirst()
-                .orElseThrow();
         TraceRecord planningFrame = records.stream()
                 .filter(record -> record.recordType() == TraceRecordType.FRAME_OPENED
                         && record.frameType() == TraceFrameType.PLANNING)
@@ -201,21 +194,9 @@ class PlanningServiceTest {
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(modelRequest.metadata()).containsEntry("frameworkModel", "gpt-5");
-        assertThat(modelRequest.metadata()).containsEntry("connection", "test-connection");
-        assertThat(modelRequest.metadata()).containsEntry("driver", AiDriver.OPENAI.name());
-        assertThat(modelRequest.metadata()).containsEntry("providerModel", "openai/gpt-5");
-        assertThat(modelRequest.metadata()).containsEntry("segment", "planning");
         assertThat(modelFrame.parentFrameId()).isEqualTo(planningFrame.frameId());
-
-        TraceRecord sentRecord = records.stream()
-                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
-                .filter(record -> record.frameType() == TraceFrameType.MODEL_CALL)
-                .findFirst()
-                .orElseThrow();
-        assertThat(sentRecord.data()).isNotNull();
-        assertThat(sentRecord.data().get("system").asText()).contains("Create an ordered flight plan");
-        assertThat(sentRecord.data().get("user").asText()).isEqualTo("hello");
+        assertThat(records).noneMatch(record ->
+                record.recordType() == TraceRecordType.MODEL_REQUEST_SENT);
     }
 
     @Test
@@ -409,18 +390,8 @@ class PlanningServiceTest {
         assertThat(systemPrompt).contains("invoiceParser: Short child tool description");
         assertThat(systemPrompt).doesNotContain("invoiceParser: PARENT_PROMPT_SENTINEL");
 
-        assertThat(readRecords(session).stream()
-                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED
-                        || record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
-                .toList())
-                .hasSize(2)
-                .allSatisfy(record -> {
-                    assertThat(record.data().get("skillPromptPresent").asBoolean()).isTrue();
-                    assertThat(record.data().get("skillPrompt").asText())
-                            .isEqualTo("PARENT_PROMPT_SENTINEL\nAlways verify totals before final response.");
-                    assertThat(record.data().get("promptComposition").asText())
-                            .isEqualTo("skill_prompt_plus_planning_prompt");
-                });
+        assertThat(readRecords(session))
+                .noneMatch(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED);
     }
 
     @Test
@@ -496,14 +467,12 @@ class PlanningServiceTest {
     }
 
     @Test
-    void countsRejectedPlanningRetriesInSessionUsage() {
+    void leavesPlanningRetryUsageToThePhysicalAttemptAdvisor() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         RecordingSessionUsageService usageService = new RecordingSessionUsageService();
         DefaultPlanningService planningService = new DefaultPlanningService(
                 new DefaultPlanTaskLinker(),
-                stateService,
-                usageService,
-                new ModelUsageExtractor());
+                stateService);
         BifrostSession session = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("session-weak-plan-retry-usage", 3);
         SequencePlanningChatClient chatClient = new SequencePlanningChatClient(
                 weakSingleToolPlanJson(),
@@ -521,9 +490,8 @@ class PlanningServiceTest {
                         List.of(invoiceParser, expenseLookup))
                 .orElseThrow();
 
-        assertThat(usageService.lastSkillName).isEqualTo("duplicateInvoiceChecker");
-        assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(2);
-        assertThat(usageService.snapshot(session).usageUnits()).isGreaterThan(0);
+        assertThat(usageService.lastSkillName).isNull();
+        assertThat(usageService.snapshot(session).modelCalls()).isZero();
     }
 
     @Test
@@ -532,9 +500,7 @@ class PlanningServiceTest {
         RecordingSessionUsageService usageService = new RecordingSessionUsageService();
         DefaultPlanningService planningService = new DefaultPlanningService(
                 new DefaultPlanTaskLinker(),
-                stateService,
-                usageService,
-                new ModelUsageExtractor());
+                stateService);
         BifrostSession session = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("session-weak-plan-retry-cap", 3);
         SequencePlanningChatClient chatClient = new SequencePlanningChatClient(
                 weakSingleToolPlanJson(),
@@ -556,7 +522,7 @@ class PlanningServiceTest {
                 .containsExactly("invoiceParser", "invoiceParser", "invoiceParser");
         assertThat(chatClient.systemMessagesSeen()).hasSize(2);
         assertThat(chatClient.systemMessagesSeen().get(1)).contains("Previous plan was too weak");
-        assertThat(usageService.snapshot(session).modelCalls()).isEqualTo(2);
+        assertThat(usageService.snapshot(session).modelCalls()).isZero();
 
         List<TraceRecord> records = readRecords(session);
         assertThat(records).filteredOn(record -> record.recordType() == TraceRecordType.PLAN_VALIDATION_FAILED)

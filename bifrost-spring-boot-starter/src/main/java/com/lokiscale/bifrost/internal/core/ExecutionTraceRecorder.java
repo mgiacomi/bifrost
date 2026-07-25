@@ -4,6 +4,7 @@ import java.util.Map;
 
 import com.lokiscale.bifrost.internal.linter.LinterOutcome;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcome;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageRecord;
 
 public interface ExecutionTraceRecorder
 {
@@ -11,11 +12,14 @@ public interface ExecutionTraceRecorder
 
     void recordFrameClosed(BifrostSession session, ExecutionFrame frame, Map<String, Object> metadata);
 
-    void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
+    void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload);
 
-    void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
+    void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload);
 
-    void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
+    void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, ModelUsageRecord usage, Object payload);
 
     void recordPlanCreated(BifrostSession session, ExecutionPlan plan);
 
@@ -37,7 +41,7 @@ public interface ExecutionTraceRecorder
 
     void recordOutputSchemaOutcome(BifrostSession session, OutputSchemaOutcome outcome);
 
-    void recordError(BifrostSession session, Object payload);
+    void recordError(BifrostSession session, String failureId, Object payload);
 
     void finalizeTrace(BifrostSession session, TraceCompletion completion);
 }

@@ -23,7 +23,6 @@ class ExecutionJournalProjectorTest {
     void derivesSanitizedDeveloperFacingJournalFromTrace() {
         ExecutionJournalProjector projector = new ExecutionJournalProjector();
         TraceRecord toolCall = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 1,
@@ -42,7 +41,6 @@ class ExecutionJournalProjectorTest {
                                         "token", "secret-value",
                                         "target", "service-a")))));
         TraceRecord error = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 2,
@@ -73,7 +71,6 @@ class ExecutionJournalProjectorTest {
     void preservesDistinctToolFailureAndErrorRecords() {
         ExecutionJournalProjector projector = new ExecutionJournalProjector();
         TraceRecord toolFailure = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 1,
@@ -91,7 +88,6 @@ class ExecutionJournalProjectorTest {
                         "exceptionType", "java.lang.IllegalStateException"),
                 OBJECT_MAPPER.valueToTree(Map.of("arguments", Map.of("target", "service-a"))));
         TraceRecord genericError = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 2,
@@ -127,7 +123,6 @@ class ExecutionJournalProjectorTest {
     void surfacesNestedToolFailureSummaryFromTracePayload() {
         ExecutionJournalProjector projector = new ExecutionJournalProjector();
         TraceRecord toolFailure = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 1,
@@ -161,7 +156,6 @@ class ExecutionJournalProjectorTest {
     void preservesRepeatedLegitimateJournalEvents() {
         ExecutionJournalProjector projector = new ExecutionJournalProjector();
         TraceRecord firstToolResult = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 1,
@@ -175,7 +169,6 @@ class ExecutionJournalProjectorTest {
                 Map.of("capabilityName", "deploy.service", "linkedTaskId", "task-1"),
                 OBJECT_MAPPER.valueToTree(Map.of("details", Map.of("result", "ok"))));
         TraceRecord secondToolResult = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 2,
@@ -200,7 +193,6 @@ class ExecutionJournalProjectorTest {
     void doesNotInferUnplannedToolCallsFromLegacyMessageText() {
         ExecutionJournalProjector projector = new ExecutionJournalProjector();
         TraceRecord toolCall = new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 1,

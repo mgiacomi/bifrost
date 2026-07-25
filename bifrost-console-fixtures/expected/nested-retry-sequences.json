@@ -1,0 +1,37 @@
+{
+  "case" : "nested-retry-sequences",
+  "valid" : true,
+  "traceId" : "trace-nested-retry-sequences",
+  "sessionId" : "session-nested-retry-sequences",
+  "outcome" : "SUCCEEDED",
+  "terminalFailureId" : null,
+  "attributedUsage" : {
+    "promptUnits" : 12,
+    "completionUnits" : 4,
+    "totalUnits" : 16
+  },
+  "terminalUsage" : {
+    "promptUnits" : 12,
+    "completionUnits" : 4,
+    "totalUnits" : 16
+  },
+  "unattributedUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "attempts" : [ {
+    "retrySequenceId" : "retry-outer",
+    "attemptId" : "attempt-outer-1",
+    "attemptNumber" : 1
+  }, {
+    "retrySequenceId" : "retry-inner",
+    "attemptId" : "attempt-inner-1",
+    "attemptNumber" : 1
+  }, {
+    "retrySequenceId" : "retry-inner",
+    "attemptId" : "attempt-inner-2",
+    "attemptNumber" : 2
+  } ],
+  "validationLinks" : [ ]
+}

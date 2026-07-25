@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.internal.linter.LinterOutcome;
 import com.lokiscale.bifrost.internal.linter.LinterOutcomeStatus;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcome;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcomeStatus;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageRecord;
 
 import java.time.Clock;
 import java.util.LinkedHashMap;
@@ -38,21 +39,24 @@ public final class DefaultExecutionTraceRecorder implements ExecutionTraceRecord
     }
 
     @Override
-    public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    public void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload)
     {
-        recordAgainstFrame(session, frame, TraceRecordType.MODEL_REQUEST_PREPARED, context.metadata(), payload);
+        recordAgainstFrame(session, frame, TraceRecordType.MODEL_REQUEST_PREPARED, context.metadata(attempt), payload);
     }
 
     @Override
-    public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    public void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload)
     {
-        recordAgainstFrame(session, frame, TraceRecordType.MODEL_REQUEST_SENT, context.metadata(), payload);
+        recordAgainstFrame(session, frame, TraceRecordType.MODEL_REQUEST_SENT, context.metadata(attempt), payload);
     }
 
     @Override
-    public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload)
+    public void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, ModelUsageRecord usage, Object payload)
     {
-        recordAgainstFrame(session, frame, TraceRecordType.MODEL_RESPONSE_RECEIVED, context.metadata(), payload);
+        recordAgainstFrame(session, frame, TraceRecordType.MODEL_RESPONSE_RECEIVED, context.responseMetadata(attempt, usage), payload);
     }
 
     @Override
@@ -134,16 +138,17 @@ public final class DefaultExecutionTraceRecorder implements ExecutionTraceRecord
     }
 
     @Override
-    public void recordError(BifrostSession session, Object payload)
+    public void recordError(BifrostSession session, String failureId, Object payload)
     {
         session.markTraceErrored();
-        recordOnActiveFrame(session, TraceRecordType.ERROR_RECORDED, Map.of(), payload);
+        recordOnActiveFrame(session, TraceRecordType.ERROR_RECORDED, Map.of(
+                "failureId", requireNonBlank(failureId, "failureId")), payload);
     }
 
     @Override
     public void finalizeTrace(BifrostSession session, TraceCompletion completion)
     {
-        session.finalizeTrace(completion == null ? Map.of() : completion.metadata());
+        session.finalizeTrace(Objects.requireNonNull(completion, "completion must not be null"));
     }
 
     private void recordAgainstFrame(BifrostSession session,
@@ -197,5 +202,15 @@ public final class DefaultExecutionTraceRecorder implements ExecutionTraceRecord
         }
         safeMetadata.putIfAbsent("recordedAt", clock.instant().toString());
         return Map.copyOf(safeMetadata);
+    }
+
+    private String requireNonBlank(String value, String fieldName)
+    {
+        Objects.requireNonNull(value, fieldName + " must not be null");
+        if (value.isBlank())
+        {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 }

@@ -84,7 +84,6 @@ const (
 
 // TraceRecord represents a single trace record
 type TraceRecord struct {
-	SchemaVersion int         `json:"schemaVersion"`
 	TraceID       string      `json:"traceId"`
 	SessionID     string      `json:"sessionId"`
 	Sequence      int         `json:"sequence"`

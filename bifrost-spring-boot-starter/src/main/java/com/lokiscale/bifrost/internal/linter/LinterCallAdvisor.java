@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.internal.linter;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceFact;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceRecorder;
+import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaCallAdvisor;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -88,7 +89,8 @@ public final class LinterCallAdvisor implements CallAdvisor
             if (pattern.matcher(candidate).matches())
             {
                 advisorTraceRecorder.record(AdvisorTraceFact.passed(
-                        new AdvisorTraceContext(getName(), skillName, attempt, "passed"),
+                        new AdvisorTraceContext(getName(), skillName, attempt, "passed",
+                                ModelTraceContext.attemptFrom(response.context())),
                         candidate));
                 return record(response, outcome(attempt, LinterOutcomeStatus.PASSED, failureMessage));
             }
@@ -96,7 +98,8 @@ public final class LinterCallAdvisor implements CallAdvisor
             if (attempt > maxRetries)
             {
                 advisorTraceRecorder.record(AdvisorTraceFact.exhausted(
-                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted"),
+                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted",
+                                ModelTraceContext.attemptFrom(response.context())),
                         candidate,
                         failureMessage));
                 return record(response, outcome(attempt, LinterOutcomeStatus.EXHAUSTED, failureMessage));
@@ -105,7 +108,8 @@ public final class LinterCallAdvisor implements CallAdvisor
             record(response, outcome(attempt, LinterOutcomeStatus.RETRYING, failureMessage));
 
             advisorTraceRecorder.record(AdvisorTraceFact.retryRequested(
-                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying"),
+                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying",
+                            ModelTraceContext.attemptFrom(response.context())),
                     failureMessage));
 
             currentRequest = currentRequest.mutate()

@@ -1,0 +1,29 @@
+{
+  "case" : "single-attempt-success",
+  "valid" : true,
+  "traceId" : "trace-single-attempt-success",
+  "sessionId" : "session-single-attempt-success",
+  "outcome" : "SUCCEEDED",
+  "terminalFailureId" : null,
+  "attributedUsage" : {
+    "promptUnits" : 10,
+    "completionUnits" : 4,
+    "totalUnits" : 14
+  },
+  "terminalUsage" : {
+    "promptUnits" : 10,
+    "completionUnits" : 4,
+    "totalUnits" : 14
+  },
+  "unattributedUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "attempts" : [ {
+    "retrySequenceId" : "retry-1",
+    "attemptId" : "attempt-1",
+    "attemptNumber" : 1
+  } ],
+  "validationLinks" : [ ]
+}

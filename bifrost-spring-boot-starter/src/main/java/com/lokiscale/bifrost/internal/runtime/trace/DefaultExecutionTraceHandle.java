@@ -25,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
 {
@@ -43,13 +44,33 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     private final NdjsonExecutionTraceReader reader;
     private final AtomicLong sequence;
     private final AtomicBoolean initialized;
+    private final Supplier<String> idSupplier;
+    private final String threadName;
+    private final String tracePathMetadata;
 
     private volatile boolean errored;
     private volatile boolean completed;
 
     public DefaultExecutionTraceHandle(String sessionId, TracePersistencePolicy persistencePolicy, Clock clock)
     {
-        this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false);
+        this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
+                DefaultExecutionTraceHandle::newTraceId, null, null);
+        resetTraceFile();
+        initialize();
+    }
+
+    DefaultExecutionTraceHandle(
+            String traceId,
+            String sessionId,
+            Path tracePath,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            Supplier<String> idSupplier,
+            String threadName,
+            String tracePathMetadata)
+    {
+        this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
+                idSupplier, threadName, tracePathMetadata);
         resetTraceFile();
         initialize();
     }
@@ -63,7 +84,10 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             boolean completed,
             Clock clock,
             long startingSequence,
-            boolean initialized)
+            boolean initialized,
+            Supplier<String> idSupplier,
+            @Nullable String threadName,
+            @Nullable String tracePathMetadata)
     {
         this.traceId = requireNonBlank(traceId, "traceId");
         this.sessionId = requireNonBlank(sessionId, "sessionId");
@@ -76,6 +100,9 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
         this.reader = new NdjsonExecutionTraceReader();
         this.sequence = new AtomicLong(startingSequence);
         this.initialized = new AtomicBoolean(initialized);
+        this.idSupplier = Objects.requireNonNull(idSupplier, "idSupplier must not be null");
+        this.threadName = threadName == null || threadName.isBlank() ? null : threadName;
+        this.tracePathMetadata = tracePathMetadata == null ? this.tracePath.toString() : tracePathMetadata;
     }
 
     private void initialize()
@@ -84,7 +111,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
         {
             if (initialized.compareAndSet(false, true))
             {
-                appendInternal(TraceRecordType.TRACE_STARTED, null, null, null, null, Map.of("tracePath", tracePath.toString()), Map.of("sessionId", sessionId));
+                appendInternal(TraceRecordType.TRACE_STARTED, null, null, null, null, Map.of("tracePath", tracePathMetadata), Map.of("sessionId", sessionId));
                 appendInternal(TraceRecordType.TRACE_CAPTURE_POLICY_RECORDED, null, null, null, null, Map.of("persistencePolicy", persistencePolicy.name()), null);
             }
         }
@@ -206,7 +233,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             String serialized = jsonData.isTextual() ? jsonData.asText() : OBJECT_MAPPER.writeValueAsString(jsonData);
             if (serialized.length() > DEFAULT_CHUNK_SIZE)
             {
-                String payloadId = UUID.randomUUID().toString();
+                String payloadId = requireNonBlank(idSupplier.get(), "payloadId");
                 int chunkCount = (int) Math.ceil((double) serialized.length() / DEFAULT_CHUNK_SIZE);
                 safeMetadata.put("payloadId", payloadId);
                 safeMetadata.put("chunkCount", chunkCount);
@@ -279,7 +306,6 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             @Nullable JsonNode data)
     {
         return new TraceRecord(
-                TraceRecord.CURRENT_SCHEMA_VERSION,
                 traceId,
                 sessionId,
                 sequenceNumber,
@@ -289,7 +315,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
                 parentFrameId,
                 frameType,
                 route,
-                Thread.currentThread().getName(),
+                threadName == null ? Thread.currentThread().getName() : threadName,
                 metadata,
                 data);
     }

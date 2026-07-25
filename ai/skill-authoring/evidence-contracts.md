@@ -68,6 +68,8 @@ primary        := SKILL_NAME | "(" expression ")"
 
 Planned, started, failed, cancelled, merely visible, wrong-case, or blank capability names do not satisfy final validation. Repeated successful calls remain one set member. An unsupported optional property may be removed during output retry; a required property ultimately fails when its expression remains unsatisfied. Evidence retry uses already completed work and MUST NOT call tools again.
 
+Evidence correction can still make additional physical model attempts and consume model-call and usage quotas. See [traces-and-debugging.md](traces-and-debugging.md) for retry identity and accounting semantics.
+
 `classifyIncident and (investigateNetwork or investigateApp)` succeeds with classification plus either investigator. It does not require both investigators. Runtime prompts and diagnostics retain the canonical expression and structured all/any gaps.
 
 ## Direct-child and nested boundaries

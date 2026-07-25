@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.internal.runtime.attachment;
 
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
+import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -13,5 +14,6 @@ public interface MissionUserMessageSender
             RenderedMissionInput renderedInput,
             List<ToolCallback> visibleTools,
             String skillName,
-            EffectiveSkillExecutionConfiguration executionConfiguration);
+            EffectiveSkillExecutionConfiguration executionConfiguration,
+            ModelTraceContext modelTraceContext);
 }

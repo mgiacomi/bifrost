@@ -4,7 +4,6 @@ import com.lokiscale.bifrost.internal.core.BifrostSession;
 import com.lokiscale.bifrost.internal.core.BifrostStackOverflowException;
 import com.lokiscale.bifrost.internal.core.ExecutionFrame;
 import com.lokiscale.bifrost.internal.core.ExecutionPlan;
-import com.lokiscale.bifrost.internal.core.ModelTraceResult;
 import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.core.ModelExecutionIdentity;
 import com.lokiscale.bifrost.internal.runtime.attachment.DefaultMissionInputMaterializer;
@@ -20,7 +19,6 @@ import com.lokiscale.bifrost.internal.runtime.planning.PlanningService;
 import com.lokiscale.bifrost.internal.runtime.prompt.SkillPromptComposer;
 import com.lokiscale.bifrost.internal.runtime.prompt.SkillPromptComposition;
 import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
-import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.internal.runtime.usage.NoOpSessionUsageService;
 import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
@@ -67,7 +65,6 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
     private final Duration missionTimeout;
     private final ExecutorService missionExecutor;
     private final SessionUsageService sessionUsageService;
-    private final ModelUsageExtractor modelUsageExtractor;
     private final MissionInputMaterializer missionInputMaterializer;
     private final MissionUserMessageSender missionUserMessageSender;
 
@@ -76,18 +73,17 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
             Duration missionTimeout,
             ExecutorService missionExecutor)
     {
-        this(planningService, executionStateService, missionTimeout, missionExecutor, new NoOpSessionUsageService(), new ModelUsageExtractor());
+        this(planningService, executionStateService, missionTimeout, missionExecutor, new NoOpSessionUsageService());
     }
 
     public DefaultMissionExecutionEngine(PlanningService planningService,
             ExecutionStateService executionStateService,
             Duration missionTimeout,
             ExecutorService missionExecutor,
-            SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor)
+            SessionUsageService sessionUsageService)
     {
         this(planningService, executionStateService, missionTimeout, missionExecutor, sessionUsageService,
-                modelUsageExtractor, defaultMaterializer(), new SpringAiMissionUserMessageSender());
+                defaultMaterializer(), new SpringAiMissionUserMessageSender());
     }
 
     public DefaultMissionExecutionEngine(PlanningService planningService,
@@ -95,7 +91,6 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
             Duration missionTimeout,
             ExecutorService missionExecutor,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             MissionInputMaterializer missionInputMaterializer,
             MissionUserMessageSender missionUserMessageSender)
     {
@@ -104,7 +99,6 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
         this.missionTimeout = Objects.requireNonNull(missionTimeout, "missionTimeout must not be null");
         this.missionExecutor = Objects.requireNonNull(missionExecutor, "missionExecutor must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
-        this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
         this.missionInputMaterializer = Objects.requireNonNull(missionInputMaterializer, "missionInputMaterializer must not be null");
         this.missionUserMessageSender = Objects.requireNonNull(missionUserMessageSender, "missionUserMessageSender must not be null");
     }
@@ -164,51 +158,24 @@ public class DefaultMissionExecutionEngine implements MissionExecutionEngine
                             skillName,
                             "mission");
 
-                    MissionTraceResult missionResult = executionStateService.traceModelCall(
-                            session,
-                            modelFrame,
-                            modelTraceContext,
-                            buildMissionPreparedPayload(promptComposition, renderedInput),
-                            markRequestSent ->
-                            {
-                                Map<String, Object> sentPayload = buildMissionSentPayload(promptComposition, renderedInput, visibleTools);
-                                ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
-                                        chatClient,
-                                        executionPrompt,
-                                        renderedInput,
-                                        visibleTools,
-                                        skillName,
-                                        executionConfiguration);
-
-                                markRequestSent.accept(sentPayload);
-                                ChatResponse chatResponse;
-                                String content;
-
-                                try
-                                {
-                                    ChatClientResponse clientResponse = responseSpec.chatClientResponse();
-                                    chatResponse = clientResponse.chatResponse();
-                                    content = extractContentFromChatResponse(chatResponse);
-                                }
-                                catch (UnsupportedOperationException ignored)
-                                {
-                                    chatResponse = null;
-                                    content = responseSpec.content();
-                                }
-
-                                return ModelTraceResult.of(
-                                        new MissionTraceResult(content, chatResponse),
-                                        Map.of("content", content));
-                            });
-
-                    String content = missionResult.content();
-                    sessionUsageService.recordModelResponse(
-                            session,
+                    ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
+                            chatClient,
+                            executionPrompt,
+                            renderedInput,
+                            visibleTools,
                             skillName,
-                            modelIdentity,
-                            modelUsageExtractor.extract(missionResult.chatResponse(), userMessage, executionPrompt, content));
+                            executionConfiguration,
+                            modelTraceContext);
 
-                    return content;
+                    try
+                    {
+                        ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+                        return extractContentFromChatResponse(clientResponse.chatResponse());
+                    }
+                    catch (UnsupportedOperationException ignored)
+                    {
+                        return responseSpec.content();
+                    }
                 }
                 catch (RuntimeException ex)
                 {

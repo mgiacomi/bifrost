@@ -37,6 +37,7 @@ Read [source-verification.md](source-verification.md) before performing a source
 | Design or review a new tree | [checklists/evaluate-a-skill-design.md](checklists/evaluate-a-skill-design.md) | [mental-model.md](mental-model.md) |
 | Add evidence-backed output claims | [evidence-contracts.md](evidence-contracts.md) | [mental-model.md](mental-model.md) |
 | Select a model or configure its connection | [model-selection-and-connections.md](model-selection-and-connections.md) | [mental-model.md](mental-model.md) |
+| Diagnose retries, usage, or terminal failures | [traces-and-debugging.md](traces-and-debugging.md) | The relevant validation or evidence topic |
 | Resolve ambiguity or an edge case | [source-verification.md](source-verification.md) | The topic's implementation anchors |
 
 Do not load every document by default. Start with the routing entry most relevant to the developer's goal and expand only when the task crosses another documented concern.
@@ -58,8 +59,8 @@ Do not load every document by default. Start with the routing entry most relevan
 | Capability visibility and RBAC | Not yet documented | The mental model contains only foundational behavior |
 | Attachments and virtual files | Not yet documented | Requires separate source verification |
 | Model selection and connections | Initial, source-verified | Framework model aliases, named connections, drivers, thinking levels, migration, and diagnostics |
-| Execution limits and quotas | Not yet documented | Requires separate source verification |
-| Traces and debugging | Not yet documented | Evidence documentation identifies relevant trace behavior only |
+| Execution limits and quotas | Foundational | Trace guidance covers model-attempt and usage quota effects; complete limit configuration remains undocumented |
+| Traces and debugging | Source-verified | Physical attempts, retry sequences, usage precision and reconciliation, terminal outcomes/failures, and current-run limitations |
 | Testing skill trees | Not yet documented | The design checklist gives initial review prompts only |
 
 ## Normative Language

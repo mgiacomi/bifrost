@@ -10,7 +10,8 @@ public record AdvisorTraceContext(
         String advisorName,
         @Nullable String skillName,
         int attempt,
-        String status)
+        String status,
+        Map<String, Object> modelAttempt)
 {
     public AdvisorTraceContext
     {
@@ -24,6 +25,7 @@ public record AdvisorTraceContext(
             throw new IllegalArgumentException("attempt must be greater than zero");
         }
         status = requireNonBlank(status, "status");
+        modelAttempt = modelAttempt == null ? Map.of() : Map.copyOf(modelAttempt);
     }
 
     public Map<String, Object> metadata()
@@ -36,6 +38,7 @@ public record AdvisorTraceContext(
         }
         metadata.put("attempt", attempt);
         metadata.put("status", status);
+        metadata.putAll(modelAttempt);
         return Map.copyOf(metadata);
     }
 

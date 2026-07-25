@@ -183,7 +183,6 @@ final class NdjsonExecutionTraceReader implements ExecutionTraceReader
         private void emitTo(Consumer<TraceRecord> consumer) throws IOException
         {
             consumer.accept(new TraceRecord(
-                    envelope.schemaVersion(),
                     envelope.traceId(),
                     envelope.sessionId(),
                     envelope.sequence(),

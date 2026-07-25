@@ -144,7 +144,6 @@ class ExecutionJournalProjectionContractTest {
                                       Map<String, Object> metadata,
                                       Object payload) {
         return new TraceRecord(
-                1,
                 "trace-1",
                 "session-1",
                 sequence,

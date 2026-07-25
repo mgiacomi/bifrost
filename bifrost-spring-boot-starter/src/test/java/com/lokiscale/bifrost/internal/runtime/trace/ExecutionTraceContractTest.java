@@ -40,7 +40,7 @@ class ExecutionTraceContractTest {
             new EffectiveSkillExecutionConfiguration("gpt-5", "test-connection", AiDriver.OPENAI, "openai/gpt-5", "medium");
 
     @Test
-    void modelEventsAreSemanticallyEquivalentAcrossPlanningAndMission() {
+    void engineCallSitesDoNotEmitDuplicateOuterModelEvents() {
         DefaultExecutionStateService stateService = new DefaultExecutionStateService(FIXED_CLOCK);
         DefaultPlanningService planningService = new DefaultPlanningService(new DefaultPlanTaskLinker(), stateService);
 
@@ -78,19 +78,8 @@ class ExecutionTraceContractTest {
 
         List<TraceRecord> missionModelRecords = modelRecords(missionSession);
 
-        assertThat(planningModelRecords).extracting(TraceRecord::recordType)
-                .containsExactly(
-                        TraceRecordType.MODEL_REQUEST_PREPARED,
-                        TraceRecordType.MODEL_REQUEST_SENT,
-                        TraceRecordType.MODEL_RESPONSE_RECEIVED);
-        assertThat(missionModelRecords).extracting(TraceRecord::recordType)
-                .containsExactlyElementsOf(planningModelRecords.stream().map(TraceRecord::recordType).toList());
-
-        assertEquivalentEnvelope(planningModelRecords.get(0), missionModelRecords.get(0));
-        assertEquivalentEnvelope(planningModelRecords.get(1), missionModelRecords.get(1));
-        assertEquivalentEnvelope(planningModelRecords.get(2), missionModelRecords.get(2));
-        assertThat(planningModelRecords).allMatch(record -> "planning".equals(record.metadata().get("segment")));
-        assertThat(missionModelRecords).allMatch(record -> "mission".equals(record.metadata().get("segment")));
+        assertThat(planningModelRecords).isEmpty();
+        assertThat(missionModelRecords).isEmpty();
     }
 
     @Test

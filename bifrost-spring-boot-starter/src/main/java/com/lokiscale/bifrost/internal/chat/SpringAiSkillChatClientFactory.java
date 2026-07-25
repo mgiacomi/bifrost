@@ -4,6 +4,9 @@ import com.lokiscale.bifrost.autoconfigure.AiDriver;
 import com.lokiscale.bifrost.internal.linter.LinterCallAdvisor;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaCallAdvisor;
 import com.lokiscale.bifrost.internal.runtime.evidence.EvidenceContractCallAdvisor;
+import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageExtractor;
+import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.internal.skill.YamlSkillDefinition;
 import org.slf4j.Logger;
@@ -19,6 +22,7 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.openai.OpenAiChatOptions;
 
 import java.util.EnumMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -35,22 +39,31 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
     private final ChatClientBuilderFactory chatClientBuilderFactory;
     private final Map<AiDriver, SkillChatOptionsAdapter> adaptersByDriver;
     private final SkillAdvisorResolver skillAdvisorResolver;
+    private final ModelAttemptCallAdvisor modelAttemptCallAdvisor;
 
     public SpringAiSkillChatClientFactory(SkillChatModelResolver chatModelResolver,
             List<SkillChatOptionsAdapter> adapters,
-            SkillAdvisorResolver skillAdvisorResolver)
+            SkillAdvisorResolver skillAdvisorResolver,
+            ExecutionStateService executionStateService,
+            ModelUsageExtractor modelUsageExtractor,
+            SessionUsageService sessionUsageService)
     {
-        this(chatModelResolver, adapters, skillAdvisorResolver, ChatClient::builder);
+        this(chatModelResolver, adapters, skillAdvisorResolver, executionStateService,
+                modelUsageExtractor, sessionUsageService, ChatClient::builder);
     }
 
     SpringAiSkillChatClientFactory(SkillChatModelResolver chatModelResolver,
             List<SkillChatOptionsAdapter> adapters,
             SkillAdvisorResolver skillAdvisorResolver,
+            ExecutionStateService executionStateService,
+            ModelUsageExtractor modelUsageExtractor,
+            SessionUsageService sessionUsageService,
             ChatClientBuilderFactory chatClientBuilderFactory)
     {
         this.chatModelResolver = Objects.requireNonNull(chatModelResolver, "chatModelResolver must not be null");
         Objects.requireNonNull(adapters, "adapters must not be null");
         this.skillAdvisorResolver = Objects.requireNonNull(skillAdvisorResolver, "skillAdvisorResolver must not be null");
+        this.modelAttemptCallAdvisor = new ModelAttemptCallAdvisor(executionStateService, modelUsageExtractor, sessionUsageService);
         this.chatClientBuilderFactory = Objects.requireNonNull(chatClientBuilderFactory, "chatClientBuilderFactory must not be null");
         this.adaptersByDriver = new EnumMap<>(AiDriver.class);
         for (SkillChatOptionsAdapter adapter : adapters)
@@ -105,19 +118,18 @@ public class SpringAiSkillChatClientFactory implements SkillChatClientFactory
 
     private List<Advisor> resolvedAdvisors(List<Advisor> advisors, boolean includeFinalResponseValidators)
     {
-        if (advisors == null)
+        List<Advisor> resolved = advisors == null ? List.of() : advisors;
+        if (!includeFinalResponseValidators)
         {
-            return List.of();
+            resolved = resolved.stream()
+                    .filter(advisor -> !(advisor instanceof OutputSchemaCallAdvisor))
+                    .filter(advisor -> !(advisor instanceof EvidenceContractCallAdvisor))
+                    .filter(advisor -> !(advisor instanceof LinterCallAdvisor))
+                    .toList();
         }
-        if (includeFinalResponseValidators)
-        {
-            return List.copyOf(advisors);
-        }
-        return advisors.stream()
-                .filter(advisor -> !(advisor instanceof OutputSchemaCallAdvisor))
-                .filter(advisor -> !(advisor instanceof EvidenceContractCallAdvisor))
-                .filter(advisor -> !(advisor instanceof LinterCallAdvisor))
-                .toList();
+        ArrayList<Advisor> instrumented = new ArrayList<>(resolved);
+        instrumented.add(modelAttemptCallAdvisor);
+        return List.copyOf(instrumented);
     }
 
     interface ChatClientBuilderFactory

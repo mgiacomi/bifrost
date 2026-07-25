@@ -36,6 +36,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -757,7 +758,7 @@ class ExecutionCoordinatorTest {
             }
 
             @Override
-            public void finalizeTrace(BifrostSession session, Map<String, Object> metadata) {
+            public void finalizeTrace(BifrostSession session, TraceCompletion completion) {
                 throw new IllegalStateException("cleanup-finalize");
             }
         };
@@ -1334,6 +1335,18 @@ class ExecutionCoordinatorTest {
                     .hasMessageContaining("rootVisibleSkill");
             assertThat(session.getFramesSnapshot()).isEmpty();
             assertThat(session.getExecutionPlan()).isEmpty();
+
+            List<TraceRecord> traceRecords = new ArrayList<>();
+            session.readTraceRecords(traceRecords::add);
+            TraceRecord completion = traceRecords.getLast();
+            assertThat(completion.recordType()).isEqualTo(TraceRecordType.TRACE_COMPLETED);
+            assertThat(completion.metadata()).containsEntry("outcome", TraceOutcome.ABORTED.name());
+            String terminalFailureId = (String) completion.metadata().get("terminalFailureId");
+            assertThat(terminalFailureId).isNotBlank();
+            assertThat(traceRecords.stream()
+                    .filter(record -> record.recordType() == TraceRecordType.ERROR_RECORDED)
+                    .map(record -> record.metadata().get("failureId")))
+                    .contains(terminalFailureId);
         }
     }
 

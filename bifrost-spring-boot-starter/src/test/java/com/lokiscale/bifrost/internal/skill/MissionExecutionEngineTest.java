@@ -125,14 +125,8 @@ class MissionExecutionEngineTest {
                     .startsWith("Act as a careful parser.")
                     .contains("Execute the mission using only the visible YAML tools when needed.");
 
-            TraceRecord sentRecord = readRecords(session).stream()
-                    .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
-                    .findFirst()
-                    .orElseThrow();
-            assertThat(sentRecord.data().get("skillPromptPresent").asBoolean()).isTrue();
-            assertThat(sentRecord.data().get("skillPrompt").asText()).isEqualTo("Act as a careful parser.");
-            assertThat(sentRecord.data().get("promptComposition").asText())
-                    .isEqualTo("skill_prompt_plus_default_execution_prompt");
+            assertThat(readRecords(session)).noneMatch(record ->
+                    record.recordType() == TraceRecordType.MODEL_REQUEST_SENT);
         }
     }
 
@@ -160,19 +154,8 @@ class MissionExecutionEngineTest {
                     null);
 
             assertThat(response).isEqualTo("mission complete");
-            TraceRecord sentRecord = readRecords(session).stream()
-                    .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
-                    .filter(record -> record.frameType() == TraceFrameType.MODEL_CALL)
-                    .findFirst()
-                    .orElseThrow();
-
-            assertThat(sentRecord.data()).isNotNull();
-            assertThat(sentRecord.data().get("system").asText())
-                    .isEqualTo("Execute the mission using only the visible YAML tools when needed.");
-            assertThat(sentRecord.data().get("user").asText()).isEqualTo("hello");
-            assertThat(sentRecord.data().get("toolCallbackCount").asInt()).isEqualTo(1);
-            assertThat(sentRecord.data().get("toolNames").isArray()).isTrue();
-            assertThat(sentRecord.data().get("toolNames")).hasSize(1);
+            assertThat(readRecords(session)).noneMatch(record ->
+                    record.recordType() == TraceRecordType.MODEL_REQUEST_SENT);
         }
     }
 
@@ -251,14 +234,11 @@ class MissionExecutionEngineTest {
             assertThat(String.valueOf(planningInput.get())).contains("attachment=true").doesNotContain("SECRET_IMAGE_BYTES");
             assertThat(chatClient.getUserMediaSeen()).hasSize(1);
 
-            List<String> modelTracePayloads = readRecords(session).stream()
-                    .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED
-                            || record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
-                    .map(record -> String.valueOf(record.data()))
+            List<String> tracePayloads = readRecords(session).stream()
+                    .map(String::valueOf)
                     .toList();
-            assertThat(modelTracePayloads).isNotEmpty();
-            assertThat(modelTracePayloads).allSatisfy(payload -> assertThat(payload)
-                    .contains("attachment")
+            assertThat(tracePayloads).isNotEmpty();
+            assertThat(tracePayloads).allSatisfy(payload -> assertThat(payload)
                     .doesNotContain("SECRET_IMAGE_BYTES")
                     .doesNotContain("base64")
                     .doesNotContain("ByteArrayResource"));

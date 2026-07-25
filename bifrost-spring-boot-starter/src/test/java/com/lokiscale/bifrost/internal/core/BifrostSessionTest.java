@@ -216,8 +216,13 @@ class BifrostSessionTest {
         ExecutionPlan plan = plan("plan-1");
         appendRecord(session, TraceRecordType.PLAN_CREATED, Instant.parse("2026-03-15T12:00:00Z"), Map.of("planId", plan.planId()), plan);
 
-        session.finalizeTrace(Map.of("status", "completed"));
-        session.finalizeTrace(Map.of("entryPoint", "session-runner", "status", "completed"));
+        TraceCompletion completion = new TraceCompletion(
+                TraceOutcome.SUCCEEDED,
+                com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot.empty(),
+                null,
+                Map.of());
+        session.finalizeTrace(completion);
+        session.finalizeTrace(completion);
 
         assertThat(session.getExecutionTrace().completed()).isTrue();
         assertThat(session.getExecutionTrace().filePath()).isNull();

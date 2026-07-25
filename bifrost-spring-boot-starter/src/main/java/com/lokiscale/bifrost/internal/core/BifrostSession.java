@@ -616,8 +616,9 @@ public final class BifrostSession
         }
     }
 
-    public void finalizeTrace(Map<String, Object> metadata)
+    public void finalizeTrace(TraceCompletion completion)
     {
+        Objects.requireNonNull(completion, "completion must not be null");
         lock.lock();
         ExecutionJournal projectedJournal = null;
         IOException projectionFailure = null;
@@ -638,9 +639,31 @@ public final class BifrostSession
             {
                 projectionFailure = ex;
             }
+            TraceCompletion effectiveCompletion = completion;
+            if (projectionFailure != null)
+            {
+                String failureId = completion.terminalFailureId() == null
+                        ? UUID.randomUUID().toString()
+                        : completion.terminalFailureId();
+                effectiveCompletion = completion.asFailed(failureId);
+                handle.markErrored();
+                try
+                {
+                    handle.append(
+                            TraceRecordType.ERROR_RECORDED,
+                            Map.of("failureId", failureId),
+                            Map.of(
+                                    "exceptionType", projectionFailure.getClass().getName(),
+                                    "message", "Execution journal projection failed"));
+                }
+                catch (IOException errorAppendFailure)
+                {
+                    projectionFailure.addSuppressed(errorAppendFailure);
+                }
+            }
             try
             {
-                handle.finalizeTrace(metadata == null ? Map.of() : Map.copyOf(metadata));
+                handle.finalizeTrace(effectiveCompletion.metadata());
             }
             catch (IOException ex)
             {

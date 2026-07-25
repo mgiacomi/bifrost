@@ -1,6 +1,7 @@
 package com.lokiscale.bifrost.internal.core;
 
 import com.lokiscale.bifrost.internal.chat.SkillChatClientFactory;
+import com.lokiscale.bifrost.internal.runtime.BifrostMissionTimeoutException;
 import com.lokiscale.bifrost.internal.runtime.MissionExecutionEngine;
 import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.internal.runtime.tool.ToolCallbackFactory;
@@ -20,6 +21,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.CancellationException;
 
 public class ExecutionCoordinator
 {
@@ -92,6 +95,7 @@ public class ExecutionCoordinator
 
         ExecutionFrame frame = executionStateService.openMissionFrame(session, rootCapability.name(), Map.copyOf(frameParameters));
         Throwable failure = null;
+        String terminalFailureId = null;
 
         try
         {
@@ -123,7 +127,8 @@ public class ExecutionCoordinator
         catch (RuntimeException | Error ex)
         {
             failure = ex;
-            executionStateService.logError(session, errorPayload(skillName, objective, ex));
+            terminalFailureId = UUID.randomUUID().toString();
+            executionStateService.logError(session, terminalFailureId, errorPayload(skillName, objective, ex));
             session.markTraceErrored();
             throw ex;
         }
@@ -132,20 +137,41 @@ public class ExecutionCoordinator
             RuntimeException cleanupFailure = null;
             try
             {
-                executionStateService.closeFrame(session, frame, closeMetadata(failure));
+                executionStateService.closeFrame(session, frame, closeMetadata(failure, terminalFailureId));
             }
             catch (RuntimeException ex)
             {
                 cleanupFailure = ex;
+                if (terminalFailureId == null)
+                {
+                    terminalFailureId = UUID.randomUUID().toString();
+                    try
+                    {
+                        executionStateService.logError(
+                                session,
+                                terminalFailureId,
+                                cleanupErrorPayload(skillName, objective, ex));
+                    }
+                    catch (RuntimeException errorRecordingFailure)
+                    {
+                        ex.addSuppressed(errorRecordingFailure);
+                    }
+                }
             }
             if (topLevelInvocation)
             {
                 try
                 {
-                    executionStateService.finalizeTrace(session, Map.of(
-                            "skillName", skillName,
-                            "objective", objective,
-                            "remainingFrames", session.getFramesSnapshot().size()));
+                    TraceOutcome outcome = terminalOutcome(failure, cleanupFailure);
+                    executionStateService.finalizeTrace(session, new TraceCompletion(
+                            outcome,
+                            session.getSessionUsage().orElse(
+                                    com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot.empty()),
+                            terminalFailureId,
+                            Map.of(
+                                    "skillName", skillName,
+                                    "objective", objective,
+                                    "remainingFrames", session.getFramesSnapshot().size())));
                 }
                 catch (RuntimeException ex)
                 {
@@ -173,15 +199,54 @@ public class ExecutionCoordinator
         }
     }
 
-    private Map<String, Object> closeMetadata(@Nullable Throwable failure)
+    private TraceOutcome terminalOutcome(@Nullable Throwable failure, @Nullable Throwable cleanupFailure)
+    {
+        if (failure == null && cleanupFailure == null)
+        {
+            return TraceOutcome.SUCCEEDED;
+        }
+        return Thread.currentThread().isInterrupted() || isCancellation(failure) || isCancellation(cleanupFailure)
+                ? TraceOutcome.ABORTED
+                : TraceOutcome.FAILED;
+    }
+
+    private boolean isCancellation(@Nullable Throwable failure)
+    {
+        Throwable current = failure;
+        while (current != null)
+        {
+            if (current instanceof BifrostMissionTimeoutException
+                    || current instanceof CancellationException
+                    || current instanceof InterruptedException)
+            {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private Map<String, Object> closeMetadata(@Nullable Throwable failure, @Nullable String failureId)
     {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("status", failure == null ? "completed" : (Thread.currentThread().isInterrupted() ? "aborted" : "failed"));
+        metadata.put("status", failure == null
+                ? "completed"
+                : (Thread.currentThread().isInterrupted() || isCancellation(failure) ? "aborted" : "failed"));
         if (failure != null)
         {
+            metadata.put("failureId", Objects.requireNonNull(failureId, "failureId must not be null"));
             TraceFailureMetadata.addTo(metadata, failure, "Mission execution failed");
         }
         return metadata;
+    }
+
+    private Map<String, Object> cleanupErrorPayload(String skillName, String objective, Throwable failure)
+    {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("skillName", skillName);
+        payload.put("objective", objective);
+        TraceFailureMetadata.addTo(payload, failure, "Mission finalization failed");
+        return Map.copyOf(payload);
     }
 
     private Map<String, Object> errorPayload(String skillName, String objective, Throwable failure)

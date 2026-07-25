@@ -11,7 +11,6 @@ import com.lokiscale.bifrost.internal.core.ExecutionFrame;
 import com.lokiscale.bifrost.internal.core.ExecutionPlan;
 import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.core.ModelExecutionIdentity;
-import com.lokiscale.bifrost.internal.core.ModelTraceResult;
 import com.lokiscale.bifrost.internal.core.PlanTask;
 import com.lokiscale.bifrost.internal.core.PlanTaskStatus;
 import com.lokiscale.bifrost.internal.core.SessionContextRunner;
@@ -39,7 +38,6 @@ import com.lokiscale.bifrost.internal.runtime.prompt.SkillPromptComposer;
 import com.lokiscale.bifrost.internal.runtime.prompt.SkillPromptComposition;
 import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
 import com.lokiscale.bifrost.internal.runtime.tool.DefaultToolCallbackFactory;
-import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageExtractor;
 import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.internal.skill.YamlSkillCatalog;
@@ -105,7 +103,6 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
     private final Duration missionTimeout;
     private final ExecutorService missionExecutor;
     private final SessionUsageService sessionUsageService;
-    private final ModelUsageExtractor modelUsageExtractor;
     private final ObjectMapper objectMapper;
     private final OutputSchemaValidator outputSchemaValidator;
     private final EvidenceBackedOutputValidator evidenceBackedOutputValidator;
@@ -119,11 +116,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             YamlSkillCatalog ignoredYamlSkillCatalog,
             Duration missionTimeout,
             ExecutorService missionExecutor,
-            SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor)
+            SessionUsageService sessionUsageService)
     {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
-                sessionUsageService, modelUsageExtractor, DEFAULT_MAX_STEPS);
+                sessionUsageService, DEFAULT_MAX_STEPS);
         this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
     }
 
@@ -134,11 +130,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             Duration missionTimeout,
             ExecutorService missionExecutor,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             int defaultMaxSteps)
     {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
-                sessionUsageService, modelUsageExtractor, defaultMaxSteps, defaultMaterializer(), new SpringAiMissionUserMessageSender());
+                sessionUsageService, defaultMaxSteps, defaultMaterializer(), new SpringAiMissionUserMessageSender());
         this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
     }
 
@@ -147,11 +142,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             CapabilityRegistry capabilityRegistry,
             Duration missionTimeout,
             ExecutorService missionExecutor,
-            SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor)
+            SessionUsageService sessionUsageService)
     {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
-                sessionUsageService, modelUsageExtractor, DEFAULT_MAX_STEPS);
+                sessionUsageService, DEFAULT_MAX_STEPS);
     }
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
@@ -160,11 +154,10 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             Duration missionTimeout,
             ExecutorService missionExecutor,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             int defaultMaxSteps)
     {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
-                sessionUsageService, modelUsageExtractor, defaultMaxSteps, defaultMaterializer(), new SpringAiMissionUserMessageSender());
+                sessionUsageService, defaultMaxSteps, defaultMaterializer(), new SpringAiMissionUserMessageSender());
     }
 
     public StepLoopMissionExecutionEngine(PlanningService planningService,
@@ -174,12 +167,11 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             Duration missionTimeout,
             ExecutorService missionExecutor,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             MissionInputMaterializer missionInputMaterializer,
             MissionUserMessageSender missionUserMessageSender)
     {
         this(planningService, executionStateService, capabilityRegistry, missionTimeout, missionExecutor,
-                sessionUsageService, modelUsageExtractor, DEFAULT_MAX_STEPS, missionInputMaterializer, missionUserMessageSender);
+                sessionUsageService, DEFAULT_MAX_STEPS, missionInputMaterializer, missionUserMessageSender);
         this.yamlSkillCatalog = Objects.requireNonNull(ignoredYamlSkillCatalog, "yamlSkillCatalog must not be null");
     }
 
@@ -189,7 +181,6 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
             Duration missionTimeout,
             ExecutorService missionExecutor,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             int defaultMaxSteps,
             MissionInputMaterializer missionInputMaterializer,
             MissionUserMessageSender missionUserMessageSender)
@@ -201,7 +192,6 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
         this.missionTimeout = Objects.requireNonNull(missionTimeout, "missionTimeout must not be null");
         this.missionExecutor = Objects.requireNonNull(missionExecutor, "missionExecutor must not be null");
         this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
-        this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
         this.objectMapper = JsonMapper.builder().findAndAddModules().build();
         this.outputSchemaValidator = new OutputSchemaValidator();
         this.evidenceBackedOutputValidator = new EvidenceBackedOutputValidator();
@@ -579,48 +569,24 @@ public class StepLoopMissionExecutionEngine implements MissionExecutionEngine
                     skillName,
                     "step-" + stepNumber);
 
-            return executionStateService.traceModelCall(
-                    session,
-                    modelFrame,
-                    modelTraceContext,
-                    buildStepTracePayload(stepPrompt, renderedInput, promptTraceMetadata),
-                    markRequestSent ->
-                    {
-                        Map<String, Object> sentPayload = buildStepTracePayload(stepPrompt, renderedInput, promptTraceMetadata);
-                        ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
-                                chatClient,
-                                stepPrompt,
-                                renderedInput,
-                                List.of(),
-                                skillName,
-                                executionConfiguration);
+            ChatClient.CallResponseSpec responseSpec = missionUserMessageSender.send(
+                    chatClient,
+                    stepPrompt,
+                    renderedInput,
+                    List.of(),
+                    skillName,
+                    executionConfiguration,
+                    modelTraceContext);
 
-                        markRequestSent.accept(sentPayload);
-
-                        ChatResponse chatResponse;
-                        String responseContent;
-                        try
-                        {
-                            ChatClientResponse clientResponse = responseSpec.chatClientResponse();
-                            chatResponse = clientResponse.chatResponse();
-                            responseContent = extractContentFromChatResponse(chatResponse);
-                        }
-                        catch (UnsupportedOperationException ignored)
-                        {
-                            chatResponse = null;
-                            responseContent = responseSpec.content();
-                        }
-
-                        sessionUsageService.recordModelResponse(
-                                session,
-                                skillName,
-                                modelIdentity,
-                                modelUsageExtractor.extract(chatResponse, renderedInput.userText(), stepPrompt, responseContent));
-
-                        return ModelTraceResult.of(
-                                responseContent,
-                                Map.of("content", responseContent == null ? "" : responseContent));
-                    });
+            try
+            {
+                ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+                return extractContentFromChatResponse(clientResponse.chatResponse());
+            }
+            catch (UnsupportedOperationException ignored)
+            {
+                return responseSpec.content();
+            }
         }
         catch (RuntimeException ex)
         {

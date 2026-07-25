@@ -13,7 +13,6 @@ import com.lokiscale.bifrost.internal.core.ExecutionFrame;
 import com.lokiscale.bifrost.internal.core.ExecutionPlan;
 import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.core.ModelExecutionIdentity;
-import com.lokiscale.bifrost.internal.core.ModelTraceResult;
 import com.lokiscale.bifrost.internal.core.MissionInputMessageFormatter;
 import com.lokiscale.bifrost.internal.core.PlanStatus;
 import com.lokiscale.bifrost.internal.core.PlanTask;
@@ -29,9 +28,6 @@ import com.lokiscale.bifrost.internal.runtime.evidence.EvidenceCoverageValidator
 import com.lokiscale.bifrost.internal.runtime.prompt.SkillPromptComposer;
 import com.lokiscale.bifrost.internal.runtime.prompt.SkillPromptComposition;
 import com.lokiscale.bifrost.internal.runtime.state.ExecutionStateService;
-import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageExtractor;
-import com.lokiscale.bifrost.internal.runtime.usage.NoOpSessionUsageService;
-import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageService;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.internal.skill.YamlSkillDefinition;
 import org.slf4j.Logger;
@@ -66,8 +62,6 @@ public class DefaultPlanningService implements PlanningService
 
     private final PlanTaskLinker planTaskLinker;
     private final ExecutionStateService executionStateService;
-    private final SessionUsageService sessionUsageService;
-    private final ModelUsageExtractor modelUsageExtractor;
     private final ObjectMapper objectMapper;
     private final PlanQualityValidator planQualityValidator;
     private final EvidenceCoverageValidator evidenceCoverageValidator;
@@ -77,23 +71,6 @@ public class DefaultPlanningService implements PlanningService
         this(
                 planTaskLinker,
                 executionStateService,
-                new NoOpSessionUsageService(),
-                new ModelUsageExtractor(),
-                defaultObjectMapper(),
-                new PlanQualityValidator(),
-                new EvidenceCoverageValidator());
-    }
-
-    public DefaultPlanningService(PlanTaskLinker planTaskLinker,
-            ExecutionStateService executionStateService,
-            SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor)
-    {
-        this(
-                planTaskLinker,
-                executionStateService,
-                sessionUsageService,
-                modelUsageExtractor,
                 defaultObjectMapper(),
                 new PlanQualityValidator(),
                 new EvidenceCoverageValidator());
@@ -101,16 +78,12 @@ public class DefaultPlanningService implements PlanningService
 
     DefaultPlanningService(PlanTaskLinker planTaskLinker,
             ExecutionStateService executionStateService,
-            SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             ObjectMapper objectMapper,
             PlanQualityValidator planQualityValidator,
             EvidenceCoverageValidator evidenceCoverageValidator)
     {
         this.planTaskLinker = Objects.requireNonNull(planTaskLinker, "planTaskLinker must not be null");
         this.executionStateService = Objects.requireNonNull(executionStateService, "executionStateService must not be null");
-        this.sessionUsageService = Objects.requireNonNull(sessionUsageService, "sessionUsageService must not be null");
-        this.modelUsageExtractor = Objects.requireNonNull(modelUsageExtractor, "modelUsageExtractor must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.planQualityValidator = Objects.requireNonNull(planQualityValidator, "planQualityValidator must not be null");
         this.evidenceCoverageValidator = Objects.requireNonNull(evidenceCoverageValidator, "evidenceCoverageValidator must not be null");
@@ -293,6 +266,10 @@ public class DefaultPlanningService implements PlanningService
         EvidenceContract evidenceContract = definition.evidenceContract();
         String retryFeedback = null;
         int retryCount = 0;
+        ModelTraceContext modelTraceContext = new ModelTraceContext(
+                ModelExecutionIdentity.from(executionConfiguration),
+                capabilityName,
+                "planning");
 
         while (true)
         {
@@ -305,17 +282,8 @@ public class DefaultPlanningService implements PlanningService
                     chatClient,
                     visibleTools,
                     retryFeedback,
-                    evidenceContract);
-
-            sessionUsageService.recordModelResponse(
-                    session,
-                    capabilityName,
-                    ModelExecutionIdentity.from(executionConfiguration),
-                    modelUsageExtractor.extract(
-                            attemptResult.chatResponse(),
-                            attemptResult.userMessage(),
-                            attemptResult.prompt(),
-                            stringifyPlan(attemptResult.plan())));
+                    evidenceContract,
+                    modelTraceContext);
 
             PlanQualityValidationResult validation = planQualityValidator.validate(attemptResult.plan(), visibleTools);
             EvidenceCoverageResult evidenceCoverage = evidenceCoverageValidator.validatePlanCoverage(
@@ -325,17 +293,21 @@ public class DefaultPlanningService implements PlanningService
             boolean hasDeterministicEvidenceGap = !evidenceCoverage.complete();
             if ((validation.hasErrors() || hasDeterministicEvidenceGap) && retryCount < MAX_PLAN_QUALITY_RETRIES)
             {
-                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, validation.errors(), retryCount);
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED,
+                        validation.errors(), retryCount, attemptResult.modelAttempt());
                 if (hasDeterministicEvidenceGap)
                 {
-                    recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, evidenceCoverage, retryCount);
+                    recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED,
+                            evidenceCoverage, retryCount, attemptResult.modelAttempt());
                 }
 
                 retryFeedback = mergeRetryFeedback(validation.retryFeedback(), evidenceCoverage.retryFeedback());
-                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED, validation.errors(), retryCount);
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED,
+                        validation.errors(), retryCount, attemptResult.modelAttempt());
                 if (hasDeterministicEvidenceGap)
                 {
-                    recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED, evidenceCoverage, retryCount);
+                    recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_RETRY_REQUESTED,
+                            evidenceCoverage, retryCount, attemptResult.modelAttempt());
                 }
 
                 retryCount++;
@@ -344,7 +316,8 @@ public class DefaultPlanningService implements PlanningService
 
             if (hasDeterministicEvidenceGap)
             {
-                recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED, evidenceCoverage, retryCount);
+                recordEvidenceCoverageEvent(session, planningFrame, TraceRecordType.PLAN_VALIDATION_FAILED,
+                        evidenceCoverage, retryCount, attemptResult.modelAttempt());
                 throw new IllegalStateException(
                         "Evidence coverage validation failed for skill '%s': %s"
                                 .formatted(capabilityName, evidenceCoverage.retryFeedback()));
@@ -352,12 +325,14 @@ public class DefaultPlanningService implements PlanningService
 
             if (validation.hasWarnings())
             {
-                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING, validation.warnings(), retryCount);
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING,
+                        validation.warnings(), retryCount, attemptResult.modelAttempt());
             }
 
             if (validation.hasErrors())
             {
-                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING, validation.errors(), retryCount);
+                recordPlanQualityEvent(session, planningFrame, TraceRecordType.PLAN_QUALITY_WARNING,
+                        validation.errors(), retryCount, attemptResult.modelAttempt());
             }
 
             executionStateService.storePlan(session, attemptResult.plan());
@@ -370,7 +345,8 @@ public class DefaultPlanningService implements PlanningService
             ExecutionFrame planningFrame,
             TraceRecordType recordType,
             EvidenceCoverageResult coverage,
-            int retryCount)
+            int retryCount,
+            Map<String, Object> modelAttempt)
     {
         if (coverage == null || coverage.complete())
         {
@@ -388,6 +364,7 @@ public class DefaultPlanningService implements PlanningService
         metadata.put("unsatisfiedRequirements", coverage.issues().stream()
                 .flatMap(issue -> issue.unsatisfiedRequirements().stream())
                 .toList());
+        metadata.putAll(modelAttempt);
 
         executionStateService.recordPlanningEvent(session, planningFrame, recordType, metadata, coverage.issues());
     }
@@ -400,7 +377,8 @@ public class DefaultPlanningService implements PlanningService
             ChatClient chatClient,
             List<ToolCallback> visibleTools,
             @Nullable String retryFeedback,
-            @Nullable EvidenceContract evidenceContract)
+            @Nullable EvidenceContract evidenceContract,
+            ModelTraceContext modelTraceContext)
     {
         String capabilityName = definition.manifest().getName();
         ModelExecutionIdentity modelIdentity = ModelExecutionIdentity.from(executionConfiguration);
@@ -420,55 +398,47 @@ public class DefaultPlanningService implements PlanningService
 
         try
         {
-            ModelTraceContext modelTraceContext = new ModelTraceContext(
-                    modelIdentity,
-                    capabilityName,
-                    "planning");
-
-            PlanningTraceResult planningResult = executionStateService.traceModelCall(
-                    session,
-                    modelFrame,
-                    modelTraceContext,
-                    buildPlanningTracePayload(promptComposition, planningUserMessage),
-                    markRequestSent ->
+            ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
+                    .system(planningPrompt)
+                    .user(planningUserMessage)
+                    .advisors(spec ->
                     {
-                        Map<String, Object> sentPayload = buildPlanningTracePayload(promptComposition, planningUserMessage);
-                        ChatClient.CallResponseSpec responseSpec = chatClient.prompt()
-                                .system(planningPrompt)
-                                .user(planningUserMessage)
-                                .advisors(spec -> spec.param(OutputSchemaCallAdvisor.PLANNING_CALL_KEY, true))
-                                .call();
-                        markRequestSent.accept(sentPayload);
-                        ChatResponse chatResponse;
-                        String planPayload;
+                        spec.param(OutputSchemaCallAdvisor.PLANNING_CALL_KEY, true);
+                        spec.param(ModelTraceContext.REQUEST_CONTEXT_KEY, modelTraceContext);
+                    })
+                    .call();
+            ChatResponse chatResponse;
+            String planPayload;
+            Map<String, Object> modelAttempt;
 
-                        try
-                        {
-                            ChatClientResponse clientResponse = responseSpec.chatClientResponse();
-                            chatResponse = clientResponse.chatResponse();
-                            planPayload = extractContent(chatResponse);
-                            log.debug(
-                                    "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
-                                    capabilityName,
-                                    preview(planPayload));
-                        }
-                        catch (UnsupportedOperationException ignored)
-                        {
-                            chatResponse = null;
-                            planPayload = responseSpec.content();
-                            log.debug(
-                                    "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
-                                    capabilityName,
-                                    preview(planPayload));
-                        }
+            try
+            {
+                ChatClientResponse clientResponse = responseSpec.chatClientResponse();
+                chatResponse = clientResponse.chatResponse();
+                modelAttempt = ModelTraceContext.attemptFrom(clientResponse.context());
+                planPayload = extractContent(chatResponse);
+                log.debug(
+                        "Planning response retrieved via chatClientResponse() for capability='{}' payloadPreview={}...",
+                        capabilityName,
+                        preview(planPayload));
+            }
+            catch (UnsupportedOperationException ignored)
+            {
+                chatResponse = null;
+                modelAttempt = Map.of();
+                planPayload = responseSpec.content();
+                log.debug(
+                        "Planning response retrieved via content() fallback for capability='{}' payloadPreview={}...",
+                        capabilityName,
+                        preview(planPayload));
+            }
 
-                        ExecutionPlan plan = parsePlan(planPayload, capabilityName);
-                        return ModelTraceResult.of(
-                                new PlanningTraceResult(plan, chatResponse),
-                                Map.of("content", planPayload));
-                    });
-
-            return new PlanningAttemptResult(planningResult.plan(), planningResult.chatResponse(), planningPrompt, planningUserMessage);
+            return new PlanningAttemptResult(
+                    parsePlan(planPayload, capabilityName),
+                    chatResponse,
+                    planningPrompt,
+                    planningUserMessage,
+                    modelAttempt);
         }
         catch (RuntimeException ex)
         {
@@ -495,7 +465,8 @@ public class DefaultPlanningService implements PlanningService
             ExecutionFrame planningFrame,
             TraceRecordType recordType,
             List<PlanQualityIssue> issues,
-            int retryCount)
+            int retryCount,
+            Map<String, Object> modelAttempt)
     {
         if (issues == null || issues.isEmpty())
         {
@@ -506,6 +477,7 @@ public class DefaultPlanningService implements PlanningService
         metadata.put("retryCount", retryCount);
         metadata.put("severity", issues.getFirst().severity().name());
         metadata.put("issueCodes", issues.stream().map(PlanQualityIssue::code).distinct().toList());
+        metadata.putAll(modelAttempt);
         List<Map<String, Object>> payload = issues.stream()
                 .map(issue -> Map.<String, Object>of(
                         "code", issue.code(),
@@ -844,14 +816,11 @@ public class DefaultPlanningService implements PlanningService
         return plan == null ? "" : plan.toString();
     }
 
-    private record PlanningTraceResult(ExecutionPlan plan, @Nullable ChatResponse chatResponse)
-    {
-    }
-
     private record PlanningAttemptResult(ExecutionPlan plan,
             @Nullable ChatResponse chatResponse,
             String prompt,
-            String userMessage)
+            String userMessage,
+            Map<String, Object> modelAttempt)
     {
     }
 }

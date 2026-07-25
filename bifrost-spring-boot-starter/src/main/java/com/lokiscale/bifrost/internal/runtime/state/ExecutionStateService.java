@@ -4,7 +4,6 @@ import com.lokiscale.bifrost.internal.core.BifrostSession;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.internal.core.ExecutionFrame;
 import com.lokiscale.bifrost.internal.core.ExecutionPlan;
-import com.lokiscale.bifrost.internal.core.ModelTraceCallback;
 import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import com.lokiscale.bifrost.internal.core.TaskExecutionEvent;
 import com.lokiscale.bifrost.internal.core.TraceFrameType;
@@ -13,6 +12,7 @@ import com.lokiscale.bifrost.internal.core.TraceRecordType;
 import com.lokiscale.bifrost.internal.core.ToolTraceContext;
 import com.lokiscale.bifrost.internal.linter.LinterOutcome;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcome;
+import com.lokiscale.bifrost.internal.runtime.usage.ModelUsageRecord;
 import org.springframework.lang.Nullable;
 
 import java.util.Map;
@@ -53,17 +53,14 @@ public interface ExecutionStateService
             Map<String, Object> metadata,
             Object payload);
 
-    void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
+    void recordModelRequestPrepared(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload);
 
-    void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
+    void recordModelRequestSent(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, Object payload);
 
-    void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context, Object payload);
-
-    <T> T traceModelCall(BifrostSession session,
-            ExecutionFrame frame,
-            ModelTraceContext context,
-            Object preparedPayload,
-            ModelTraceCallback<T> callback);
+    void recordModelResponseReceived(BifrostSession session, ExecutionFrame frame, ModelTraceContext context,
+            Map<String, Object> attempt, ModelUsageRecord usage, Object payload);
 
     void logToolCall(BifrostSession session, TaskExecutionEvent event);
 
@@ -95,15 +92,12 @@ public interface ExecutionStateService
 
     void recordAdvisorResponseMutation(BifrostSession session, AdvisorTraceContext context, Object payload);
 
-    void logError(BifrostSession session, Map<String, Object> payload);
+    String logError(BifrostSession session, Map<String, Object> payload);
+
+    void logError(BifrostSession session, String failureId, Map<String, Object> payload);
 
     void recordStepEvent(BifrostSession session, ExecutionFrame frame, TraceRecordType recordType,
             Map<String, Object> metadata, Object payload);
 
-    void finalizeTrace(BifrostSession session, Map<String, Object> metadata);
-
-    default void finalizeTrace(BifrostSession session, TraceCompletion completion)
-    {
-        finalizeTrace(session, completion == null ? Map.of() : completion.metadata());
-    }
+    void finalizeTrace(BifrostSession session, TraceCompletion completion);
 }

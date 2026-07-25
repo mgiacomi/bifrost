@@ -289,11 +289,9 @@ public class BifrostAutoConfiguration
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     PlanningService planningService(PlanTaskLinker planTaskLinker,
-            ExecutionStateService executionStateService,
-            SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor)
+            ExecutionStateService executionStateService)
     {
-        return new DefaultPlanningService(planTaskLinker, executionStateService, sessionUsageService, modelUsageExtractor);
+        return new DefaultPlanningService(planTaskLinker, executionStateService);
     }
 
     @Bean
@@ -332,7 +330,6 @@ public class BifrostAutoConfiguration
             ExecutionStateService executionStateService,
             BifrostProperties properties,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             MissionInputMaterializer missionInputMaterializer,
             MissionUserMessageSender missionUserMessageSender,
             @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor)
@@ -343,7 +340,6 @@ public class BifrostAutoConfiguration
                 properties.getSession().getMissionTimeout(),
                 bifrostMissionExecutor,
                 sessionUsageService,
-                modelUsageExtractor,
                 missionInputMaterializer,
                 missionUserMessageSender);
     }
@@ -406,9 +402,18 @@ public class BifrostAutoConfiguration
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     SkillChatClientFactory skillChatClientFactory(SkillChatModelResolver chatModelResolver,
             List<SkillChatOptionsAdapter> adapters,
-            SkillAdvisorResolver skillAdvisorResolver)
+            SkillAdvisorResolver skillAdvisorResolver,
+            ExecutionStateService executionStateService,
+            ModelUsageExtractor modelUsageExtractor,
+            SessionUsageService sessionUsageService)
     {
-        return new SpringAiSkillChatClientFactory(chatModelResolver, adapters, skillAdvisorResolver);
+        return new SpringAiSkillChatClientFactory(
+                chatModelResolver,
+                adapters,
+                skillAdvisorResolver,
+                executionStateService,
+                modelUsageExtractor,
+                sessionUsageService);
     }
 
     @Bean
@@ -420,7 +425,6 @@ public class BifrostAutoConfiguration
             YamlSkillCatalog yamlSkillCatalog,
             BifrostProperties properties,
             SessionUsageService sessionUsageService,
-            ModelUsageExtractor modelUsageExtractor,
             MissionInputMaterializer missionInputMaterializer,
             MissionUserMessageSender missionUserMessageSender,
             @Qualifier("bifrostMissionExecutor") ExecutorService bifrostMissionExecutor)
@@ -433,7 +437,6 @@ public class BifrostAutoConfiguration
                 properties.getSession().getMissionTimeout(),
                 bifrostMissionExecutor,
                 sessionUsageService,
-                modelUsageExtractor,
                 missionInputMaterializer,
                 missionUserMessageSender);
     }

@@ -48,4 +48,14 @@ class ModelUsageExtractorTest {
         assertThat(record.promptUnits()).isGreaterThan(0);
         assertThat(record.completionUnits()).isGreaterThan(0);
     }
+
+    @Test
+    void reportsUnavailableWhenNeitherCountsNorEstimableContentExists() {
+        ModelUsageRecord record = extractor.extract(null, "", "", "");
+
+        assertThat(record.precision()).isEqualTo(UsagePrecision.UNAVAILABLE);
+        assertThat(record.promptUnits()).isZero();
+        assertThat(record.completionUnits()).isZero();
+        assertThat(record.totalUnits()).isZero();
+    }
 }

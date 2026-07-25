@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.internal.core.AdvisorTraceContext;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceFact;
 import com.lokiscale.bifrost.internal.core.AdvisorTraceRecorder;
 import com.lokiscale.bifrost.internal.core.BifrostSession;
+import com.lokiscale.bifrost.internal.core.ModelTraceContext;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
@@ -67,7 +68,8 @@ public final class EvidenceContractCallAdvisor implements CallAdvisor
             {
                 passRecorder.accept(result);
                 advisorTraceRecorder.record(AdvisorTraceFact.passed(
-                        new AdvisorTraceContext(getName(), skillName, attempt, "passed"),
+                        new AdvisorTraceContext(getName(), skillName, attempt, "passed",
+                                ModelTraceContext.attemptFrom(response.context())),
                         candidate));
                 return response;
             }
@@ -76,14 +78,16 @@ public final class EvidenceContractCallAdvisor implements CallAdvisor
             if (attempt > maxRetries)
             {
                 advisorTraceRecorder.record(AdvisorTraceFact.exhausted(
-                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted"),
+                        new AdvisorTraceContext(getName(), skillName, attempt, "exhausted",
+                                ModelTraceContext.attemptFrom(response.context())),
                         result.issues()));
 
                 throw new BifrostEvidenceValidationException(skillName, candidate, result.issues(), attempt, maxRetries);
             }
 
             advisorTraceRecorder.record(AdvisorTraceFact.retryRequested(
-                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying"),
+                    new AdvisorTraceContext(getName(), skillName, attempt, "retrying",
+                            ModelTraceContext.attemptFrom(response.context())),
                     result.issues()));
 
             currentRequest = currentRequest.mutate()

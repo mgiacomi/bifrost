@@ -179,17 +179,8 @@ class StepLoopMissionExecutionEngineTest {
                 .startsWith("STEP_PROMPT_SENTINEL")
                 .contains("You are executing a planned mission step by step."));
 
-        assertThat(readRecords(session).stream()
-                .filter(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED
-                        || record.recordType() == TraceRecordType.MODEL_REQUEST_SENT)
-                .toList())
-                .hasSize(4)
-                .allSatisfy(record -> {
-                    assertThat(record.data().get("skillPromptPresent").asBoolean()).isTrue();
-                    assertThat(record.data().get("skillPrompt").asText()).isEqualTo("STEP_PROMPT_SENTINEL");
-                    assertThat(record.data().get("promptComposition").asText())
-                            .isEqualTo("skill_prompt_plus_step_execution_prompt");
-                });
+        assertThat(readRecords(session))
+                .noneMatch(record -> record.recordType() == TraceRecordType.MODEL_REQUEST_PREPARED);
     }
 
     @Test
@@ -1057,8 +1048,7 @@ class StepLoopMissionExecutionEngineTest {
                 new StubYamlSkillCatalog(definition),
                 Duration.ofSeconds(5),
                 missionExecutor,
-                new NoOpSessionUsageService(),
-                new ModelUsageExtractor());
+                new NoOpSessionUsageService());
     }
 
     private static YamlSkillDefinition definition() {

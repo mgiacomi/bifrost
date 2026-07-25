@@ -6,11 +6,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
 public record TraceRecord(
-        int schemaVersion,
         String traceId,
         String sessionId,
         long sequence,
@@ -24,11 +25,8 @@ public record TraceRecord(
         Map<String, Object> metadata,
         @Nullable JsonNode data)
 {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
-
     @JsonCreator
     public TraceRecord(
-            @JsonProperty("schemaVersion") int schemaVersion,
             @JsonProperty("traceId") String traceId,
             @JsonProperty("sessionId") String sessionId,
             @JsonProperty("sequence") long sequence,
@@ -42,7 +40,6 @@ public record TraceRecord(
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("data") @Nullable JsonNode data)
     {
-        this.schemaVersion = schemaVersion <= 0 ? CURRENT_SCHEMA_VERSION : schemaVersion;
         this.traceId = requireNonBlank(traceId, "traceId");
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         this.sequence = sequence;
@@ -53,8 +50,10 @@ public record TraceRecord(
         this.frameType = frameType;
         this.route = normalizeNullable(route);
         this.threadName = threadName == null || threadName.isBlank() ? "unknown" : threadName;
-        this.metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
-        this.data = data == null ? null : data.deepCopy();
+        this.metadata = metadata == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        this.data = data == null || data.isNull() ? null : data.deepCopy();
     }
 
     private static String requireNonBlank(String value, String fieldName)
