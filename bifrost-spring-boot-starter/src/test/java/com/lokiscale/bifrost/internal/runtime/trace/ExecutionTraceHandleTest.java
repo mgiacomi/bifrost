@@ -1,10 +1,13 @@
 package com.lokiscale.bifrost.internal.runtime.trace;
 
+import com.lokiscale.bifrost.internal.core.TraceCompletion;
+import com.lokiscale.bifrost.internal.core.TraceOutcome;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import com.lokiscale.bifrost.internal.core.TraceRecord;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle;
 import com.lokiscale.bifrost.internal.runtime.observation.ObservationCompletionDisposition;
+import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,17 +33,17 @@ class ExecutionTraceHandleTest {
         Clock clock = Clock.fixed(Instant.parse("2026-03-24T12:00:00Z"), ZoneOffset.UTC);
 
         DefaultExecutionTraceHandle never = new DefaultExecutionTraceHandle("never-trace", TracePersistencePolicy.NEVER, clock);
-        never.finalizeTrace(java.util.Map.of("status", "ok"));
+        never.finalizeTrace(completion(TraceOutcome.SUCCEEDED));
         assertThat(Files.exists(never.tracePath())).isFalse();
 
         DefaultExecutionTraceHandle onError = new DefaultExecutionTraceHandle("onerror-trace", TracePersistencePolicy.ONERROR, clock);
         onError.markErrored();
         onError.append(TraceRecordType.ERROR_RECORDED, java.util.Map.of("kind", "runtime"), java.util.Map.of("message", "boom"));
-        onError.finalizeTrace(java.util.Map.of("status", "error"));
+        onError.finalizeTrace(completion(TraceOutcome.FAILED));
         assertThat(Files.exists(onError.tracePath())).isTrue();
 
         DefaultExecutionTraceHandle always = new DefaultExecutionTraceHandle("always-trace", TracePersistencePolicy.ALWAYS, clock);
-        always.finalizeTrace(java.util.Map.of("status", "ok"));
+        always.finalizeTrace(completion(TraceOutcome.SUCCEEDED));
         assertThat(Files.exists(always.tracePath())).isTrue();
     }
 
@@ -92,13 +95,47 @@ class ExecutionTraceHandleTest {
         Clock clock = Clock.fixed(Instant.parse("2026-03-24T12:00:00Z"), ZoneOffset.UTC);
         DefaultExecutionTraceHandle handle = new DefaultExecutionTraceHandle("completed-trace", TracePersistencePolicy.ALWAYS, clock);
 
-        handle.finalizeTrace(java.util.Map.of("status", "ok"));
+        handle.finalizeTrace(completion(TraceOutcome.SUCCEEDED));
 
         assertThatThrownBy(() -> handle.append(TraceRecordType.MODEL_REQUEST_SENT, java.util.Map.of(), java.util.Map.of("objective", "late")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("already completed");
 
         Files.deleteIfExists(handle.tracePath());
+    }
+
+    @Test
+    void constructsDescriptorFromSizeCapturedBeforeAsynchronousDeletion() throws Exception {
+        Clock clock = Clock.fixed(Instant.parse("2026-03-24T12:00:00Z"), ZoneOffset.UTC);
+        CompletionGraceRetention deletionDuringRetention = new CompletionGraceRetention() {
+            @Override
+            public java.util.Optional<RetainedArtifact> retainOrDelete(
+                    Path artifactPath,
+                    Instant finalizedAt,
+                    String traceId,
+                    String sessionId) throws IOException {
+                long sizeBytes = Files.size(artifactPath);
+                Files.delete(artifactPath);
+                return java.util.Optional.of(new RetainedArtifact(
+                        finalizedAt.plusSeconds(1),
+                        sizeBytes));
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        DefaultExecutionTraceHandle handle = new DefaultExecutionTraceHandle(
+                "short-grace-trace",
+                TracePersistencePolicy.NEVER,
+                clock,
+                com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandle.INSTANCE,
+                deletionDuringRetention);
+
+        var artifact = handle.finalizeTrace(completion(TraceOutcome.SUCCEEDED)).orElseThrow();
+
+        assertThat(artifact.sizeBytes()).isPositive();
+        assertThat(handle.tracePath()).doesNotExist();
     }
 
     @Test
@@ -226,5 +263,13 @@ class ExecutionTraceHandleTest {
         List<TraceRecord> records = new ArrayList<>();
         handle.readRecords(records::add);
         return records;
+    }
+
+    private static TraceCompletion completion(TraceOutcome outcome) {
+        return new TraceCompletion(
+                outcome,
+                SessionUsageSnapshot.empty(),
+                outcome == TraceOutcome.SUCCEEDED ? null : "failure",
+                java.util.Map.of("status", outcome == TraceOutcome.SUCCEEDED ? "ok" : "error"));
     }
 }

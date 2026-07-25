@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import com.lokiscale.bifrost.internal.core.ExecutionFrame;
 import com.lokiscale.bifrost.internal.core.ExecutionTrace;
 import com.lokiscale.bifrost.internal.core.ExecutionTraceHandle;
+import com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact;
+import com.lokiscale.bifrost.internal.core.TraceCompletion;
 import com.lokiscale.bifrost.internal.core.TraceFrameType;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import com.lokiscale.bifrost.internal.core.TraceRecord;
@@ -23,6 +25,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,9 +53,11 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     private final String threadName;
     private final String tracePathMetadata;
     private final ExecutionObservationHandle observationHandle;
+    private final CompletionGraceRetention completionGraceRetention;
 
     private volatile boolean errored;
     private volatile boolean completed;
+    private Optional<FinalizedTraceArtifact> finalizedArtifact = Optional.empty();
 
     public DefaultExecutionTraceHandle(String sessionId, TracePersistencePolicy persistencePolicy, Clock clock)
     {
@@ -120,7 +125,8 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             TraceRecordWriter writer)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
-                idSupplier, threadName, tracePathMetadata, observationHandle, writer);
+                idSupplier, threadName, tracePathMetadata, observationHandle, writer,
+                ImmediateCompletionRetention.INSTANCE);
         resetTraceFile();
         initialize();
     }
@@ -141,7 +147,8 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             ExecutionObservationHandle observationHandle)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, errored, completed, clock, startingSequence,
-                initialized, idSupplier, threadName, tracePathMetadata, observationHandle, null);
+                initialized, idSupplier, threadName, tracePathMetadata, observationHandle, null,
+                ImmediateCompletionRetention.INSTANCE);
     }
 
     private DefaultExecutionTraceHandle(
@@ -158,7 +165,8 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             @Nullable String threadName,
             @Nullable String tracePathMetadata,
             ExecutionObservationHandle observationHandle,
-            @Nullable TraceRecordWriter writer)
+            @Nullable TraceRecordWriter writer,
+            CompletionGraceRetention completionGraceRetention)
     {
         this.traceId = requireNonBlank(traceId, "traceId");
         this.sessionId = requireNonBlank(sessionId, "sessionId");
@@ -175,6 +183,22 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
         this.threadName = threadName == null || threadName.isBlank() ? null : threadName;
         this.tracePathMetadata = tracePathMetadata == null ? this.tracePath.toString() : tracePathMetadata;
         this.observationHandle = Objects.requireNonNull(observationHandle, "observationHandle must not be null");
+        this.completionGraceRetention = Objects.requireNonNull(
+                completionGraceRetention, "completionGraceRetention must not be null");
+    }
+
+    public DefaultExecutionTraceHandle(
+            String sessionId,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandle observationHandle,
+            CompletionGraceRetention completionGraceRetention)
+    {
+        this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
+                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle, null,
+                completionGraceRetention);
+        resetTraceFile();
+        initialize();
     }
 
     private void initialize()
@@ -237,30 +261,62 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     }
 
     @Override
-    public synchronized void finalizeTrace(Map<String, Object> completionMetadata) throws IOException
+    public synchronized Optional<FinalizedTraceArtifact> finalizeTrace(TraceCompletion completion) throws IOException
     {
+        Objects.requireNonNull(completion, "completion must not be null");
         if (completed)
         {
-            return;
+            return finalizedArtifact;
         }
 
         initialize();
-        Map<String, Object> metadata = new LinkedHashMap<>();
-
-        if (completionMetadata != null)
-        {
-            metadata.putAll(completionMetadata);
-        }
-
+        Map<String, Object> metadata = new LinkedHashMap<>(completion.metadata());
         metadata.put("errored", errored);
         metadata.put("persistencePolicy", persistencePolicy.name());
-        append(TraceRecordType.TRACE_COMPLETED, metadata, null);
+        TraceRecord completedRecord = append(TraceRecordType.TRACE_COMPLETED, metadata, null);
         completed = true;
 
         if (shouldDeleteAfterCompletion())
         {
-            Files.deleteIfExists(tracePath);
+            Optional<CompletionGraceRetention.RetainedArtifact> retained =
+                    completionGraceRetention.retainOrDelete(
+                            tracePath, completedRecord.timestamp(), traceId, sessionId);
+            if (retained.isEmpty())
+            {
+                finalizedArtifact = Optional.empty();
+                return finalizedArtifact;
+            }
+            CompletionGraceRetention.RetainedArtifact retainedArtifact = retained.orElseThrow();
+            finalizedArtifact = Optional.of(descriptor(
+                    completion,
+                    completedRecord.timestamp(),
+                    retainedArtifact.expiresAt(),
+                    retainedArtifact.sizeBytes()));
+            return finalizedArtifact;
         }
+        finalizedArtifact = Optional.of(descriptor(
+                completion,
+                completedRecord.timestamp(),
+                null,
+                Files.size(tracePath)));
+        return finalizedArtifact;
+    }
+
+    private FinalizedTraceArtifact descriptor(
+            TraceCompletion completion,
+            Instant finalizedAt,
+            @Nullable Instant artifactExpiresAt,
+            long sizeBytes)
+    {
+        return new FinalizedTraceArtifact(
+                traceId,
+                sessionId,
+                completion.outcome(),
+                finalizedAt,
+                tracePath,
+                sizeBytes,
+                persistencePolicy,
+                artifactExpiresAt);
     }
 
     @Override

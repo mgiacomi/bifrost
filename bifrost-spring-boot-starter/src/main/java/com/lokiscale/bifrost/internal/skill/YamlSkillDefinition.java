@@ -16,7 +16,8 @@ public record YamlSkillDefinition(
         Resource resource,
         YamlSkillManifest manifest,
         @Nullable EffectiveSkillExecutionConfiguration executionConfiguration,
-        EvidenceContract evidenceContract)
+        EvidenceContract evidenceContract,
+        YamlSkillSource source)
 {
     private static final ObjectMapper COPY_MAPPER = new ObjectMapper();
 
@@ -24,6 +25,9 @@ public record YamlSkillDefinition(
     {
         manifest = copyManifest(manifest);
         evidenceContract = evidenceContract == null ? EvidenceContract.empty() : evidenceContract;
+        source = source == null
+                ? new YamlSkillSource(resource, resource.getDescription(), new byte[0])
+                : source;
         PublicSkillImplementationType implementationType = implementationType(manifest);
         if (implementationType == PublicSkillImplementationType.MAPPED_JAVA
                 && !StringUtils.hasText(manifest.getMapping().getTargetId()))
@@ -59,7 +63,15 @@ public record YamlSkillDefinition(
             YamlSkillManifest manifest,
             EffectiveSkillExecutionConfiguration executionConfiguration)
     {
-        this(resource, manifest, executionConfiguration, EvidenceContract.empty());
+        this(resource, manifest, executionConfiguration, EvidenceContract.empty(), null);
+    }
+
+    public YamlSkillDefinition(Resource resource,
+            YamlSkillManifest manifest,
+            EffectiveSkillExecutionConfiguration executionConfiguration,
+            EvidenceContract evidenceContract)
+    {
+        this(resource, manifest, executionConfiguration, evidenceContract, null);
     }
 
     public List<String> allowedSkills()

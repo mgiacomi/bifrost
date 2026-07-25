@@ -1,6 +1,9 @@
 package com.lokiscale.bifrost.internal.runtime.observation;
 
 import com.lokiscale.bifrost.internal.core.TraceOutcome;
+import com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact;
+import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
+import com.lokiscale.bifrost.internal.runtime.observation.catalog.InMemoryFinalizedTraceCatalog;
 import com.lokiscale.bifrost.internal.core.TraceRecord;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
 import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot;
@@ -10,6 +13,11 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneOffset;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -22,6 +30,96 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @ExtendWith(OutputCaptureExtension.class)
 class DefaultExecutionObservationHandleTest
 {
+    @org.junit.jupiter.api.io.TempDir
+    Path tempDir;
+
+    @Test
+    void catalogsBeforePublishingAvailableTerminal() throws Exception
+    {
+        Instant now = Instant.parse("2026-07-24T12:00:00Z");
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        Path artifactPath = Files.writeString(tempDir.resolve("trace.ndjson"), "{}\n");
+        try (InMemoryFinalizedTraceCatalog catalog =
+                     new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock))
+        {
+            DefaultExecutionObservationHandleFactory factory = new DefaultExecutionObservationHandleFactory(
+                    new LiveActivityProjector(),
+                    new InMemoryActiveExecutionRegistry(),
+                    new InMemoryActivityReplayBuffer(),
+                    new LiveMonitoringAvailability(),
+                    catalog);
+            ExecutionObservationHandle handle = factory.create("session");
+            handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
+            handle.recordAppended(record(
+                    TraceRecordType.TRACE_COMPLETED,
+                    2,
+                    Map.of("outcome", "SUCCEEDED", "sessionUsageSnapshot", SessionUsageSnapshot.empty())));
+            FinalizedTraceArtifact artifact = new FinalizedTraceArtifact(
+                    "trace", "session", TraceOutcome.SUCCEEDED, now, artifactPath,
+                    Files.size(artifactPath), TracePersistencePolicy.ALWAYS, null);
+
+            handle.close(new ObservationCompletionDisposition(
+                    ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED,
+                    TraceOutcome.SUCCEEDED,
+                    now,
+                    Optional.of(artifact)));
+
+            assertThat(catalog.find("trace")).isPresent();
+            assertThat(factory.replayBuffer().replayAfter(0, 10).activities().getLast().details())
+                    .containsEntry("applicationTraceAvailability", "AVAILABLE")
+                    .containsEntry("applicationTraceExpiresAt", now.plus(Duration.ofHours(1)).toString())
+                    .doesNotContainKey("artifactPath");
+            assertThat(factory.registry().activeCount()).isZero();
+        }
+    }
+
+    @Test
+    void reportsUnavailableWhenArtifactExpiredBeforePublication() throws Exception
+    {
+        Instant now = Instant.parse("2026-07-24T12:00:00Z");
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        Path artifactPath = Files.writeString(tempDir.resolve("expired-trace.ndjson"), "{}\n");
+        try (InMemoryFinalizedTraceCatalog catalog =
+                     new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock))
+        {
+            DefaultExecutionObservationHandleFactory factory = new DefaultExecutionObservationHandleFactory(
+                    new LiveActivityProjector(),
+                    new InMemoryActiveExecutionRegistry(),
+                    new InMemoryActivityReplayBuffer(),
+                    new LiveMonitoringAvailability(),
+                    catalog);
+            ExecutionObservationHandle handle = factory.create("session");
+            handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
+            handle.recordAppended(record(
+                    TraceRecordType.TRACE_COMPLETED,
+                    2,
+                    Map.of("outcome", "SUCCEEDED", "sessionUsageSnapshot", SessionUsageSnapshot.empty())));
+            FinalizedTraceArtifact expired = new FinalizedTraceArtifact(
+                    "trace",
+                    "session",
+                    TraceOutcome.SUCCEEDED,
+                    now.minusSeconds(30),
+                    artifactPath,
+                    Files.size(artifactPath),
+                    TracePersistencePolicy.NEVER,
+                    now);
+
+            handle.close(new ObservationCompletionDisposition(
+                    ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED,
+                    TraceOutcome.SUCCEEDED,
+                    now,
+                    Optional.of(expired)));
+
+            assertThat(catalog.find("trace")).isEmpty();
+            assertThat(factory.replayBuffer().replayAfter(0, 10).activities().getLast().details())
+                    .containsEntry("applicationTraceAvailability", "UNAVAILABLE")
+                    .containsEntry("applicationTraceUnavailableReason", "CATALOG_PUBLICATION_FAILED")
+                    .doesNotContainKey("applicationTraceExpiresAt");
+            assertThat(factory.availability().isAvailable()).isTrue();
+            assertThat(factory.registry().activeCount()).isZero();
+        }
+    }
+
     @Test
     void holdsCanonicalCompletionUntilCoreSuccessClose()
     {

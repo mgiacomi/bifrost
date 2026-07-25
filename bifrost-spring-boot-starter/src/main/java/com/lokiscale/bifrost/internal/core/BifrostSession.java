@@ -199,7 +199,7 @@ public final class BifrostSession
         }
         catch (RuntimeException | Error ex)
         {
-            closeObservation(ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED, null);
+            closeObservation(ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED, null, Optional.empty());
             throw ex;
         }
         this.executionTraceHandle = traceHandle;
@@ -710,6 +710,7 @@ public final class BifrostSession
         RuntimeException uncheckedFinalizationFailure = null;
         Error finalizationError = null;
         TraceOutcome observationOutcome = completion.outcome();
+        Optional<FinalizedTraceArtifact> finalizedArtifact = Optional.empty();
 
         try
         {
@@ -751,7 +752,7 @@ public final class BifrostSession
             }
             try
             {
-                handle.finalizeTrace(effectiveCompletion.metadata());
+                finalizedArtifact = handle.finalizeTrace(effectiveCompletion);
             }
             catch (IOException ex)
             {
@@ -781,7 +782,8 @@ public final class BifrostSession
                         && finalizationError == null
                         ? ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED
                         : ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED,
-                observationOutcome);
+                observationOutcome,
+                finalizedArtifact);
         if (finalizationError != null)
         {
             throw finalizationError;
@@ -806,11 +808,18 @@ public final class BifrostSession
 
     private void closeObservation(
             ObservationCompletionDisposition.Status status,
-            @Nullable TraceOutcome outcome)
+            @Nullable TraceOutcome outcome,
+            Optional<FinalizedTraceArtifact> finalizedArtifact)
     {
         try
         {
-            executionObservationHandle.close(new ObservationCompletionDisposition(status, outcome, java.time.Instant.now(clock)));
+            executionObservationHandle.close(new ObservationCompletionDisposition(
+                    status,
+                    outcome,
+                    java.time.Instant.now(clock),
+                    status == ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED
+                            ? finalizedArtifact
+                            : Optional.empty()));
         }
         catch (RuntimeException ignored)
         {

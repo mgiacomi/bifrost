@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -94,9 +95,10 @@ public class YamlSkillCatalog implements InitializingBean
     {
         skillsByName.clear();
         diagnosticSkillNames.clear();
-        for (Resource resource : discoverResources())
+        for (DiscoveredYamlSkillResource discovered : discoverResources())
         {
-            YamlSkillDefinition definition = loadDefinition(resource);
+            Resource resource = discovered.resource();
+            YamlSkillDefinition definition = loadDefinition(discovered);
             YamlSkillDefinition previous = skillsByName.putIfAbsent(definition.manifest().getName(), definition);
             if (previous != null)
             {
@@ -121,9 +123,9 @@ public class YamlSkillCatalog implements InitializingBean
         return skillsByName.get(name);
     }
 
-    private List<Resource> discoverResources()
+    private List<DiscoveredYamlSkillResource> discoverResources()
     {
-        List<Resource> resources = new ArrayList<>();
+        List<DiscoveredYamlSkillResource> resources = new ArrayList<>();
 
         for (String location : skillProperties.getLocations())
         {
@@ -134,7 +136,7 @@ public class YamlSkillCatalog implements InitializingBean
                 {
                     if (resource.exists())
                     {
-                        resources.add(resource);
+                        resources.add(new DiscoveredYamlSkillResource(location, resource));
                     }
                 }
             }
@@ -148,20 +150,31 @@ public class YamlSkillCatalog implements InitializingBean
             }
         }
 
-        resources.sort(Comparator.comparing(this::describe));
+        resources.sort(Comparator.comparing(resource -> describe(resource.resource())));
         return resources;
     }
 
-    private YamlSkillDefinition loadDefinition(Resource resource)
+    private YamlSkillDefinition loadDefinition(DiscoveredYamlSkillResource discovered)
     {
-        YamlSkillManifest manifest = readManifest(resource);
+        Resource resource = discovered.resource();
+        byte[] bytes;
+        try (InputStream inputStream = resource.getInputStream())
+        {
+            bytes = inputStream.readAllBytes();
+        }
+        catch (IOException ex)
+        {
+            throw new IllegalStateException("Failed to read YAML skill from " + describe(resource), ex);
+        }
+        YamlSkillManifest manifest = readManifest(resource, bytes);
+        YamlSkillSource source = new YamlSkillSource(resource, discovered.locationPattern(), bytes);
         validateRequiredField(resource, "name", manifest.getName());
         validateRequiredField(resource, "description", manifest.getDescription());
 
         if (manifest.isDeclared(YamlSkillManifest.Field.MAPPING))
         {
             validateMappedManifest(resource, manifest);
-            return new YamlSkillDefinition(resource, manifest, null, EvidenceContract.empty());
+            return new YamlSkillDefinition(resource, manifest, null, EvidenceContract.empty(), source);
         }
 
         if (!StringUtils.hasText(manifest.getModel()))
@@ -193,7 +206,8 @@ public class YamlSkillCatalog implements InitializingBean
                 resource,
                 manifest,
                 effectiveConfiguration,
-                evidenceContract);
+                evidenceContract,
+                source);
     }
 
     private void validateMappedManifest(Resource resource, YamlSkillManifest manifest)
@@ -252,9 +266,9 @@ public class YamlSkillCatalog implements InitializingBean
         return catalogEntry.supportsThinking() ? DEFAULT_THINKING_LEVEL : null;
     }
 
-    private YamlSkillManifest readManifest(Resource resource)
+    private YamlSkillManifest readManifest(Resource resource, byte[] bytes)
     {
-        try (InputStream inputStream = resource.getInputStream())
+        try (InputStream inputStream = new ByteArrayInputStream(bytes))
         {
             JsonNode root = yamlObjectMapper.readTree(inputStream);
             if (root == null || !root.isObject())

@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
+import com.lokiscale.bifrost.internal.core.TraceCompletion;
+import com.lokiscale.bifrost.internal.core.TraceOutcome;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
+import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -311,15 +314,22 @@ class ConsoleTraceFixtureCorpusTest
             default -> throw new IllegalArgumentException(name);
         }
 
-        Map<String, Object> completion = new LinkedHashMap<>();
-        completion.put("outcome", outcome);
-        completion.put("sessionUsageSnapshot", terminal.asMap());
         if (terminalFailureId != null)
         {
-            completion.put("terminalFailureId", terminalFailureId);
             handle.markErrored();
         }
-        handle.finalizeTrace(completion);
+        Map<String, Object> completionDetails = new LinkedHashMap<>();
+        completionDetails.put("outcome", outcome);
+        completionDetails.put("sessionUsageSnapshot", terminal.asMap());
+        handle.finalizeTrace(new TraceCompletion(
+                TraceOutcome.valueOf(outcome),
+                new SessionUsageSnapshot(
+                        0, 0, 0, 0,
+                        terminal.promptUnits(), terminal.completionUnits(),
+                        terminal.promptUnits() + terminal.completionUnits(),
+                        0, 0, 0),
+                terminalFailureId,
+                completionDetails));
         writeExpected(root, name, validExpected(name, outcome, terminalFailureId, attributed, terminal));
     }
 

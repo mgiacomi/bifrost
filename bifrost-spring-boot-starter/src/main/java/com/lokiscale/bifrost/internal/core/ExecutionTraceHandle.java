@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.internal.core;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 public interface ExecutionTraceHandle
@@ -22,7 +23,7 @@ public interface ExecutionTraceHandle
 
         void markErrored();
 
-        void finalizeTrace(Map<String, Object> completionMetadata) throws IOException;
+        Optional<FinalizedTraceArtifact> finalizeTrace(TraceCompletion completion) throws IOException;
 
         void readRecords(Consumer<TraceRecord> consumer) throws IOException;
 }

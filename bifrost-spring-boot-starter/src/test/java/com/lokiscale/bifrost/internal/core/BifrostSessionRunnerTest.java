@@ -518,9 +518,9 @@ class BifrostSessionRunnerTest {
         }
 
         @Override
-        public void finalizeTrace(Map<String, Object> completionMetadata) throws IOException {
+        public java.util.Optional<FinalizedTraceArtifact> finalizeTrace(TraceCompletion completion) throws IOException {
             if (failAfterCompletion) {
-                delegate.finalizeTrace(completionMetadata);
+                delegate.finalizeTrace(completion);
             }
             if (uncheckedFailure != null) {
                 throw uncheckedFailure;

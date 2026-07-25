@@ -1,6 +1,8 @@
 package com.lokiscale.bifrost.internal.runtime.observation;
 
 import com.lokiscale.bifrost.internal.core.TraceRecord;
+import com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTraceCatalog;
+import com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTraceCatalogEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,6 +20,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
     private final ActiveExecutionRegistry registry;
     private final ActivityReplayBuffer replayBuffer;
     private final LiveMonitoringAvailability availability;
+    private final FinalizedTraceCatalog traceCatalog;
     private final ExecutionProjectionState state;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -31,11 +34,51 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             ActivityReplayBuffer replayBuffer,
             LiveMonitoringAvailability availability)
     {
+        this(sessionId, projector, registry, replayBuffer, availability,
+                new FinalizedTraceCatalog()
+                {
+                    @Override
+                    public FinalizedTraceCatalogEntry publish(
+                            com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact artifact)
+                    {
+                        throw new IllegalStateException("No finalized trace catalog is configured");
+                    }
+
+                    @Override
+                    public java.util.Optional<FinalizedTraceCatalogEntry> find(String traceId)
+                    {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public com.lokiscale.bifrost.internal.runtime.observation.catalog.TraceCatalogSlice list(
+                            long highWaterOrdinal, long beforeOrdinal, int limit)
+                    {
+                        return new com.lokiscale.bifrost.internal.runtime.observation.catalog.TraceCatalogSlice(
+                                0, java.util.List.of());
+                    }
+
+                    @Override
+                    public void close()
+                    {
+                    }
+                });
+    }
+
+    DefaultExecutionObservationHandle(
+            String sessionId,
+            LiveActivityProjector projector,
+            ActiveExecutionRegistry registry,
+            ActivityReplayBuffer replayBuffer,
+            LiveMonitoringAvailability availability,
+            FinalizedTraceCatalog traceCatalog)
+    {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         this.projector = Objects.requireNonNull(projector, "projector must not be null");
         this.registry = Objects.requireNonNull(registry, "registry must not be null");
         this.replayBuffer = Objects.requireNonNull(replayBuffer, "replayBuffer must not be null");
         this.availability = Objects.requireNonNull(availability, "availability must not be null");
+        this.traceCatalog = Objects.requireNonNull(traceCatalog, "traceCatalog must not be null");
         this.state = new ExecutionProjectionState(sessionId);
     }
 
@@ -101,7 +144,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             if (disposition.status()
                     == ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED)
             {
-                publishSuccessfulTerminal();
+                publishSuccessfulTerminal(disposition);
             }
             else
             {
@@ -127,7 +170,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
         }
     }
 
-    private void publishSuccessfulTerminal()
+    private void publishSuccessfulTerminal(ObservationCompletionDisposition disposition)
     {
         ExecutionActivity completion = heldCompletion;
         heldCompletion = null;
@@ -135,13 +178,39 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
         {
             throw new IllegalStateException("Canonical completion was not observed before successful close");
         }
-        replayBuffer.append(completion);
+        ExecutionActivity enriched;
+        if (disposition.finalizedArtifact().isEmpty())
+        {
+            enriched = completion.withTraceAvailability("UNAVAILABLE", "NOT_RETAINED", null);
+        }
+        else
+        {
+            try
+            {
+                FinalizedTraceCatalogEntry entry = traceCatalog.publish(disposition.finalizedArtifact().orElseThrow());
+                enriched = completion.withTraceAvailability(
+                        "AVAILABLE", null, entry.applicationTraceExpiresAt());
+            }
+            catch (RuntimeException ex)
+            {
+                LOGGER.warn(
+                        "Trace catalog publication failed sessionId={} traceId={} exceptionClass={}",
+                        sessionId,
+                        traceId == null ? "unknown" : traceId,
+                        ex.getClass().getName());
+                enriched = completion.withTraceAvailability(
+                        "UNAVAILABLE", "CATALOG_PUBLICATION_FAILED", null);
+            }
+        }
+        replayBuffer.append(enriched);
     }
 
     private ExecutionActivity exceptionalTerminal(ObservationCompletionDisposition disposition)
     {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("reason", ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED.name());
+        details.put("applicationTraceAvailability", "UNAVAILABLE");
+        details.put("applicationTraceUnavailableReason", "CORE_FINALIZATION_FAILED");
         if (disposition.outcome() != null)
         {
             details.put("outcome", disposition.outcome().name());

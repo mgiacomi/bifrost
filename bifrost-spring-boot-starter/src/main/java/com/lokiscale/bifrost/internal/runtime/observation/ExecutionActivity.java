@@ -97,6 +97,38 @@ public record ExecutionActivity(
                 route, summary, details, retainedWeight);
     }
 
+    ExecutionActivity withTraceAvailability(
+            String availability,
+            @Nullable String unavailableReason,
+            @Nullable Instant expiresAt)
+    {
+        LinkedHashMap<String, Object> enriched = new LinkedHashMap<>(details);
+        enriched.put("applicationTraceAvailability", requireNonBlank(availability, "availability"));
+        if (unavailableReason != null)
+        {
+            enriched.put("applicationTraceUnavailableReason", requireNonBlank(unavailableReason, "unavailableReason"));
+        }
+        if (expiresAt != null)
+        {
+            enriched.put("applicationTraceExpiresAt", expiresAt.toString());
+        }
+        int weight = 128
+                + ExecutionObservationLimits.utf8Weight(sessionId)
+                + ExecutionObservationLimits.utf8Weight(traceId)
+                + ExecutionObservationLimits.utf8Weight(frameId)
+                + ExecutionObservationLimits.utf8Weight(route)
+                + ExecutionObservationLimits.utf8Weight(kind.name())
+                + ExecutionObservationLimits.utf8Weight(summary);
+        for (Map.Entry<String, Object> entry : enriched.entrySet())
+        {
+            weight += ExecutionObservationLimits.utf8Weight(entry.getKey())
+                    + ExecutionObservationLimits.utf8Weight(String.valueOf(entry.getValue())) + 8;
+        }
+        return new ExecutionActivity(
+                deliveryCursor, sessionId, traceId, canonicalSequence, timestamp, kind, frameId, frameType,
+                route, summary, enriched, Math.max(1, weight));
+    }
+
     private static String requireNonBlank(String value, String name)
     {
         Objects.requireNonNull(value, name + " must not be null");

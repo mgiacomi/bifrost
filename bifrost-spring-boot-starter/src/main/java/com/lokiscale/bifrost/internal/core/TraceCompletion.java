@@ -4,6 +4,7 @@ import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot;
 import org.springframework.lang.Nullable;
 
 import java.util.LinkedHashMap;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 
@@ -29,19 +30,41 @@ public record TraceCompletion(
         {
             throw new IllegalArgumentException("A failed or aborted trace must have a terminalFailureId");
         }
-        details = details == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(details));
+        details = details == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(details));
     }
 
     public Map<String, Object> metadata()
     {
+        if (details.containsKey("sessionUsageSnapshot"))
+        {
+            LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("outcome", outcome.name());
+            metadata.put("sessionUsageSnapshot", details.get("sessionUsageSnapshot"));
+            if (terminalFailureId != null)
+            {
+                metadata.put("terminalFailureId", terminalFailureId);
+            }
+            details.forEach((key, value) ->
+            {
+                if (!"outcome".equals(key)
+                        && !"sessionUsageSnapshot".equals(key)
+                        && !"terminalFailureId".equals(key))
+                {
+                    metadata.put(key, value);
+                }
+            });
+            return Collections.unmodifiableMap(metadata);
+        }
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>(details);
         metadata.put("outcome", outcome.name());
-        metadata.put("sessionUsageSnapshot", sessionUsageSnapshot);
+        metadata.putIfAbsent("sessionUsageSnapshot", sessionUsageSnapshot);
         if (terminalFailureId != null)
         {
             metadata.put("terminalFailureId", terminalFailureId);
         }
-        return Map.copyOf(metadata);
+        return Collections.unmodifiableMap(metadata);
     }
 
     public TraceCompletion asFailed(String failureId)
