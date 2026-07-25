@@ -8,6 +8,10 @@ import com.lokiscale.bifrost.internal.linter.LinterOutcome;
 import com.lokiscale.bifrost.internal.outputschema.OutputSchemaOutcome;
 import com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle;
 import com.lokiscale.bifrost.internal.runtime.trace.ExecutionJournalProjector;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory;
+import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory;
+import com.lokiscale.bifrost.internal.runtime.observation.ObservationCompletionDisposition;
 import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
@@ -38,6 +42,8 @@ public final class BifrostSession
     private final String sessionId;
     private final int maxDepth;
     @JsonIgnore
+    private final Clock clock;
+    @JsonIgnore
     private final ReentrantLock lock;
     @JsonIgnore
     private final Deque<ExecutionFrame> frames;
@@ -45,6 +51,8 @@ public final class BifrostSession
     private final Map<String, Integer> toolActivityCountByFrameId;
     @JsonIgnore
     private final @Nullable ExecutionTraceHandle executionTraceHandle;
+    @JsonIgnore
+    private final ExecutionObservationHandle executionObservationHandle;
     @JsonIgnore
     private final ExecutionJournalProjector journalProjector;
     @JsonIgnore
@@ -94,6 +102,30 @@ public final class BifrostSession
         this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, persistencePolicy, clock);
     }
 
+    BifrostSession(String sessionId,
+            int maxDepth,
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory)
+    {
+        this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, persistencePolicy, clock,
+                observationHandleFactory,
+                DefaultExecutionTraceHandle::new);
+    }
+
+    BifrostSession(String sessionId,
+            int maxDepth,
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory,
+            InternalExecutionTraceHandleFactory traceHandleFactory)
+    {
+        this(sessionId, maxDepth, List.of(), null, null, null, null, authentication, persistencePolicy, clock,
+                observationHandleFactory, traceHandleFactory);
+    }
+
     BifrostSession(
             String sessionId,
             int maxDepth,
@@ -106,6 +138,44 @@ public final class BifrostSession
             TracePersistencePolicy persistencePolicy,
             Clock clock)
     {
+        this(sessionId, maxDepth, frames, executionPlan, lastLinterOutcome, lastOutputSchemaOutcome,
+                sessionUsage, authentication, persistencePolicy, clock,
+                NoOpExecutionObservationHandleFactory.INSTANCE,
+                DefaultExecutionTraceHandle::new);
+    }
+
+    BifrostSession(
+            String sessionId,
+            int maxDepth,
+            List<ExecutionFrame> frames,
+            ExecutionPlan executionPlan,
+            @Nullable LinterOutcome lastLinterOutcome,
+            @Nullable OutputSchemaOutcome lastOutputSchemaOutcome,
+            @Nullable SessionUsageSnapshot sessionUsage,
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory)
+    {
+        this(sessionId, maxDepth, frames, executionPlan, lastLinterOutcome, lastOutputSchemaOutcome,
+                sessionUsage, authentication, persistencePolicy, clock, observationHandleFactory,
+                DefaultExecutionTraceHandle::new);
+    }
+
+    BifrostSession(
+            String sessionId,
+            int maxDepth,
+            List<ExecutionFrame> frames,
+            ExecutionPlan executionPlan,
+            @Nullable LinterOutcome lastLinterOutcome,
+            @Nullable OutputSchemaOutcome lastOutputSchemaOutcome,
+            @Nullable SessionUsageSnapshot sessionUsage,
+            @Nullable Authentication authentication,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory,
+            InternalExecutionTraceHandleFactory traceHandleFactory)
+    {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         if (maxDepth <= 0)
         {
@@ -113,12 +183,26 @@ public final class BifrostSession
         }
 
         this.maxDepth = maxDepth;
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.lock = new ReentrantLock();
         this.frames = new ArrayDeque<>(frames == null ? List.of() : List.copyOf(frames));
         this.toolActivityCountByFrameId = new HashMap<>();
         // The runtime supports one session lifecycle: a live in-process session with a canonical trace handle.
         this.journalProjector = new ExecutionJournalProjector();
-        this.executionTraceHandle = new DefaultExecutionTraceHandle(sessionId, persistencePolicy, clock);
+        this.executionObservationHandle = Objects.requireNonNull(observationHandleFactory,
+                "observationHandleFactory must not be null").create(this.sessionId);
+        ExecutionTraceHandle traceHandle;
+        try
+        {
+            traceHandle = Objects.requireNonNull(traceHandleFactory, "traceHandleFactory must not be null").create(
+                    this.sessionId, persistencePolicy, this.clock, this.executionObservationHandle);
+        }
+        catch (RuntimeException | Error ex)
+        {
+            closeObservation(ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED, null);
+            throw ex;
+        }
+        this.executionTraceHandle = traceHandle;
         this.finalizedExecutionJournal = null;
         this.executionPlan = executionPlan;
         this.lastLinterOutcome = lastLinterOutcome;
@@ -623,6 +707,9 @@ public final class BifrostSession
         ExecutionJournal projectedJournal = null;
         IOException projectionFailure = null;
         IOException finalizationFailure = null;
+        RuntimeException uncheckedFinalizationFailure = null;
+        Error finalizationError = null;
+        TraceOutcome observationOutcome = completion.outcome();
 
         try
         {
@@ -646,6 +733,7 @@ public final class BifrostSession
                         ? UUID.randomUUID().toString()
                         : completion.terminalFailureId();
                 effectiveCompletion = completion.asFailed(failureId);
+                observationOutcome = effectiveCompletion.outcome();
                 handle.markErrored();
                 try
                 {
@@ -674,9 +762,33 @@ public final class BifrostSession
                 finalizedExecutionJournal = projectedJournal;
             }
         }
+        catch (RuntimeException ex)
+        {
+            uncheckedFinalizationFailure = ex;
+        }
+        catch (Error ex)
+        {
+            finalizationError = ex;
+        }
         finally
         {
             lock.unlock();
+        }
+        closeObservation(
+                finalizationFailure == null
+                        && projectionFailure == null
+                        && uncheckedFinalizationFailure == null
+                        && finalizationError == null
+                        ? ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED
+                        : ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED,
+                observationOutcome);
+        if (finalizationError != null)
+        {
+            throw finalizationError;
+        }
+        if (uncheckedFinalizationFailure != null)
+        {
+            throw uncheckedFinalizationFailure;
         }
         if (finalizationFailure != null)
         {
@@ -689,6 +801,20 @@ public final class BifrostSession
         if (projectionFailure != null)
         {
             throw new IllegalStateException("Failed to finalize execution trace for session '" + sessionId + "'", projectionFailure);
+        }
+    }
+
+    private void closeObservation(
+            ObservationCompletionDisposition.Status status,
+            @Nullable TraceOutcome outcome)
+    {
+        try
+        {
+            executionObservationHandle.close(new ObservationCompletionDisposition(status, outcome, java.time.Instant.now(clock)));
+        }
+        catch (RuntimeException ignored)
+        {
+            // Optional observation must never change canonical finalization behavior.
         }
     }
 

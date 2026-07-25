@@ -3,9 +3,14 @@ package com.lokiscale.bifrost.internal.runtime.trace;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import com.lokiscale.bifrost.internal.core.TraceRecord;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle;
+import com.lokiscale.bifrost.internal.runtime.observation.ObservationCompletionDisposition;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -16,6 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ExecutionTraceHandleTest {
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void appliesNeverOnErrorAndAlwaysPersistencePolicies() throws Exception {
@@ -91,6 +99,127 @@ class ExecutionTraceHandleTest {
                 .hasMessageContaining("already completed");
 
         Files.deleteIfExists(handle.tracePath());
+    }
+
+    @Test
+    void publishesTraceStartedAndCapturePolicyExactlyOnce() throws Exception {
+        Clock clock = Clock.fixed(Instant.parse("2026-03-24T12:00:00Z"), ZoneOffset.UTC);
+        RecordingObservationHandle observation = new RecordingObservationHandle();
+        DefaultExecutionTraceHandle handle = new DefaultExecutionTraceHandle(
+                "observed-trace", TracePersistencePolicy.ALWAYS, clock, observation);
+
+        assertThat(observation.records)
+                .extracting(TraceRecord::recordType)
+                .containsExactly(
+                        TraceRecordType.TRACE_STARTED,
+                        TraceRecordType.TRACE_CAPTURE_POLICY_RECORDED);
+        assertThat(observation.records).extracting(TraceRecord::sequence).containsExactly(1L, 2L);
+        assertThat(observation.records).extracting(TraceRecord::traceId).containsOnly(handle.snapshot().traceId());
+        Files.deleteIfExists(handle.tracePath());
+    }
+
+    @Test
+    void publishesCompleteLogicalChunkedRecordOnlyAfterAllChunksSucceed() throws Exception {
+        Clock clock = Clock.fixed(Instant.parse("2026-03-24T12:00:00Z"), ZoneOffset.UTC);
+        RecordingObservationHandle observation = new RecordingObservationHandle();
+        DefaultExecutionTraceHandle handle = new DefaultExecutionTraceHandle(
+                "chunked-trace", TracePersistencePolicy.ALWAYS, clock, observation);
+        String payload = "x".repeat(4_097);
+
+        TraceRecord persistedEnvelope = handle.append(
+                TraceRecordType.MODEL_RESPONSE_RECEIVED,
+                java.util.Map.of("attemptNumber", 1),
+                payload);
+
+        assertThat(persistedEnvelope.data()).isNull();
+        assertThat(observation.records.getLast().recordType())
+                .isEqualTo(TraceRecordType.MODEL_RESPONSE_RECEIVED);
+        assertThat(observation.records.getLast().data().asText()).isEqualTo(payload);
+        assertThat(observation.records)
+                .noneMatch(record -> record.recordType() == TraceRecordType.PAYLOAD_CHUNK_APPENDED);
+
+        List<TraceRecord> physical = readRecords(handle);
+        assertThat(physical)
+                .extracting(TraceRecord::recordType)
+                .contains(TraceRecordType.PAYLOAD_CHUNK_APPENDED);
+        Files.deleteIfExists(handle.tracePath());
+    }
+
+    @Test
+    void doesNotPublishWhenEnvelopeWriteFails() {
+        assertChunkWriteFailurePublishesNothing(3, 9_000);
+    }
+
+    @Test
+    void doesNotPublishWhenMiddleChunkWriteFails() {
+        assertChunkWriteFailurePublishesNothing(5, 9_000);
+    }
+
+    @Test
+    void doesNotPublishWhenFinalChunkWriteFails() {
+        assertChunkWriteFailurePublishesNothing(6, 9_000);
+    }
+
+    private void assertChunkWriteFailurePublishesNothing(int failingWrite, int payloadLength) {
+        Clock clock = Clock.fixed(Instant.parse("2026-03-24T12:00:00Z"), ZoneOffset.UTC);
+        RecordingObservationHandle observation = new RecordingObservationHandle();
+        Path tracePath = tempDir.resolve("failed-" + failingWrite + ".ndjson");
+        ControllableWriter writer = new ControllableWriter(tracePath, failingWrite);
+        DefaultExecutionTraceHandle handle = new DefaultExecutionTraceHandle(
+                "trace-" + failingWrite,
+                "session-" + failingWrite,
+                tracePath,
+                TracePersistencePolicy.ALWAYS,
+                clock,
+                () -> "payload",
+                "thread",
+                "trace.ndjson",
+                observation,
+                writer);
+
+        assertThatThrownBy(() -> handle.append(
+                TraceRecordType.MODEL_RESPONSE_RECEIVED,
+                java.util.Map.of(),
+                "x".repeat(payloadLength)))
+                .isInstanceOf(IOException.class);
+        assertThat(observation.records)
+                .extracting(TraceRecord::recordType)
+                .containsExactly(
+                        TraceRecordType.TRACE_STARTED,
+                        TraceRecordType.TRACE_CAPTURE_POLICY_RECORDED);
+    }
+
+    private static final class ControllableWriter implements TraceRecordWriter {
+        private final NdjsonTraceRecordWriter delegate;
+        private final int failingWrite;
+        private int writes;
+
+        private ControllableWriter(Path tracePath, int failingWrite) {
+            this.delegate = new NdjsonTraceRecordWriter(tracePath);
+            this.failingWrite = failingWrite;
+        }
+
+        @Override
+        public void append(TraceRecord record) throws IOException {
+            writes++;
+            if (writes == failingWrite) {
+                throw new IOException("selected write failure");
+            }
+            delegate.append(record);
+        }
+    }
+
+    private static final class RecordingObservationHandle implements ExecutionObservationHandle {
+        private final List<TraceRecord> records = new ArrayList<>();
+
+        @Override
+        public void recordAppended(TraceRecord record) {
+            records.add(record);
+        }
+
+        @Override
+        public void close(ObservationCompletionDisposition disposition) {
+        }
     }
 
     private static List<TraceRecord> readRecords(DefaultExecutionTraceHandle handle) throws Exception {

@@ -16,6 +16,7 @@ import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -161,6 +162,23 @@ class BifrostPublicSurfaceArchitectureTest
             Map.entry("com.lokiscale.bifrost.internal.runtime.tool.ToolSurfaceService", "Public only for Java collaboration between distinct internal subsystem packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle", "Public only for Java collaboration between distinct internal subsystem packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.ExecutionJournalProjector", "Public only for Java collaboration between distinct internal subsystem packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ActiveExecutionSnapshot", "Public only for Java collaboration between internal observation and future application-adapter packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ActiveExecutionRegistry", "Public only for Java collaboration between internal observation and future application-adapter packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ActivityReplayBuffer", "Public only for Java collaboration between internal observation and future application-adapter packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.DefaultExecutionObservationHandleFactory", "Public only for framework-owned composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivity", "Public only for Java collaboration between internal observation and future application-adapter packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivityKind", "Public only for Java collaboration between internal observation and future application-adapter packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle", "Public only for Java collaboration with the internal canonical trace package."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory", "Public only for framework-owned session composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationLimits", "Public only to keep internal projection and future adapter bounds coherent."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.InMemoryActiveExecutionRegistry", "Public only for framework-owned composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.InMemoryActivityReplayBuffer", "Public only for framework-owned composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.LiveActivityProjector", "Public only for framework-owned composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.LiveMonitoringAvailability", "Public only for Java collaboration between internal observation and future application-adapter packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandle", "Public only for Java collaboration with the internal canonical trace package."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory", "Public only for framework-owned disabled observation composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ObservationCompletionDisposition", "Public only for Java collaboration with the internal session finalization authority."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.observation.ReplayResult", "Public only for Java collaboration between internal observation and future application-adapter packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.usage.DefaultSessionUsageService", "Public only for Java collaboration between distinct internal subsystem packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.usage.GuardrailType", "Public only for Java collaboration between distinct internal subsystem packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.usage.MicrometerUsageMetricsRecorder", "Public only for Java collaboration between distinct internal subsystem packages."),
@@ -292,6 +310,32 @@ class BifrostPublicSurfaceArchitectureTest
                     assertApiSafe(component.getGenericType(), component.toString(), new LinkedHashSet<>());
                     assertAnnotationsAreApiSafe(component, component.toString());
                 }
+            }
+        }
+    }
+
+    @Test
+    void observationDtosExposeOnlyBoundedImmutableDomainTypes() throws Exception
+    {
+        Set<Class<?>> forbidden = Set.of(
+                java.nio.file.Path.class,
+                org.springframework.core.io.Resource.class,
+                com.fasterxml.jackson.databind.JsonNode.class,
+                com.lokiscale.bifrost.internal.core.TraceRecord.class,
+                Throwable.class,
+                java.util.stream.Stream.class,
+                java.util.concurrent.Flow.Publisher.class);
+
+        for (Class<?> dto : List.of(
+                com.lokiscale.bifrost.internal.runtime.observation.ActiveExecutionSnapshot.class,
+                com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivity.class))
+        {
+            for (var component : dto.getRecordComponents())
+            {
+                Class<?> rawType = component.getType();
+                assertThat(forbidden)
+                        .as("%s component %s", dto.getSimpleName(), component.getName())
+                        .noneMatch(type -> type.isAssignableFrom(rawType) || rawType.isAssignableFrom(type));
             }
         }
     }

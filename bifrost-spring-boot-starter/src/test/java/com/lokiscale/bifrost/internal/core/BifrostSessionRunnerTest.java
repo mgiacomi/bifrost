@@ -1,12 +1,20 @@
 package com.lokiscale.bifrost.internal.core;
 
 import com.lokiscale.bifrost.internal.runtime.trace.ExecutionTraceReaders;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory;
+import com.lokiscale.bifrost.internal.runtime.observation.ObservationCompletionDisposition;
+import com.lokiscale.bifrost.internal.runtime.observation.DefaultExecutionObservationHandleFactory;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivity;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivityKind;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -17,6 +25,9 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -263,6 +274,281 @@ class BifrostSessionRunnerTest {
         });
 
         assertThat(timestamp).isEqualTo(Instant.parse("2026-03-15T12:34:56Z"));
+    }
+
+    @Test
+    void attachesObservationBeforeTraceInitialization() {
+        RecordingObservationFactory observation = new RecordingObservationFactory();
+        Clock clock = Clock.fixed(Instant.parse("2026-03-15T12:34:56Z"), ZoneOffset.UTC);
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.NEVER, clock, observation);
+
+        runner.callWithNewSession(session -> {
+            assertThat(observation.handles).hasSize(1);
+            assertThat(observation.handles.getFirst().records)
+                    .extracting(TraceRecord::recordType)
+                    .startsWith(
+                            TraceRecordType.TRACE_STARTED,
+                            TraceRecordType.TRACE_CAPTURE_POLICY_RECORDED);
+            return "ok";
+        });
+
+        RecordingObservationHandle handle = observation.handles.getFirst();
+        assertThat(handle.records).extracting(TraceRecord::sequence).startsWith(1L, 2L);
+        assertThat(handle.dispositions).singleElement()
+                .extracting(ObservationCompletionDisposition::status)
+                .isEqualTo(ObservationCompletionDisposition.Status.CORE_FINALIZATION_SUCCEEDED);
+    }
+
+    @Test
+    void optionalObservationFailureDoesNotChangeSuccessfulResult() {
+        ExecutionObservationHandleFactory throwingFactory = sessionId -> new ExecutionObservationHandle() {
+            @Override
+            public void recordAppended(TraceRecord record) {
+                throw new IllegalStateException("optional");
+            }
+
+            @Override
+            public void close(ObservationCompletionDisposition disposition) {
+                throw new IllegalStateException("optional");
+            }
+        };
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.NEVER, Clock.systemUTC(), throwingFactory);
+
+        String result = runner.callWithNewSession(session -> "unchanged");
+        assertThat(result).isEqualTo("unchanged");
+    }
+
+    @Test
+    void usesCoreFailureDispositionWhenJournalProjectionFails() throws Exception {
+        DefaultExecutionObservationHandleFactory observation =
+                new DefaultExecutionObservationHandleFactory();
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.ALWAYS, Clock.systemUTC(), observation);
+        AtomicReference<java.nio.file.Path> tracePath = new AtomicReference<>();
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session -> {
+            java.nio.file.Path path = java.nio.file.Path.of(session.getExecutionTrace().filePath());
+            tracePath.set(path);
+            try {
+                Files.writeString(path, "not-json\n", java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+            }
+            catch (java.io.IOException ex) {
+                throw new IllegalStateException(ex);
+            }
+            return "unreachable";
+        }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Failed to finalize execution trace");
+
+        try {
+            assertThat(observation.registry().activeCount()).isZero();
+            assertThat(observation.replayBuffer().replayAfter(0, 20).activities())
+                    .extracting(ExecutionActivity::kind)
+                    .contains(ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED)
+                    .doesNotContain(ExecutionActivityKind.TRACE_COMPLETED);
+        }
+        finally {
+            Files.deleteIfExists(tracePath.get());
+        }
+    }
+
+    @Test
+    void closesHandleWhenTraceConstructionFailsAfterRegistration() {
+        DefaultExecutionObservationHandleFactory observation =
+                new DefaultExecutionObservationHandleFactory();
+        Clock clock = Clock.fixed(Instant.parse("2026-07-24T12:00:00Z"), ZoneOffset.UTC);
+        InternalExecutionTraceHandleFactory failingFactory = (sessionId, policy, ignoredClock, handle) -> {
+            handle.recordAppended(new TraceRecord(
+                    "trace-construction", sessionId, 1L, clock.instant(),
+                    TraceRecordType.TRACE_STARTED, null, null, null, null,
+                    "thread", Map.of(), null));
+            throw new IllegalStateException("trace construction failed");
+        };
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.ALWAYS, clock, observation, failingFactory);
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session -> "unreachable"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("trace construction failed");
+
+        assertThat(observation.registry().activeCount()).isZero();
+        assertThat(observation.replayBuffer().replayAfter(0, 10).activities())
+                .extracting(ExecutionActivity::kind)
+                .containsExactly(
+                        ExecutionActivityKind.TRACE_STARTED,
+                        ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED);
+    }
+
+    @Test
+    void usesCoreFailureDispositionWhenCompletionAppendFails() throws Exception {
+        assertInjectedFinalizationFailure(false);
+    }
+
+    @Test
+    void usesCoreFailureDispositionWhenRetentionDeletionFailsAfterCompletedFlag() throws Exception {
+        assertInjectedFinalizationFailure(true);
+    }
+
+    @Test
+    void removesActiveObservationWhenFinalizationThrowsUncheckedFailure() throws Exception {
+        DefaultExecutionObservationHandleFactory observation =
+                new DefaultExecutionObservationHandleFactory();
+        AtomicReference<Path> tracePath = new AtomicReference<>();
+        SecurityException failure = new SecurityException("retention access denied");
+        InternalExecutionTraceHandleFactory traceFactory = (sessionId, policy, clock, handle) -> {
+            com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle delegate =
+                    new com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle(
+                            sessionId, TracePersistencePolicy.ALWAYS, clock, handle);
+            tracePath.set(delegate.tracePath());
+            return new FailingFinalizationTraceHandle(delegate, failure);
+        };
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.ALWAYS, Clock.systemUTC(), observation, traceFactory);
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session -> "result"))
+                .isSameAs(failure);
+
+        try {
+            assertThat(observation.registry().activeCount()).isZero();
+            assertThat(observation.replayBuffer().replayAfter(0, 20).activities())
+                    .extracting(ExecutionActivity::kind)
+                    .contains(ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED)
+                    .doesNotContain(ExecutionActivityKind.TRACE_COMPLETED);
+        }
+        finally {
+            Files.deleteIfExists(tracePath.get());
+        }
+    }
+
+    private void assertInjectedFinalizationFailure(boolean failAfterCompletion) throws Exception {
+        DefaultExecutionObservationHandleFactory observation =
+                new DefaultExecutionObservationHandleFactory();
+        AtomicReference<Path> tracePath = new AtomicReference<>();
+        InternalExecutionTraceHandleFactory traceFactory = (sessionId, policy, clock, handle) -> {
+            com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle delegate =
+                    new com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle(
+                            sessionId, TracePersistencePolicy.ALWAYS, clock, handle);
+            tracePath.set(delegate.tracePath());
+            return new FailingFinalizationTraceHandle(delegate, failAfterCompletion);
+        };
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.ALWAYS, Clock.systemUTC(), observation, traceFactory);
+
+        assertThatThrownBy(() -> runner.callWithNewSession(session -> "result"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Failed to finalize execution trace");
+
+        try {
+            assertThat(observation.registry().activeCount()).isZero();
+            assertThat(observation.replayBuffer().replayAfter(0, 20).activities())
+                    .extracting(ExecutionActivity::kind)
+                    .contains(ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED)
+                    .doesNotContain(ExecutionActivityKind.TRACE_COMPLETED);
+        }
+        finally {
+            Files.deleteIfExists(tracePath.get());
+        }
+    }
+
+    private static final class RecordingObservationFactory implements ExecutionObservationHandleFactory {
+        private final List<RecordingObservationHandle> handles = new CopyOnWriteArrayList<>();
+
+        @Override
+        public ExecutionObservationHandle create(String sessionId) {
+            RecordingObservationHandle handle = new RecordingObservationHandle();
+            handles.add(handle);
+            return handle;
+        }
+    }
+
+    private static final class FailingFinalizationTraceHandle implements ExecutionTraceHandle {
+        private final ExecutionTraceHandle delegate;
+        private final boolean failAfterCompletion;
+        private final RuntimeException uncheckedFailure;
+
+        private FailingFinalizationTraceHandle(
+                ExecutionTraceHandle delegate,
+                boolean failAfterCompletion) {
+            this.delegate = delegate;
+            this.failAfterCompletion = failAfterCompletion;
+            this.uncheckedFailure = null;
+        }
+
+        private FailingFinalizationTraceHandle(
+                ExecutionTraceHandle delegate,
+                RuntimeException uncheckedFailure) {
+            this.delegate = delegate;
+            this.failAfterCompletion = true;
+            this.uncheckedFailure = uncheckedFailure;
+        }
+
+        @Override
+        public TraceRecord append(
+                TraceRecordType recordType,
+                ExecutionFrame frame,
+                TraceFrameType frameType,
+                Map<String, Object> metadata,
+                Object data) throws IOException {
+            return delegate.append(recordType, frame, frameType, metadata, data);
+        }
+
+        @Override
+        public TraceRecord append(
+                TraceRecordType recordType,
+                Map<String, Object> metadata,
+                Object data) throws IOException {
+            return delegate.append(recordType, metadata, data);
+        }
+
+        @Override
+        public ExecutionTrace snapshot() {
+            return delegate.snapshot();
+        }
+
+        @Override
+        public Path tracePath() {
+            return delegate.tracePath();
+        }
+
+        @Override
+        public void markErrored() {
+            delegate.markErrored();
+        }
+
+        @Override
+        public void finalizeTrace(Map<String, Object> completionMetadata) throws IOException {
+            if (failAfterCompletion) {
+                delegate.finalizeTrace(completionMetadata);
+            }
+            if (uncheckedFailure != null) {
+                throw uncheckedFailure;
+            }
+            throw new IOException(failAfterCompletion
+                    ? "retention deletion failed"
+                    : "completion append failed");
+        }
+
+        @Override
+        public void readRecords(Consumer<TraceRecord> consumer) throws IOException {
+            delegate.readRecords(consumer);
+        }
+    }
+
+    private static final class RecordingObservationHandle implements ExecutionObservationHandle {
+        private final List<TraceRecord> records = new CopyOnWriteArrayList<>();
+        private final List<ObservationCompletionDisposition> dispositions = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void recordAppended(TraceRecord record) {
+            records.add(record);
+        }
+
+        @Override
+        public void close(ObservationCompletionDisposition disposition) {
+            dispositions.add(disposition);
+        }
     }
 
     private static ExecutionFrame frame(String frameId, String route) {

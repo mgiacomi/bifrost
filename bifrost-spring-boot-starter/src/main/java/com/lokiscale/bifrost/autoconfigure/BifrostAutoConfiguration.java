@@ -33,6 +33,7 @@ import com.lokiscale.bifrost.internal.runtime.attachment.MissionUserMessageSende
 import com.lokiscale.bifrost.internal.runtime.attachment.SpringAiMissionUserMessageSender;
 import com.lokiscale.bifrost.internal.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.internal.runtime.planning.PlanningService;
+import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidator;
 import com.lokiscale.bifrost.internal.runtime.state.DefaultExecutionStateService;
@@ -127,7 +128,8 @@ public class BifrostAutoConfiguration
         return new BifrostSessionRunner(
                 properties.getSession().getMaxDepth(),
                 executionTraceProperties.getPersistence(),
-                Clock.systemUTC());
+                Clock.systemUTC(),
+                NoOpExecutionObservationHandleFactory.INSTANCE);
     }
 
     @Bean

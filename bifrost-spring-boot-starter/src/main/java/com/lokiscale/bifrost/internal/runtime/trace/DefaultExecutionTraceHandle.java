@@ -11,6 +11,8 @@ import com.lokiscale.bifrost.internal.core.TraceFrameType;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import com.lokiscale.bifrost.internal.core.TraceRecord;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle;
+import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandle;
 import org.springframework.lang.Nullable;
 
 import java.io.IOException;
@@ -40,13 +42,14 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     private final Path tracePath;
     private final TracePersistencePolicy persistencePolicy;
     private final Clock clock;
-    private final NdjsonTraceRecordWriter writer;
+    private final TraceRecordWriter writer;
     private final NdjsonExecutionTraceReader reader;
     private final AtomicLong sequence;
     private final AtomicBoolean initialized;
     private final Supplier<String> idSupplier;
     private final String threadName;
     private final String tracePathMetadata;
+    private final ExecutionObservationHandle observationHandle;
 
     private volatile boolean errored;
     private volatile boolean completed;
@@ -54,7 +57,19 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     public DefaultExecutionTraceHandle(String sessionId, TracePersistencePolicy persistencePolicy, Clock clock)
     {
         this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
-                DefaultExecutionTraceHandle::newTraceId, null, null);
+                DefaultExecutionTraceHandle::newTraceId, null, null, NoOpExecutionObservationHandle.INSTANCE);
+        resetTraceFile();
+        initialize();
+    }
+
+    public DefaultExecutionTraceHandle(
+            String sessionId,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandle observationHandle)
+    {
+        this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
+                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle);
         resetTraceFile();
         initialize();
     }
@@ -70,7 +85,42 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             String tracePathMetadata)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
-                idSupplier, threadName, tracePathMetadata);
+                idSupplier, threadName, tracePathMetadata, NoOpExecutionObservationHandle.INSTANCE);
+        resetTraceFile();
+        initialize();
+    }
+
+    DefaultExecutionTraceHandle(
+            String traceId,
+            String sessionId,
+            Path tracePath,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            Supplier<String> idSupplier,
+            String threadName,
+            String tracePathMetadata,
+            ExecutionObservationHandle observationHandle)
+    {
+        this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
+                idSupplier, threadName, tracePathMetadata, observationHandle);
+        resetTraceFile();
+        initialize();
+    }
+
+    DefaultExecutionTraceHandle(
+            String traceId,
+            String sessionId,
+            Path tracePath,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            Supplier<String> idSupplier,
+            String threadName,
+            String tracePathMetadata,
+            ExecutionObservationHandle observationHandle,
+            TraceRecordWriter writer)
+    {
+        this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
+                idSupplier, threadName, tracePathMetadata, observationHandle, writer);
         resetTraceFile();
         initialize();
     }
@@ -87,7 +137,28 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             boolean initialized,
             Supplier<String> idSupplier,
             @Nullable String threadName,
-            @Nullable String tracePathMetadata)
+            @Nullable String tracePathMetadata,
+            ExecutionObservationHandle observationHandle)
+    {
+        this(traceId, sessionId, tracePath, persistencePolicy, errored, completed, clock, startingSequence,
+                initialized, idSupplier, threadName, tracePathMetadata, observationHandle, null);
+    }
+
+    private DefaultExecutionTraceHandle(
+            String traceId,
+            String sessionId,
+            Path tracePath,
+            TracePersistencePolicy persistencePolicy,
+            boolean errored,
+            boolean completed,
+            Clock clock,
+            long startingSequence,
+            boolean initialized,
+            Supplier<String> idSupplier,
+            @Nullable String threadName,
+            @Nullable String tracePathMetadata,
+            ExecutionObservationHandle observationHandle,
+            @Nullable TraceRecordWriter writer)
     {
         this.traceId = requireNonBlank(traceId, "traceId");
         this.sessionId = requireNonBlank(sessionId, "sessionId");
@@ -96,13 +167,14 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
         this.errored = errored;
         this.completed = completed;
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.writer = new NdjsonTraceRecordWriter(this.tracePath);
+        this.writer = writer == null ? new NdjsonTraceRecordWriter(this.tracePath) : writer;
         this.reader = new NdjsonExecutionTraceReader();
         this.sequence = new AtomicLong(startingSequence);
         this.initialized = new AtomicBoolean(initialized);
         this.idSupplier = Objects.requireNonNull(idSupplier, "idSupplier must not be null");
         this.threadName = threadName == null || threadName.isBlank() ? null : threadName;
         this.tracePathMetadata = tracePathMetadata == null ? this.tracePath.toString() : tracePathMetadata;
+        this.observationHandle = Objects.requireNonNull(observationHandle, "observationHandle must not be null");
     }
 
     private void initialize()
@@ -248,17 +320,44 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
                         route,
                         safeMetadata,
                         null);
+                TraceRecord logicalRecord = new TraceRecord(
+                        envelope.traceId(),
+                        envelope.sessionId(),
+                        envelope.sequence(),
+                        envelope.timestamp(),
+                        envelope.recordType(),
+                        envelope.frameId(),
+                        envelope.parentFrameId(),
+                        envelope.frameType(),
+                        envelope.route(),
+                        envelope.threadName(),
+                        envelope.metadata(),
+                        jsonData);
 
                 writer.append(envelope);
                 writeChunks(payloadId, chunkCount, serialized, frameId, parentFrameId, frameType, route, safeMetadata);
 
+                publish(logicalRecord);
                 return envelope;
             }
         }
 
         TraceRecord record = buildRecord(nextSequence, recordType, frameId, parentFrameId, frameType, route, safeMetadata, jsonData);
         writer.append(record);
+        publish(record);
         return record;
+    }
+
+    private void publish(TraceRecord logicalRecord)
+    {
+        try
+        {
+            observationHandle.recordAppended(logicalRecord);
+        }
+        catch (RuntimeException ignored)
+        {
+            // Optional observation must never change canonical trace behavior.
+        }
     }
 
     private void writeChunks(

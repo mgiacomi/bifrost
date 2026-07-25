@@ -12,7 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
-final class NdjsonTraceRecordWriter
+final class NdjsonTraceRecordWriter implements TraceRecordWriter
 {
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
             .findAndAddModules()
@@ -25,6 +25,7 @@ final class NdjsonTraceRecordWriter
         this.tracePath = Objects.requireNonNull(tracePath, "tracePath must not be null");
     }
 
+    @Override
     public synchronized void append(TraceRecord record) throws IOException
     {
         Files.createDirectories(tracePath.getParent());

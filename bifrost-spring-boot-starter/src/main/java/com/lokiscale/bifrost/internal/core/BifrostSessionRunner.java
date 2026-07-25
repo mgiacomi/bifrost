@@ -1,5 +1,7 @@
 package com.lokiscale.bifrost.internal.core;
 
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory;
+import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
@@ -16,6 +18,8 @@ public class BifrostSessionRunner
     private final int maxDepth;
     private final TracePersistencePolicy tracePersistencePolicy;
     private final Clock clock;
+    private final ExecutionObservationHandleFactory observationHandleFactory;
+    private final InternalExecutionTraceHandleFactory traceHandleFactory;
 
     public BifrostSessionRunner(int maxDepth)
     {
@@ -29,6 +33,26 @@ public class BifrostSessionRunner
 
     public BifrostSessionRunner(int maxDepth, TracePersistencePolicy tracePersistencePolicy, Clock clock)
     {
+        this(maxDepth, tracePersistencePolicy, clock, NoOpExecutionObservationHandleFactory.INSTANCE);
+    }
+
+    public BifrostSessionRunner(
+            int maxDepth,
+            TracePersistencePolicy tracePersistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory)
+    {
+        this(maxDepth, tracePersistencePolicy, clock, observationHandleFactory,
+                com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle::new);
+    }
+
+    BifrostSessionRunner(
+            int maxDepth,
+            TracePersistencePolicy tracePersistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory,
+            InternalExecutionTraceHandleFactory traceHandleFactory)
+    {
         if (maxDepth <= 0)
         {
             throw new IllegalArgumentException("maxDepth must be greater than zero");
@@ -37,6 +61,9 @@ public class BifrostSessionRunner
         this.maxDepth = maxDepth;
         this.tracePersistencePolicy = tracePersistencePolicy == null ? TracePersistencePolicy.ONERROR : tracePersistencePolicy;
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.observationHandleFactory = Objects.requireNonNull(
+                observationHandleFactory, "observationHandleFactory must not be null");
+        this.traceHandleFactory = Objects.requireNonNull(traceHandleFactory, "traceHandleFactory must not be null");
     }
 
     public void runWithNewSession(Consumer<BifrostSession> action)
@@ -52,7 +79,9 @@ public class BifrostSessionRunner
                 maxDepth,
                 authentication,
                 tracePersistencePolicy,
-                clock);
+                clock,
+                observationHandleFactory,
+                traceHandleFactory);
 
         BifrostSessionHolder.runWithSession(session, () ->
         {
@@ -87,7 +116,9 @@ public class BifrostSessionRunner
                 maxDepth,
                 authentication,
                 tracePersistencePolicy,
-                clock);
+                clock,
+                observationHandleFactory,
+                traceHandleFactory);
 
         return BifrostSessionHolder.callWithSession(session, () ->
         {
