@@ -8,6 +8,7 @@ public final class ObservabilityApiPaths
     public static final String ACTIVE = ROOT + "/active-executions";
     public static final String ACTIVITY = ROOT + "/activity";
     public static final String TRACES = ROOT + "/traces";
+    public static final String TRACE_ARTIFACT = TRACES + "/{traceId}/artifact";
 
     private ObservabilityApiPaths() {}
 }

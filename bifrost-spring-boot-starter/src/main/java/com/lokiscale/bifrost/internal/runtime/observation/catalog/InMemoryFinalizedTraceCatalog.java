@@ -1,7 +1,9 @@
 package com.lokiscale.bifrost.internal.runtime.observation.catalog;
 
 import com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact;
+import com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Clock;
 import java.time.Duration;
@@ -23,15 +25,19 @@ public final class InMemoryFinalizedTraceCatalog implements FinalizedTraceCatalo
     private final Duration metadataTtl;
     private final Clock clock;
     private final ScheduledExecutorService executor;
+    private final CompletionGraceRetention retention;
     private final ScheduledFuture<?> sweep;
     private final Map<String, FinalizedTraceCatalogEntry> entries = new ConcurrentHashMap<>();
     private final AtomicLong ordinal = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean();
     private long assignedHighWater;
 
-    public InMemoryFinalizedTraceCatalog(Duration metadataTtl, Clock clock)
+    public InMemoryFinalizedTraceCatalog(
+            Duration metadataTtl,
+            Clock clock,
+            CompletionGraceRetention retention)
     {
-        this(metadataTtl, clock,
+        this(metadataTtl, clock, retention,
                 Executors.newSingleThreadScheduledExecutor(runnable ->
                         Thread.ofPlatform().daemon().name("bifrost-trace-catalog").unstarted(runnable)),
                 sweepInterval(metadataTtl));
@@ -40,11 +46,13 @@ public final class InMemoryFinalizedTraceCatalog implements FinalizedTraceCatalo
     InMemoryFinalizedTraceCatalog(
             Duration metadataTtl,
             Clock clock,
+            CompletionGraceRetention retention,
             ScheduledExecutorService executor,
             Duration sweepInterval)
     {
         this.metadataTtl = requirePositive(metadataTtl, "metadataTtl");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.retention = Objects.requireNonNull(retention, "retention must not be null");
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         Duration interval = requirePositive(sweepInterval, "sweepInterval");
         this.sweep = executor.scheduleAtFixedRate(
@@ -122,6 +130,28 @@ public final class InMemoryFinalizedTraceCatalog implements FinalizedTraceCatalo
             return Optional.empty();
         }
         return Optional.of(entry);
+    }
+
+    @Override
+    public Optional<ArtifactAcquisition> acquire(String traceId) throws IOException
+    {
+        Objects.requireNonNull(traceId, "traceId must not be null");
+        FinalizedTraceCatalogEntry entry = entries.get(traceId);
+        Instant acquisitionStartedAt = Instant.now(clock);
+        if (closed.get() || entry == null || expired(entry, acquisitionStartedAt))
+        {
+            if (entry != null)
+            {
+                entries.remove(traceId, entry);
+            }
+            return Optional.empty();
+        }
+        Optional<CompletionGraceRetention.ArtifactLease> lease = retention.acquire(entry.artifact());
+        if (lease.isEmpty())
+        {
+            return Optional.empty();
+        }
+        return Optional.of(new ArtifactAcquisition(entry.traceId(), entry.sizeBytes(), lease.orElseThrow()));
     }
 
     @Override

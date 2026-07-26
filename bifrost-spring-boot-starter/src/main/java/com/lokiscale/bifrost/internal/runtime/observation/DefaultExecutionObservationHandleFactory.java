@@ -88,6 +88,12 @@ public final class DefaultExecutionObservationHandleFactory implements Execution
             }
 
             @Override
+            public Optional<FinalizedTraceCatalog.ArtifactAcquisition> acquire(String traceId)
+            {
+                return Optional.empty();
+            }
+
+            @Override
             public TraceCatalogSlice list(long highWaterOrdinal, long beforeOrdinal, int limit)
             {
                 return new TraceCatalogSlice(0, java.util.List.of());

@@ -1,5 +1,7 @@
 package com.lokiscale.bifrost.internal.runtime.trace;
 
+import com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +20,12 @@ public enum ImmediateCompletionRetention implements CompletionGraceRetention
             String sessionId) throws IOException
     {
         Files.deleteIfExists(artifactPath);
+        return Optional.empty();
+    }
+
+    @Override
+    public Optional<ArtifactLease> acquire(FinalizedTraceArtifact artifact)
+    {
         return Optional.empty();
     }
 

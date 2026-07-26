@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.concurrent.CountDownLatch;
+import com.lokiscale.bifrost.internal.runtime.trace.ScheduledCompletionGraceRetention;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -29,7 +30,10 @@ class InMemoryFinalizedTraceCatalogTest
         Path first = Files.writeString(tempDir.resolve("first.ndjson"), "{}\n");
         Path second = Files.writeString(tempDir.resolve("second.ndjson"), "{}\n");
         try (InMemoryFinalizedTraceCatalog catalog =
-                     new InMemoryFinalizedTraceCatalog(Duration.ofMinutes(5), clock))
+                     new InMemoryFinalizedTraceCatalog(
+                             Duration.ofMinutes(5), clock,
+                             org.mockito.Mockito.mock(
+                                     com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention.class)))
         {
             FinalizedTraceArtifact a = artifact("a", first, clock.instant(), null);
             FinalizedTraceCatalogEntry firstEntry = catalog.publish(a);
@@ -61,7 +65,10 @@ class InMemoryFinalizedTraceCatalogTest
         MutableClock clock = new MutableClock(Instant.parse("2026-07-24T12:00:00Z"));
         Path file = Files.writeString(tempDir.resolve("trace.ndjson"), "{}\n");
         try (InMemoryFinalizedTraceCatalog catalog =
-                     new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock))
+                     new InMemoryFinalizedTraceCatalog(
+                             Duration.ofHours(1), clock,
+                             org.mockito.Mockito.mock(
+                                     com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention.class)))
         {
             Instant coreExpiry = clock.instant().plusSeconds(30);
             FinalizedTraceCatalogEntry entry =
@@ -82,7 +89,10 @@ class InMemoryFinalizedTraceCatalogTest
         MutableClock clock = new MutableClock(Instant.parse("2026-07-24T12:00:00Z"));
         Path file = Files.writeString(tempDir.resolve("expired.ndjson"), "{}\n");
         try (InMemoryFinalizedTraceCatalog catalog =
-                     new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock))
+                     new InMemoryFinalizedTraceCatalog(
+                             Duration.ofHours(1), clock,
+                             org.mockito.Mockito.mock(
+                                     com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention.class)))
         {
             FinalizedTraceArtifact expired = artifact(
                     "expired",
@@ -104,7 +114,10 @@ class InMemoryFinalizedTraceCatalogTest
         MutableClock clock = new MutableClock(Instant.parse("2026-07-24T12:00:00Z"));
         Path file = Files.writeString(tempDir.resolve("trace.ndjson"), "{}\n");
         InMemoryFinalizedTraceCatalog catalog =
-                new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock);
+                new InMemoryFinalizedTraceCatalog(
+                        Duration.ofHours(1), clock,
+                        org.mockito.Mockito.mock(
+                                com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention.class));
         catalog.publish(artifact("trace", file, clock.instant(), null));
         CountDownLatch started = new CountDownLatch(1);
         Thread closer;
@@ -132,6 +145,35 @@ class InMemoryFinalizedTraceCatalogTest
         assertThatThrownBy(() -> catalog.publish(artifact("late", file, clock.instant(), null)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("closed");
+    }
+
+    @Test
+    void acquiresPathFreeMetadataAndCoreLeaseBeforeEffectiveExpiry() throws Exception
+    {
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-24T12:00:00Z"));
+        Path file = Files.writeString(tempDir.resolve("acquired.ndjson"), "{}\n");
+        try (ScheduledCompletionGraceRetention retention =
+                     new ScheduledCompletionGraceRetention(Duration.ofMinutes(5));
+             InMemoryFinalizedTraceCatalog catalog =
+                     new InMemoryFinalizedTraceCatalog(Duration.ofMinutes(5), clock, retention))
+        {
+            catalog.publish(artifact("acquired", file, clock.instant(), null));
+            FinalizedTraceCatalog.ArtifactAcquisition acquisition =
+                    catalog.acquire("acquired").orElseThrow();
+
+            assertThat(acquisition.traceId()).isEqualTo("acquired");
+            assertThat(acquisition.sizeBytes()).isEqualTo(Files.size(file));
+            assertThat(acquisition.getClass().getRecordComponents())
+                    .extracting(java.lang.reflect.RecordComponent::getName)
+                    .containsExactly("traceId", "sizeBytes", "lease");
+            assertThat(acquisition.lease().input().readAllBytes())
+                    .isEqualTo("{}\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            acquisition.lease().close();
+
+            clock.advance(Duration.ofMinutes(5));
+            assertThat(catalog.acquire("acquired")).isEmpty();
+            assertThat(file).exists();
+        }
     }
 
     private FinalizedTraceArtifact artifact(String id, Path path, Instant finalizedAt, Instant expiresAt)

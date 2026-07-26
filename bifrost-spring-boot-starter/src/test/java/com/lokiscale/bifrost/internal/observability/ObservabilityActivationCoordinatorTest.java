@@ -10,6 +10,7 @@ import com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTrace
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.RegisteredSkillCatalog;
 import com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention;
 import com.lokiscale.bifrost.internal.observability.web.ObservabilityActivityDelivery;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityArtifactDelivery;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -32,6 +33,7 @@ class ObservabilityActivationCoordinatorTest
                 Clock.systemUTC(),
                 mock(ExecutionObservationHandleFactory.class),
                 delivery,
+                mock(ObservabilityArtifactDelivery.class),
                 retention,
                 mock(ActiveExecutionRegistry.class),
                 mock(ActivityReplayBuffer.class),

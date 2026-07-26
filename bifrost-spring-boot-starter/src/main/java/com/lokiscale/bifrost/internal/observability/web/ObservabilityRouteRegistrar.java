@@ -108,6 +108,9 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
             registerGet(ObservabilityApiPaths.ACTIVITY, "activity",
                     jakarta.servlet.http.HttpServletRequest.class, jakarta.servlet.http.HttpServletResponse.class);
             registerGet(ObservabilityApiPaths.TRACES, "traces", jakarta.servlet.http.HttpServletRequest.class);
+            registerGet(ObservabilityApiPaths.TRACE_ARTIFACT, "artifact",
+                    String.class, jakarta.servlet.http.HttpServletRequest.class,
+                    jakarta.servlet.http.HttpServletResponse.class);
             registerGet(ObservabilityApiPaths.TRACES + "/{traceId}", "trace",
                     String.class, jakarta.servlet.http.HttpServletRequest.class);
             registerFallback();
@@ -133,21 +136,25 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
         InMemoryFinalizedTraceCatalog traces = null;
         ScheduledCompletionGraceRetention grace = null;
         ObservabilityActivityDelivery delivery = null;
+        ObservabilityArtifactDelivery artifactDelivery = null;
         try
         {
-            traces = new InMemoryFinalizedTraceCatalog(configuration.getTraceCatalogMetadataTtl(), clock);
             grace = new ScheduledCompletionGraceRetention(configuration.getCompletionGraceTtl());
+            traces = new InMemoryFinalizedTraceCatalog(
+                    configuration.getTraceCatalogMetadataTtl(), clock, grace);
             delivery = new ObservabilityActivityDelivery(instanceId.toString(), replay, live, dtoMapper, json);
+            artifactDelivery = new ObservabilityArtifactDelivery();
             var observation = new DefaultExecutionObservationHandleFactory(
                     new LiveActivityProjector(), active, replay, live, traces, delivery);
             return new ObservabilityRuntime(
-                    instanceId, clock, observation, delivery, grace,
+                    instanceId, clock, observation, delivery, artifactDelivery, grace,
                     active, replay, live, skills, traces,
                     configuration, properties.getSession().getQuotas(), traceProperties.getPersistence());
         }
         catch (RuntimeException | Error failure)
         {
             closeAfterFailure(delivery, failure);
+            closeAfterFailure(artifactDelivery, failure);
             closeAfterFailure(grace, failure);
             closeAfterFailure(traces, failure);
             throw failure;

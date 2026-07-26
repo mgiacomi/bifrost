@@ -94,7 +94,10 @@ class DefaultExecutionObservationHandleTest
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         Path artifactPath = Files.writeString(tempDir.resolve("trace.ndjson"), "{}\n");
         try (InMemoryFinalizedTraceCatalog catalog =
-                     new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock))
+                     new InMemoryFinalizedTraceCatalog(
+                             Duration.ofHours(1), clock,
+                             org.mockito.Mockito.mock(
+                                     com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention.class)))
         {
             DefaultExecutionObservationHandleFactory factory = new DefaultExecutionObservationHandleFactory(
                     new LiveActivityProjector(),
@@ -135,7 +138,10 @@ class DefaultExecutionObservationHandleTest
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         Path artifactPath = Files.writeString(tempDir.resolve("expired-trace.ndjson"), "{}\n");
         try (InMemoryFinalizedTraceCatalog catalog =
-                     new InMemoryFinalizedTraceCatalog(Duration.ofHours(1), clock))
+                     new InMemoryFinalizedTraceCatalog(
+                             Duration.ofHours(1), clock,
+                             org.mockito.Mockito.mock(
+                                     com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention.class)))
         {
             DefaultExecutionObservationHandleFactory factory = new DefaultExecutionObservationHandleFactory(
                     new LiveActivityProjector(),

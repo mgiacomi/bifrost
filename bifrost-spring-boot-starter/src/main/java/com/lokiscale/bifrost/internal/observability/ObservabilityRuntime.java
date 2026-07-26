@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.internal.observability;
 import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import com.lokiscale.bifrost.internal.observability.web.ObservabilityActivityDelivery;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityArtifactDelivery;
 import com.lokiscale.bifrost.internal.runtime.observation.ActiveExecutionRegistry;
 import com.lokiscale.bifrost.internal.runtime.observation.ActivityReplayBuffer;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory;
@@ -22,6 +23,7 @@ public final class ObservabilityRuntime implements AutoCloseable
     private final Clock clock;
     private final ExecutionObservationHandleFactory observationFactory;
     private final ObservabilityActivityDelivery activityDelivery;
+    private final ObservabilityArtifactDelivery artifactDelivery;
     private final CompletionGraceRetention completionRetention;
     private final ActiveExecutionRegistry activeExecutions;
     private final ActivityReplayBuffer replayBuffer;
@@ -38,6 +40,7 @@ public final class ObservabilityRuntime implements AutoCloseable
             Clock clock,
             ExecutionObservationHandleFactory observationFactory,
             ObservabilityActivityDelivery activityDelivery,
+            ObservabilityArtifactDelivery artifactDelivery,
             CompletionGraceRetention completionRetention,
             ActiveExecutionRegistry activeExecutions,
             ActivityReplayBuffer replayBuffer,
@@ -52,6 +55,7 @@ public final class ObservabilityRuntime implements AutoCloseable
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.observationFactory = Objects.requireNonNull(observationFactory, "observationFactory must not be null");
         this.activityDelivery = Objects.requireNonNull(activityDelivery, "activityDelivery must not be null");
+        this.artifactDelivery = Objects.requireNonNull(artifactDelivery, "artifactDelivery must not be null");
         this.completionRetention = Objects.requireNonNull(
                 completionRetention, "completionRetention must not be null");
         this.activeExecutions = Objects.requireNonNull(activeExecutions, "activeExecutions must not be null");
@@ -69,6 +73,7 @@ public final class ObservabilityRuntime implements AutoCloseable
     public Clock clock() { return clock; }
     public ExecutionObservationHandleFactory observationFactory() { return observationFactory; }
     public ObservabilityActivityDelivery activityDelivery() { return activityDelivery; }
+    public ObservabilityArtifactDelivery artifactDelivery() { return artifactDelivery; }
     public CompletionGraceRetention completionRetention() { return completionRetention; }
     public ActiveExecutionRegistry activeExecutions() { return activeExecutions; }
     public ActivityReplayBuffer replayBuffer() { return replayBuffer; }
@@ -87,6 +92,7 @@ public final class ObservabilityRuntime implements AutoCloseable
             return;
         }
         Throwable failure = close(null, activityDelivery);
+        failure = close(failure, artifactDelivery);
         failure = close(failure, completionRetention);
         failure = close(failure, traces);
         if (failure instanceof RuntimeException runtime)

@@ -5,6 +5,7 @@ import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHa
 import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory;
 import com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention;
 import com.lokiscale.bifrost.internal.runtime.trace.ImmediateCompletionRetention;
+import com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -80,6 +81,15 @@ public final class ObservabilityActivationCoordinator implements AutoCloseable
                     ? current.completionRetention().retainOrDelete(artifactPath, finalizedAt, traceId, sessionId)
                     : ImmediateCompletionRetention.INSTANCE.retainOrDelete(
                             artifactPath, finalizedAt, traceId, sessionId);
+        }
+
+        @Override
+        public Optional<ArtifactLease> acquire(FinalizedTraceArtifact artifact) throws IOException
+        {
+            ObservabilityRuntime current = runtime;
+            return state.get() == State.ENABLED && current != null
+                    ? current.completionRetention().acquire(artifact)
+                    : Optional.empty();
         }
 
         @Override

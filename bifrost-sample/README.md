@@ -39,6 +39,41 @@ $env:OPENAI_API_KEY = "sk-..."
 $env:OPENROUTER_API_KEY = "sk-or-..."   # only needed for live /incidents/*, /claims/*, /support/*, and /travel/* plan calls
 ```
 
+Console observability is disabled by default. To opt in, use an external
+printable 32-512 character key; never put it in `application.yml`, a URL, or a
+command argument:
+
+```powershell
+$env:BIFROST_OBSERVABILITY_ENABLED = "true"
+$env:BIFROST_OBSERVABILITY_API_KEY = "replace-with-at-least-32-random-characters"
+.\mvnw.cmd -pl bifrost-sample spring-boot:run
+```
+
+The sample security chain explicitly permits the reserved namespace through the
+host layer so Bifrost's own key authentication runs. All sample business routes
+remain public. A host/proxy 401 or 403 is therefore distinct from Bifrost's
+`401/BIFROST_API_KEY_REJECTED`.
+
+After invoking the model-free mapped endpoint
+`http://localhost:8081/expenses`, list and download its trace:
+
+```powershell
+$headers = @{ "X-Bifrost-Api-Key" = $env:BIFROST_OBSERVABILITY_API_KEY }
+$traces = Invoke-RestMethod -Headers $headers `
+  http://localhost:8081/_bifrost/observability/v1/traces
+$traceId = $traces.items[0].traceId
+Invoke-WebRequest -Headers ($headers + @{ Accept = "application/x-ndjson" }) `
+  -OutFile "bifrost-trace-$traceId.ndjson" `
+  "http://localhost:8081/_bifrost/observability/v1/traces/$traceId/artifact"
+```
+
+The download carries exact finalized bytes, an attachment filename derived only
+from the opaque trace ID, `Content-Length`, `Cache-Control: no-store`, and the
+current `X-Bifrost-Instance-Id`. Eight downloads may run concurrently; the
+ninth is rejected immediately. An admitted transfer can finish across
+expiration, while a new unknown or expired acquisition returns
+`404/NOT_FOUND`. A servlet context path prefixes every URL above.
+
 ## Run
 
 From the repository root:
@@ -143,7 +178,9 @@ Notes:
 
 - `default-model` is an ordinary named model key; it is **not** auto-selected for LLM-backed skills that omit `model`.
 - Session mission timeout is raised to `6000s` for long vision/planning runs.
-- `execution-trace.persistence: ALWAYS` prevents normal post-completion deletion of full execution traces. The deprecated `bifrost-cli` may inspect them manually while it remains in the repository, but it is not a supported long-term workflow and will be removed after Bifrost Console is implemented.
+- `execution-trace.persistence: ALWAYS` retains completed traces. When the
+  opt-in operator API is enabled, obtain their exact NDJSON through
+  `traces/{traceId}/artifact`; do not depend on internal filesystem paths.
 - Incident, insurance, support, and travel planners use `qwen3-35b`; workers use `gpt-4o-mini`. Nested planning needs a capable model — these trees do **not** use `granite4-tiny`.
 
 Debug logging is enabled for Bifrost chat, linter, output schema, and planning packages so skill runs are easy to follow in the console.

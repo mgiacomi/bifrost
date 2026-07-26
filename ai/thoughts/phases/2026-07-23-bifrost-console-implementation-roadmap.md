@@ -203,6 +203,9 @@ executable authentication, compatibility, pagination, SSE, artifact-streaming,
 and consumed-trace fixtures. PR 07 and non-target local foundations in PR 08 may
 proceed earlier.
 
+Completion is tracked by the
+[Phase 1 evidence matrix](bifrost_console_phase_1_completion_evidence.md).
+
 ### Phase 2 gate
 
 Do not add MCP protocol adapters until target state, status, shared domain errors,

@@ -15,6 +15,10 @@ logging:
     org.springframework.ai.chat.client: DEBUG
 
 bifrost:
+  observability:
+    enabled: ${BIFROST_OBSERVABILITY_ENABLED:false}
+    auth:
+      api-key: ${BIFROST_OBSERVABILITY_API_KEY:}
   connections:
     ollama-main:
       driver: ollama

@@ -449,6 +449,9 @@ Phase 1 is complete when a separately running client can, through the secured se
 
 Concurrency, failure isolation, explicit-bound and lifecycle-proportional resource behavior, and authorization must be verified before considering the foundation complete.
 
+The named automated and manual evidence for these criteria is maintained in
+[the Phase 1 completion evidence matrix](bifrost_console_phase_1_completion_evidence.md).
+
 ## Boundary with Phase 2
 
 Phase 2 will design and build the standalone monitor console. It should consume the Phase 1 contracts rather than depend on Bifrost internals or trace filesystem layout.

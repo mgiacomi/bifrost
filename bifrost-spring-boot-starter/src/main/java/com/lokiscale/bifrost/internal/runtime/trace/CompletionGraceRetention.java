@@ -1,6 +1,9 @@
 package com.lokiscale.bifrost.internal.runtime.trace;
 
+import com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact;
+
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Optional;
@@ -9,6 +12,8 @@ public interface CompletionGraceRetention extends AutoCloseable
 {
     Optional<RetainedArtifact> retainOrDelete(Path artifactPath, Instant finalizedAt, String traceId, String sessionId)
             throws IOException;
+
+    Optional<ArtifactLease> acquire(FinalizedTraceArtifact artifact) throws IOException;
 
     @Override
     void close();
@@ -26,5 +31,15 @@ public interface CompletionGraceRetention extends AutoCloseable
                 throw new IllegalArgumentException("sizeBytes must not be negative");
             }
         }
+    }
+
+    interface ArtifactLease extends AutoCloseable
+    {
+        InputStream input();
+
+        long sizeBytes();
+
+        @Override
+        void close() throws IOException;
     }
 }

@@ -122,6 +122,13 @@ class ExecutionTraceHandleTest {
             }
 
             @Override
+            public java.util.Optional<ArtifactLease> acquire(
+                    com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact artifact)
+            {
+                return java.util.Optional.empty();
+            }
+
+            @Override
             public void close() {
             }
         };

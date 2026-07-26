@@ -11,6 +11,7 @@ import com.lokiscale.bifrost.internal.runtime.observation.catalog.TraceCatalogSl
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -247,6 +248,47 @@ public final class ObservabilityRestController
                 runtime().traces().find(traceId).orElseThrow(ObservabilityRestController::notFound))));
     }
 
+    public void artifact(
+            @PathVariable String traceId,
+            HttpServletRequest request,
+            HttpServletResponse response) throws IOException
+    {
+        require(ObservabilityAccessService.Operation.TRACE_ARTIFACT_READ);
+        requireArtifactRequest(request);
+        ObservabilityRuntime runtime = runtime();
+        runtime.traces().find(traceId).orElseThrow(ObservabilityRestController::notFound);
+        ObservabilityArtifactDelivery.Admission admission = runtime.artifactDelivery().admit();
+        com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTraceCatalog.ArtifactAcquisition
+                acquisition;
+        try
+        {
+            acquisition = runtime.traces().acquire(traceId)
+                    .orElseThrow(ObservabilityRestController::notFound);
+        }
+        catch (IOException | RuntimeException failure)
+        {
+            admission.close();
+            throw failure;
+        }
+        try
+        {
+            runtime.artifactDelivery().open(
+                    request,
+                    response,
+                    admission,
+                    acquisition.lease(),
+                    () -> prepareArtifactResponse(response, acquisition.traceId(), acquisition.sizeBytes()));
+        }
+        catch (RuntimeException failure)
+        {
+            if (!response.isCommitted())
+            {
+                response.reset();
+            }
+            throw failure;
+        }
+    }
+
     public void fallback(HttpServletRequest request)
     {
         requireGet(request);
@@ -333,6 +375,52 @@ public final class ObservabilityRestController
         {
             throw invalidRequestShape();
         }
+    }
+
+    private static void requireArtifactRequest(HttpServletRequest request)
+    {
+        if (!"GET".equals(request.getMethod()) || !request.getParameterMap().isEmpty())
+        {
+            throw invalidRequestShape();
+        }
+        for (String header : List.of(
+                "Range", "If-Range", "If-Match", "If-None-Match",
+                "If-Modified-Since", "If-Unmodified-Since"))
+        {
+            if (request.getHeader(header) != null)
+            {
+                throw invalidRequestShape();
+            }
+        }
+        try
+        {
+            MediaType ndjson = new MediaType("application", "x-ndjson");
+            List<MediaType> accepted = MediaType.parseMediaTypes(
+                    Collections.list(request.getHeaders("Accept")));
+            if (!accepted.isEmpty() && accepted.stream().noneMatch(mediaType ->
+                    mediaType.getQualityValue() > 0 && mediaType.isCompatibleWith(ndjson)))
+            {
+                throw invalidRequestShape();
+            }
+        }
+        catch (org.springframework.http.InvalidMediaTypeException failure)
+        {
+            throw invalidRequestShape();
+        }
+    }
+
+    static void prepareArtifactResponse(HttpServletResponse response, String traceId, long sizeBytes)
+    {
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("application/x-ndjson");
+        response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
+        response.setHeader(
+                "Content-Disposition",
+                ContentDisposition.attachment()
+                        .filename("bifrost-trace-" + traceId + ".ndjson", java.nio.charset.StandardCharsets.UTF_8)
+                        .build()
+                        .toString());
+        response.setContentLengthLong(sizeBytes);
     }
 
     private static long parseActivityCursor(String value)

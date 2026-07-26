@@ -296,12 +296,34 @@ exactly one `X-Bifrost-Api-Key` header. Authenticated responses use
 `X-Bifrost-Instance-Id`.
 
 The current routes are `instance`, `skills`, `skills/{registeredName}`,
-`active-executions`, `active-executions/{sessionId}`, `traces`, and
-`traces/{traceId}` beneath the API root. They expose all registered YAML and
-current diagnostic metadata to one operator scope. Application-provided YAML
-and diagnostic content is not secret-scanned or redacted; do not put secrets in
-skill files. Authentication secrets and internal artifact paths are never
-returned.
+`active-executions`, `active-executions/{sessionId}`, `activity`, `traces`,
+`traces/{traceId}`, and `traces/{traceId}/artifact` beneath the API root. The
+artifact route accepts only GET with no query, range, or conditional headers
+and an absent, wildcard, or NDJSON-compatible `Accept` header:
+
+```bash
+curl -H "X-Bifrost-Api-Key: $BIFROST_OBSERVABILITY_API_KEY" \
+  -H "Accept: application/x-ndjson" \
+  -OJ "http://localhost:8081/_bifrost/observability/v1/traces/$TRACE_ID/artifact"
+```
+
+A successful download is
+`application/x-ndjson; charset=utf-8`, has the exact cataloged
+`Content-Length`, and uses a standards-encoded attachment disposition whose
+`filename`/`filename*` values represent
+`bifrost-trace-<traceId>.ndjson`. Clients should use the decoded attachment
+filename rather than comparing the serialized header text.
+The process admits eight downloads independently from the 16 SSE subscriptions;
+a ninth receives `429/LIMIT_EXCEEDED` without queuing. Transfers time out after
+five minutes. A transfer admitted before expiration may finish, but new
+requests for unknown, expired, deleted, or raced resources receive
+`404/NOT_FOUND`.
+
+The body is the exact finalized diagnostic file: Bifrost does not parse,
+rewrite, normalize, redact, compress, or buffer it in full. Authenticated traces
+may contain application business data and paths already recorded by canonical
+diagnostics. Ordinary DTOs, lookup identifiers, response headers, and safe
+download filenames never expose or derive from the internal artifact path.
 
 Applications using Spring Security must let the reserved namespace reach
 Bifrost's filter while retaining their normal rules elsewhere. Bifrost does not
@@ -324,6 +346,11 @@ The normal servlet context path applies to every route. If startup detects an
 invalid configuration or an overlapping application mapping, it logs a
 sanitized diagnostic and leaves the entire optional adapter, observation, and
 completion grace behavior disabled.
+
+TLS and any host/proxy rejection remain application infrastructure
+responsibilities. A server-to-server Console client on the same listener needs
+no CORS configuration. Rotating the key prevents later requests but does not
+retroactively revoke a transfer that was already authenticated and admitted.
 
 ## Running The Sample
 

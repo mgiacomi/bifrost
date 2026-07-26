@@ -18,7 +18,18 @@ mvn -pl bifrost-spring-boot-starter -Dtest=ConsoleTraceFixtureCorpusTest -Dbifro
 
 Run regeneration twice and require the second run to produce no diff. PR 06 will stream this same corpus as artifacts, and PR 13 will consume these expected results from Go; neither should copy it elsewhere.
 
-`application-rest/` contains deterministic PR 04 REST and problem bodies
-produced by Java. PR 06 extends the transport contract with SSE and artifact
-streaming; PR 09 consumes the application REST corpus from Go without copying
-it into a second fixture tree.
+`application-rest/` contains deterministic REST and problem bodies produced by
+Java. `application-sse/` contains complete handshake, activity, failure, and
+replay frames produced by the application stream framer.
+
+`application-artifact/download-response.json` records the exact artifact route,
+status, and response headers. Its `bodyFixture` points to the existing
+`traces/single-attempt-success.ndjson`; transport fixtures never duplicate an
+NDJSON body. The JSON is test metadata, not a runtime manifest or a separate
+artifact version.
+
+Future Go PRs must first require the exact `consoleCompatibilityVersion` from
+`application-rest/instance-status.json`. PR 09 must reject a mismatch before
+making any snapshot, SSE, catalog, or artifact request. PRs 11-13 consume these
+transport fixtures and the existing semantic corpus without filesystem paths or
+a second trace format.

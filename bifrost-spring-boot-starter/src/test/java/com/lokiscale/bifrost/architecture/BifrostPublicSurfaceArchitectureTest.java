@@ -48,6 +48,7 @@ class BifrostPublicSurfaceArchitectureTest
             Map.entry("com.lokiscale.bifrost.internal.observability.ObservabilityRuntime", "Public only for framework-owned adapter composition."),
             Map.entry("com.lokiscale.bifrost.internal.observability.web.BoundedJsonPageWriter", "Public only for framework-owned bounded REST serialization."),
             Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityActivityDelivery", "Public only for framework-owned live-delivery runtime composition."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityArtifactDelivery", "Public only for framework-owned bounded artifact-delivery runtime composition."),
             Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityAccessService", "Public only for framework-owned operator authorization."),
             Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityApiKeyFilter", "Public only for servlet filter registration by auto-configuration."),
             Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityApiPaths", "Public only to keep internal route ownership coherent."),

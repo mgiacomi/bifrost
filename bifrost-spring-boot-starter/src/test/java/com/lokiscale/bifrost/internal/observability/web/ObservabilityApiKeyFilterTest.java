@@ -176,6 +176,7 @@ class ObservabilityApiKeyFilterTest
                 Clock.systemUTC(),
                 mock(ExecutionObservationHandleFactory.class),
                 mock(ObservabilityActivityDelivery.class),
+                mock(ObservabilityArtifactDelivery.class),
                 mock(CompletionGraceRetention.class),
                 mock(ActiveExecutionRegistry.class),
                 mock(ActivityReplayBuffer.class),
