@@ -17,3 +17,8 @@ mvn -pl bifrost-spring-boot-starter -Dtest=ConsoleTraceFixtureCorpusTest -Dbifro
 ```
 
 Run regeneration twice and require the second run to produce no diff. PR 06 will stream this same corpus as artifacts, and PR 13 will consume these expected results from Go; neither should copy it elsewhere.
+
+`application-rest/` contains deterministic PR 04 REST and problem bodies
+produced by Java. PR 06 extends the transport contract with SSE and artifact
+streaming; PR 09 consumes the application REST corpus from Go without copying
+it into a second fixture tree.

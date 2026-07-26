@@ -21,6 +21,10 @@ class ConfigurationMetadataTest {
                     .contains("bifrost.connections.*.gemini.credentials-uri")
                     .contains("bifrost.models.*.connection")
                     .contains("bifrost.models.*.thinking-levels")
+                    .contains("bifrost.observability.enabled")
+                    .contains("bifrost.observability.auth.api-key")
+                    .contains("bifrost.observability.completion-grace-ttl")
+                    .contains("bifrost.observability.trace-catalog-metadata-ttl")
                     .contains("\"value\": \"openai\"")
                     .doesNotContain("bifrost.models.*.provider\"");
         }

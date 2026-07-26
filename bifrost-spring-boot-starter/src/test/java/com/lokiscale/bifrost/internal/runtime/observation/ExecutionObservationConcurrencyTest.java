@@ -56,7 +56,7 @@ class ExecutionObservationConcurrencyTest
 
             assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
             assertThat(factory.registry().activeCount()).isEqualTo(SESSION_COUNT);
-            assertThat(factory.registry().newestFirst(0, SESSION_COUNT))
+            assertThat(factory.registry().newestFirst(0, 0, SESSION_COUNT))
                     .extracting(ActiveExecutionSnapshot::sessionId)
                     .doesNotHaveDuplicates()
                     .hasSize(SESSION_COUNT);

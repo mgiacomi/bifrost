@@ -1,6 +1,29 @@
 {
   "properties": [
     {
+      "name": "bifrost.observability.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Opt in to the servlet observability adapter."
+    },
+    {
+      "name": "bifrost.observability.auth.api-key",
+      "type": "java.lang.String",
+      "description": "Sensitive operator credential. Supply 32 to 512 printable non-whitespace ASCII characters through external configuration."
+    },
+    {
+      "name": "bifrost.observability.completion-grace-ttl",
+      "type": "java.time.Duration",
+      "defaultValue": "15m",
+      "description": "Retention grace for completed trace artifacts; zero disables grace."
+    },
+    {
+      "name": "bifrost.observability.trace-catalog-metadata-ttl",
+      "type": "java.time.Duration",
+      "defaultValue": "24h",
+      "description": "Positive retention period for current-process finalized trace metadata."
+    },
+    {
       "name": "bifrost.connections",
       "type": "java.util.Map<java.lang.String,com.lokiscale.bifrost.autoconfigure.BifrostProperties$ConnectionProperties>",
       "description": "Application-owned named AI connections. Values do not inherit or merge spring.ai.* properties."

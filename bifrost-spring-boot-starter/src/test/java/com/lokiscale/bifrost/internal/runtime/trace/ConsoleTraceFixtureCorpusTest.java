@@ -572,6 +572,7 @@ class ConsoleTraceFixtureCorpusTest
                     .filter(path -> !path.getFileName().toString().equals("README.md"))
                     .map(root::relativize)
                     .map(path -> path.toString().replace('\\', '/'))
+                    .filter(path -> path.startsWith("traces/") || path.startsWith("expected/"))
                     .sorted()
                     .toList();
         }

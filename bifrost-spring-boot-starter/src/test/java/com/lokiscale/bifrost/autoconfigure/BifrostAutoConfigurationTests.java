@@ -16,6 +16,7 @@ import com.lokiscale.bifrost.internal.core.SkillMethodBeanPostProcessor;
 import com.lokiscale.bifrost.internal.core.SkillImplementationTargetRegistry;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidator;
+import com.lokiscale.bifrost.internal.observability.ObservabilityActivationCoordinator;
 import com.lokiscale.bifrost.internal.skill.SkillVisibilityResolver;
 import com.lokiscale.bifrost.internal.skill.EffectiveSkillExecutionConfiguration;
 import com.lokiscale.bifrost.internal.skill.YamlSkillCatalog;
@@ -32,6 +33,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.PropertySource;
@@ -70,9 +72,16 @@ class BifrostAutoConfigurationTests {
                 }
             });
 
+    private final ReactiveWebApplicationContextRunner reactiveContextRunner =
+            new ReactiveWebApplicationContextRunner()
+                    .withConfiguration(AutoConfigurations.of(
+                            ConfigurationPropertiesAutoConfiguration.class,
+                            BifrostAutoConfiguration.class));
+
     @Test
     void hasAutoConfigurationAnnotation() {
         assertThat(BifrostAutoConfiguration.class.isAnnotationPresent(AutoConfiguration.class)).isTrue();
+        assertThat(BifrostObservabilityWebAutoConfiguration.class.isAnnotationPresent(AutoConfiguration.class)).isTrue();
     }
 
     @Test
@@ -82,7 +91,10 @@ class BifrostAutoConfigurationTests {
                 .getResourceAsStream("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")) {
             assertThat(stream).isNotNull();
             String imports = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            assertThat(imports).contains("com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration");
+            assertThat(imports.lines().filter(line -> !line.isBlank()).toList())
+                    .containsExactly(
+                            "com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration",
+                            "com.lokiscale.bifrost.autoconfigure.BifrostObservabilityWebAutoConfiguration");
         }
     }
 
@@ -107,6 +119,42 @@ class BifrostAutoConfigurationTests {
                     assertThat(context).hasSingleBean(SkillInputValidator.class);
                     assertThat(context).hasSingleBean(SkillTemplate.class);
                     assertThat(context.getBean(BifrostProperties.class).getSession().getMaxDepth()).isEqualTo(5);
+                });
+    }
+
+    @Test
+    void nonWebEnablementIsPermanentlyDisabled()
+    {
+        modelFreeContextRunner
+                .withPropertyValues(
+                        "bifrost.observability.enabled=true",
+                        "bifrost.observability.auth.api-key=0123456789abcdef0123456789abcdef",
+                        "bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
+                .run(context ->
+                {
+                    ObservabilityActivationCoordinator activation =
+                            context.getBean(ObservabilityActivationCoordinator.class);
+                    assertThat(activation.state())
+                            .isEqualTo(ObservabilityActivationCoordinator.State.DISABLED);
+                    assertThat(activation.runtime()).isEmpty();
+                });
+    }
+
+    @Test
+    void reactiveWebEnablementIsPermanentlyDisabled()
+    {
+        reactiveContextRunner
+                .withPropertyValues(
+                        "bifrost.observability.enabled=true",
+                        "bifrost.observability.auth.api-key=0123456789abcdef0123456789abcdef",
+                        "bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
+                .run(context ->
+                {
+                    ObservabilityActivationCoordinator activation =
+                            context.getBean(ObservabilityActivationCoordinator.class);
+                    assertThat(activation.state())
+                            .isEqualTo(ObservabilityActivationCoordinator.State.DISABLED);
+                    assertThat(activation.runtime()).isEmpty();
                 });
     }
 

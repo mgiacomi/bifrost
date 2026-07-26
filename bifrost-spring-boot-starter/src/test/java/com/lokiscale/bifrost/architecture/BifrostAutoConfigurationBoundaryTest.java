@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.architecture;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration;
+import com.lokiscale.bifrost.autoconfigure.BifrostObservabilityWebAutoConfiguration;
 import com.lokiscale.bifrost.internal.chat.SkillChatModelResolver;
 import com.lokiscale.bifrost.internal.security.AccessGuard;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,15 @@ class BifrostAutoConfigurationBoundaryTest
             "namedAiConnectionRegistry", "skillChatModelResolver", "openAiSkillChatOptionsAdapter",
             "anthropicSkillChatOptionsAdapter", "geminiSkillChatOptionsAdapter",
             "ollamaSkillChatOptionsAdapter", "skillAdvisorResolver", "skillChatClientFactory",
-            "stepLoopMissionExecutionEngine", "executionCoordinator");
+            "stepLoopMissionExecutionEngine", "executionCoordinator", "observabilityActivationCoordinator",
+            "observabilityNonWebActivation", "observabilityReactiveWebActivation");
+
+    private static final Set<String> WEB_BEAN_FACTORIES = Set.of(
+            "observabilityJsonCodec", "observabilityProblemMapper",
+            "observabilityAccessService", "observabilityDtoMapper",
+            "observabilityCursorCodec", "boundedJsonPageWriter", "observabilityRestController",
+            "observabilityRouteCollisionDetector", "observabilityRouteRegistrar",
+            "observabilityApiKeyFilter");
 
     private static final Set<String> SUPPORTED_BIFROST_BEAN_OVERRIDES = Set.of();
 
@@ -64,6 +73,20 @@ class BifrostAutoConfigurationBoundaryTest
         assertThat(beanMethods)
                 .allSatisfy(method -> assertThat(method.getModifiers())
                         .as("Framework-owned bean method %s must not be public or protected", method.getName())
+                        .matches(modifiers -> !Modifier.isPublic(modifiers) && !Modifier.isProtected(modifiers)));
+    }
+
+    @Test
+    void everyWebBeanFactoryIsClassifiedAndPackagePrivate()
+    {
+        var beanMethods = Arrays.stream(BifrostObservabilityWebAutoConfiguration.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(Bean.class))
+                .toList();
+
+        assertThat(beanMethods.stream().map(method -> method.getName()).collect(Collectors.toSet()))
+                .containsExactlyInAnyOrderElementsOf(WEB_BEAN_FACTORIES);
+        assertThat(beanMethods)
+                .allSatisfy(method -> assertThat(method.getModifiers())
                         .matches(modifiers -> !Modifier.isPublic(modifiers) && !Modifier.isProtected(modifiers)));
     }
 

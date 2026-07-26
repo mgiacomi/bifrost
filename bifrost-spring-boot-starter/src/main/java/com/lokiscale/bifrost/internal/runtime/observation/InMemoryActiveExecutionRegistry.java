@@ -61,19 +61,21 @@ public final class InMemoryActiveExecutionRegistry implements ActiveExecutionReg
     }
 
     @Override
-    public List<ActiveExecutionSnapshot> newestFirst(long highWaterMark, int limit)
+    public List<ActiveExecutionSnapshot> newestFirst(long highWaterMark, long beforeOrdinal, int limit)
     {
-        if (highWaterMark < 0)
+        if (highWaterMark < 0 || beforeOrdinal < 0)
         {
-            throw new IllegalArgumentException("highWaterMark must not be negative");
+            throw new IllegalArgumentException("ordinal positions must not be negative");
         }
         if (limit <= 0)
         {
             throw new IllegalArgumentException("limit must be positive");
         }
         long effectiveHighWater = highWaterMark == 0 ? Long.MAX_VALUE : highWaterMark;
+        long effectiveBefore = beforeOrdinal == 0 ? Long.MAX_VALUE : beforeOrdinal;
         return snapshots.values().stream()
                 .filter(snapshot -> snapshot.registryOrdinal() <= effectiveHighWater)
+                .filter(snapshot -> snapshot.registryOrdinal() < effectiveBefore)
                 .sorted(Comparator.comparingLong(ActiveExecutionSnapshot::registryOrdinal).reversed())
                 .limit(limit)
                 .toList();

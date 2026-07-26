@@ -37,11 +37,29 @@ class BifrostPublicSurfaceArchitectureTest
 
     private static final Set<String> FRAMEWORK_INTEGRATION_TYPES = Set.of(
             "com.lokiscale.bifrost.autoconfigure.BifrostAutoConfiguration",
+            "com.lokiscale.bifrost.autoconfigure.BifrostObservabilityWebAutoConfiguration",
             "com.lokiscale.bifrost.autoconfigure.BifrostProperties",
             "com.lokiscale.bifrost.autoconfigure.ExecutionTraceProperties",
             "com.lokiscale.bifrost.autoconfigure.AiDriver");
 
     private static final Map<String, String> TECHNICALLY_PUBLIC_INTERNAL_TYPES = Map.ofEntries(
+            Map.entry("com.lokiscale.bifrost.internal.observability.BifrostReleaseVersion", "Public only for framework-owned release metadata collaboration."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.ObservabilityActivationCoordinator", "Public only for framework-owned auto-configuration composition."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.ObservabilityRuntime", "Public only for framework-owned adapter composition."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.BoundedJsonPageWriter", "Public only for framework-owned bounded REST serialization."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityAccessService", "Public only for framework-owned operator authorization."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityApiKeyFilter", "Public only for servlet filter registration by auto-configuration."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityApiPaths", "Public only to keep internal route ownership coherent."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityCursorCodec", "Public only for framework-owned REST continuation encoding."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityDtoMapper", "Public only for framework-owned wire projection."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityJsonCodec", "Public only for framework-owned stable REST and cursor serialization."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityException", "Public only for internal web problem propagation."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityProblem", "Public only for the internal serialized problem boundary."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityProblemMapper", "Public only for framework-owned problem mapping."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityRestController", "Public only for programmatic Spring MVC handler registration."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityRouteCollisionDetector", "Public only for framework-owned namespace inspection."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.ObservabilityRouteRegistrar", "Public only for framework-owned programmatic route lifecycle."),
+            Map.entry("com.lokiscale.bifrost.internal.observability.web.dto.ObservabilityDtos", "Public only as internal hand-authored REST boundary DTOs."),
             Map.entry("com.lokiscale.bifrost.internal.autoconfigure.AiConnectionChatModelFactory", "Public only so BifrostAutoConfiguration can construct this type across the Spring integration boundary."),
             Map.entry("com.lokiscale.bifrost.internal.autoconfigure.AnthropicConnectionChatModelFactory", "Public only so BifrostAutoConfiguration can construct this type across the Spring integration boundary."),
             Map.entry("com.lokiscale.bifrost.internal.autoconfigure.GeminiConnectionChatModelFactory", "Public only so BifrostAutoConfiguration can construct this type across the Spring integration boundary."),
@@ -349,6 +367,25 @@ class BifrostPublicSurfaceArchitectureTest
                 assertThat(forbidden)
                         .as("%s component %s", dto.getSimpleName(), component.getName())
                         .noneMatch(type -> type.isAssignableFrom(rawType) || rawType.isAssignableFrom(type));
+            }
+        }
+    }
+
+    @Test
+    void observabilityWireDtosDoNotEmbedRuntimeUsageTypes()
+    {
+        for (Class<?> dto : com.lokiscale.bifrost.internal.observability.web.dto.ObservabilityDtos.class
+                .getDeclaredClasses())
+        {
+            if (!dto.isRecord())
+            {
+                continue;
+            }
+            for (var component : dto.getRecordComponents())
+            {
+                assertThat(component.getType())
+                        .as("%s component %s", dto.getSimpleName(), component.getName())
+                        .isNotEqualTo(com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot.class);
             }
         }
     }

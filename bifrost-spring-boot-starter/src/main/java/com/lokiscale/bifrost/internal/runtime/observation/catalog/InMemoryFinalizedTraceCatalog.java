@@ -146,7 +146,14 @@ public final class InMemoryFinalizedTraceCatalog implements FinalizedTraceCatalo
                         .filter(entry -> !expired(entry, now))
                         .sorted(Comparator.comparingLong(FinalizedTraceCatalogEntry::catalogOrdinal).reversed())
                         .limit(limit)
-                        .toList());
+                .toList());
+    }
+
+    @Override
+    public int catalogedTraceCount()
+    {
+        Instant now = Instant.now(clock);
+        return Math.toIntExact(entries.values().stream().filter(entry -> !expired(entry, now)).count());
     }
 
     void purgeExpired()

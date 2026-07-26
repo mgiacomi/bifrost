@@ -10,4 +10,6 @@ public interface RegisteredSkillCatalog
     Optional<RegisteredSkillFile> find(String registeredName);
 
     List<RegisteredSkillFile.Summary> listAfter(@Nullable String exclusiveName, int limit);
+
+    int registeredSkillCount();
 }

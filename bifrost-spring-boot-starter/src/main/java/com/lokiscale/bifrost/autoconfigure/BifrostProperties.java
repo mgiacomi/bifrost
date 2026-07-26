@@ -36,6 +36,9 @@ public class BifrostProperties implements InitializingBean
     private Skills skills = new Skills();
 
     @Valid
+    private Observability observability = new Observability();
+
+    @Valid
     private Map<String, ConnectionProperties> connections = new LinkedHashMap<>();
 
     @Valid
@@ -54,6 +57,16 @@ public class BifrostProperties implements InitializingBean
     public Skills getSkills()
     {
         return skills;
+    }
+
+    public Observability getObservability()
+    {
+        return observability;
+    }
+
+    public void setObservability(Observability observability)
+    {
+        this.observability = observability == null ? new Observability() : observability;
     }
 
     public void setSkills(Skills skills)
@@ -309,6 +322,45 @@ public class BifrostProperties implements InitializingBean
         {
             this.locations = locations == null || locations.isEmpty()
                     ? List.of("classpath:/skills/**/*.yaml") : List.copyOf(locations);
+        }
+    }
+
+    public static class Observability
+    {
+        private boolean enabled;
+        @Valid
+        private Auth auth = new Auth();
+        private Duration completionGraceTtl = Duration.ofMinutes(15);
+        private Duration traceCatalogMetadataTtl = Duration.ofHours(24);
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public Auth getAuth() { return auth; }
+        public void setAuth(Auth auth) { this.auth = auth == null ? new Auth() : auth; }
+        public Duration getCompletionGraceTtl() { return completionGraceTtl; }
+        public void setCompletionGraceTtl(Duration value) { completionGraceTtl = value; }
+        public Duration getTraceCatalogMetadataTtl() { return traceCatalogMetadataTtl; }
+        public void setTraceCatalogMetadataTtl(Duration value) { traceCatalogMetadataTtl = value; }
+
+        @Override
+        public String toString()
+        {
+            return "Observability[enabled=" + enabled + ", credentialsConfigured="
+                    + StringUtils.hasText(auth.apiKey) + ", completionGraceTtl=" + completionGraceTtl
+                    + ", traceCatalogMetadataTtl=" + traceCatalogMetadataTtl + "]";
+        }
+
+        public static class Auth
+        {
+            private String apiKey;
+            public String getApiKey() { return apiKey; }
+            public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+
+            @Override
+            public String toString()
+            {
+                return "Auth[credentialsConfigured=" + StringUtils.hasText(apiKey) + "]";
+            }
         }
     }
 

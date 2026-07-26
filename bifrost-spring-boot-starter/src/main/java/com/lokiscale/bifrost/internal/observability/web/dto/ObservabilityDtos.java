@@ -1,0 +1,83 @@
+package com.lokiscale.bifrost.internal.observability.web.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.lokiscale.bifrost.internal.core.TraceFrameType;
+import com.lokiscale.bifrost.internal.core.TraceOutcome;
+import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
+public final class ObservabilityDtos
+{
+    private ObservabilityDtos() {}
+
+    public record InstanceStatus(
+            String instanceId,
+            String consoleCompatibilityVersion,
+            Instant observedAt,
+            boolean liveMonitoringAvailable,
+            int registeredSkillCount,
+            int activeExecutionCount,
+            int catalogedTraceCount,
+            TracePersistencePolicy tracePersistencePolicy,
+            Duration completionGraceTtl,
+            Duration traceCatalogMetadataTtl) {}
+
+    public record SkillSummary(String registeredName, String sourcePath, String href) {}
+    public record SkillDetail(String registeredName, String sourcePath, String yaml) {}
+    public record FramePathEntry(String frameId, TraceFrameType frameType, String route) {}
+    public record QuotaLimits(
+            int maxSkillInvocations,
+            int maxToolInvocations,
+            int maxLinterRetries,
+            int maxModelCalls,
+             int maxUsageUnits) {}
+    public record Usage(
+            int skillInvocations,
+            int toolInvocations,
+            int linterRetries,
+            int modelCalls,
+            int promptUnits,
+            int completionUnits,
+            int usageUnits,
+            int exactModelResponses,
+            int heuristicModelResponses,
+            int unavailableModelResponses) {}
+    public record ActiveExecution(
+            String sessionId,
+            String traceId,
+            long lastCanonicalSequence,
+            Instant startedAt,
+            Instant updatedAt,
+            long elapsedMillis,
+            String entrySkill,
+            String status,
+            String phase,
+            String summary,
+            List<FramePathEntry> activePath,
+            int totalFrameDepth,
+            boolean activePathTruncated,
+            Usage usage,
+            QuotaLimits configuredLimits) {}
+    public record Trace(
+            String traceId,
+            String sessionId,
+            TraceOutcome outcome,
+            Instant finalizedAt,
+            long sizeBytes,
+            TracePersistencePolicy persistencePolicy,
+            Instant applicationTraceExpiresAt) {}
+    public record Page<T>(
+            List<T> items,
+            boolean hasMore,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String nextCursor,
+            Instant observedAt) {}
+    public record ActivePage(
+            List<ActiveExecution> items,
+            boolean hasMore,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String nextCursor,
+            Instant observedAt,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String resumeCursor) {}
+}

@@ -1,0 +1,124 @@
+package com.lokiscale.bifrost.autoconfigure;
+
+import com.lokiscale.bifrost.internal.observability.ObservabilityActivationCoordinator;
+import com.lokiscale.bifrost.internal.observability.web.BoundedJsonPageWriter;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityAccessService;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityApiKeyFilter;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityCursorCodec;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityDtoMapper;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityJsonCodec;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityProblemMapper;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityRestController;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityRouteCollisionDetector;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityRouteRegistrar;
+import com.lokiscale.bifrost.internal.skill.YamlSkillCatalog;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Role;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.web.servlet.DispatcherServlet;
+import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+
+import java.util.EnumSet;
+import java.util.List;
+
+@AutoConfiguration
+@AutoConfigureAfter({ BifrostAutoConfiguration.class, WebMvcAutoConfiguration.class })
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+@ConditionalOnClass({ DispatcherServlet.class, Filter.class })
+public class BifrostObservabilityWebAutoConfiguration
+{
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityJsonCodec observabilityJsonCodec()
+    {
+        return new ObservabilityJsonCodec();
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityProblemMapper observabilityProblemMapper() { return new ObservabilityProblemMapper(); }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityAccessService observabilityAccessService() { return new ObservabilityAccessService(); }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityDtoMapper observabilityDtoMapper() { return new ObservabilityDtoMapper(); }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityCursorCodec observabilityCursorCodec(ObservabilityJsonCodec json)
+    {
+        return new ObservabilityCursorCodec(json);
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    BoundedJsonPageWriter boundedJsonPageWriter(ObservabilityJsonCodec json)
+    {
+        return new BoundedJsonPageWriter(json);
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityRestController observabilityRestController(
+            ObservabilityActivationCoordinator activation,
+            ObservabilityAccessService access,
+            ObservabilityDtoMapper mapper,
+            ObservabilityCursorCodec cursors,
+            BoundedJsonPageWriter pages)
+    {
+        return new ObservabilityRestController(activation, access, mapper, cursors, pages);
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityRouteCollisionDetector observabilityRouteCollisionDetector(List<HandlerMapping> handlerMappings)
+    {
+        return new ObservabilityRouteCollisionDetector(handlerMappings);
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityRouteRegistrar observabilityRouteRegistrar(
+            @Qualifier("requestMappingHandlerMapping") ObjectProvider<RequestMappingHandlerMapping> mappings,
+            ObservabilityRestController controller,
+            ObservabilityRouteCollisionDetector collisions,
+            ObservabilityActivationCoordinator activation,
+            BifrostProperties properties,
+            ExecutionTraceProperties traceProperties,
+            YamlSkillCatalog yamlSkills)
+    {
+        return new ObservabilityRouteRegistrar(
+                mappings.getIfAvailable(), controller, collisions, activation, properties, traceProperties, yamlSkills);
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    FilterRegistrationBean<ObservabilityApiKeyFilter> observabilityApiKeyFilter(
+            ObservabilityActivationCoordinator activation,
+            ObservabilityJsonCodec json,
+            ObservabilityProblemMapper problems)
+    {
+        var registration = new FilterRegistrationBean<>(
+                new ObservabilityApiKeyFilter(activation, json, problems));
+        registration.setName("bifrostObservabilityApiKeyFilter");
+        registration.addUrlPatterns("/_bifrost/observability/v1", "/_bifrost/observability/v1/*");
+        registration.setDispatcherTypes(EnumSet.allOf(DispatcherType.class));
+        registration.setAsyncSupported(true);
+        registration.setOrder(-99);
+        return registration;
+    }
+}

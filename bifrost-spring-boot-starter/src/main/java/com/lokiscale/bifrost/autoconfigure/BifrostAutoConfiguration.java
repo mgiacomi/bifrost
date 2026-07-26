@@ -33,7 +33,7 @@ import com.lokiscale.bifrost.internal.runtime.attachment.MissionUserMessageSende
 import com.lokiscale.bifrost.internal.runtime.attachment.SpringAiMissionUserMessageSender;
 import com.lokiscale.bifrost.internal.runtime.planning.DefaultPlanningService;
 import com.lokiscale.bifrost.internal.runtime.planning.PlanningService;
-import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory;
+import com.lokiscale.bifrost.internal.observability.ObservabilityActivationCoordinator;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputContractResolver;
 import com.lokiscale.bifrost.internal.runtime.input.SkillInputValidator;
 import com.lokiscale.bifrost.internal.runtime.state.DefaultExecutionStateService;
@@ -69,6 +69,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Role;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnNotWebApplication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Paths;
 import java.time.Clock;
@@ -84,6 +89,7 @@ import java.util.concurrent.Executors;
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 public class BifrostAutoConfiguration
 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(BifrostAutoConfiguration.class);
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     CapabilityRegistry capabilityRegistry()
@@ -122,14 +128,57 @@ public class BifrostAutoConfiguration
 
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    ObservabilityActivationCoordinator observabilityActivationCoordinator()
+    {
+        return new ObservabilityActivationCoordinator();
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    @ConditionalOnNotWebApplication
+    SmartInitializingSingleton observabilityNonWebActivation(
+            BifrostProperties properties,
+            ObservabilityActivationCoordinator observabilityActivationCoordinator)
+    {
+        return unsupportedObservabilityActivation(properties, observabilityActivationCoordinator);
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
+    SmartInitializingSingleton observabilityReactiveWebActivation(
+            BifrostProperties properties,
+            ObservabilityActivationCoordinator observabilityActivationCoordinator)
+    {
+        return unsupportedObservabilityActivation(properties, observabilityActivationCoordinator);
+    }
+
+    private static SmartInitializingSingleton unsupportedObservabilityActivation(
+            BifrostProperties properties,
+            ObservabilityActivationCoordinator observabilityActivationCoordinator)
+    {
+        return () ->
+        {
+            if (properties.getObservability().isEnabled())
+            {
+                LOGGER.warn("Bifrost observability disabled: a servlet web application is required");
+            }
+            observabilityActivationCoordinator.disable();
+        };
+    }
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     BifrostSessionRunner bifrostSessionRunner(BifrostProperties properties,
-            ExecutionTraceProperties executionTraceProperties)
+            ExecutionTraceProperties executionTraceProperties,
+            ObservabilityActivationCoordinator observabilityActivationCoordinator)
     {
         return new BifrostSessionRunner(
                 properties.getSession().getMaxDepth(),
                 executionTraceProperties.getPersistence(),
                 Clock.systemUTC(),
-                NoOpExecutionObservationHandleFactory.INSTANCE);
+                observabilityActivationCoordinator.observationFactory(),
+                observabilityActivationCoordinator.completionRetention());
     }
 
     @Bean

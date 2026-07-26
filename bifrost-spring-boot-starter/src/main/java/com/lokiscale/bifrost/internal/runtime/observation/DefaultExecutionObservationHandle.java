@@ -59,6 +59,12 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
                     }
 
                     @Override
+                    public int catalogedTraceCount()
+                    {
+                        return 0;
+                    }
+
+                    @Override
                     public void close()
                     {
                     }

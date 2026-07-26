@@ -25,7 +25,7 @@ class InMemoryActiveExecutionRegistryTest
         assertThat(first.registryOrdinal()).isPositive();
         assertThat(second.registryOrdinal()).isGreaterThan(first.registryOrdinal());
         assertThat(updated.registryOrdinal()).isEqualTo(first.registryOrdinal());
-        assertThat(registry.newestFirst(0, 10))
+        assertThat(registry.newestFirst(0, 0, 10))
                 .extracting(ActiveExecutionSnapshot::sessionId)
                 .containsExactly("two", "one");
         assertThat(registry.remove("one")).isTrue();
@@ -59,10 +59,31 @@ class InMemoryActiveExecutionRegistryTest
             }
         }
         assertThat(registry.activeCount()).isEqualTo(128);
-        assertThat(registry.newestFirst(registry.highestOrdinal(), 128))
+        assertThat(registry.newestFirst(registry.highestOrdinal(), 0, 128))
                 .extracting(ActiveExecutionSnapshot::registryOrdinal)
                 .doesNotHaveDuplicates()
                 .isSortedAccordingTo(java.util.Comparator.reverseOrder());
+    }
+
+    @Test
+    void traversesCapturedHighWaterBelowExclusiveBeforeOrdinal()
+    {
+        InMemoryActiveExecutionRegistry registry = new InMemoryActiveExecutionRegistry();
+        registry.replace(snapshot("one", 1));
+        registry.replace(snapshot("two", 1));
+        registry.replace(snapshot("three", 1));
+        registry.replace(snapshot("four", 1));
+        long highWater = registry.highestOrdinal();
+
+        List<ActiveExecutionSnapshot> first = registry.newestFirst(highWater, 0, 2);
+        registry.replace(snapshot("five", 1));
+        List<ActiveExecutionSnapshot> second =
+                registry.newestFirst(highWater, first.getLast().registryOrdinal(), 2);
+
+        assertThat(first).extracting(ActiveExecutionSnapshot::sessionId).containsExactly("four", "three");
+        assertThat(second).extracting(ActiveExecutionSnapshot::sessionId).containsExactly("two", "one");
+        assertThat(java.util.stream.Stream.concat(first.stream(), second.stream())
+                .map(ActiveExecutionSnapshot::sessionId)).doesNotHaveDuplicates().doesNotContain("five");
     }
 
     static ActiveExecutionSnapshot snapshot(String sessionId, long sequence)

@@ -17,6 +17,34 @@ class BifrostPropertiesTest {
             .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml");
 
     @Test
+    void bindsDisabledObservabilityDefaultsAndValidExternalizedValues()
+    {
+        contextRunner.run(context ->
+        {
+            BifrostProperties.Observability value =
+                    context.getBean(BifrostProperties.class).getObservability();
+            assertThat(value.isEnabled()).isFalse();
+            assertThat(value.getCompletionGraceTtl()).isEqualTo(java.time.Duration.ofMinutes(15));
+            assertThat(value.getTraceCatalogMetadataTtl()).isEqualTo(java.time.Duration.ofHours(24));
+        });
+
+        contextRunner.withPropertyValues(
+                "bifrost.observability.enabled=false",
+                "bifrost.observability.auth.api-key=secret-sentinel-value-that-is-long",
+                "bifrost.observability.completion-grace-ttl=0s",
+                "bifrost.observability.trace-catalog-metadata-ttl=2h")
+                .run(context ->
+                {
+                    BifrostProperties.Observability value =
+                            context.getBean(BifrostProperties.class).getObservability();
+                    assertThat(value.getCompletionGraceTtl()).isZero();
+                    assertThat(value.getTraceCatalogMetadataTtl()).isEqualTo(java.time.Duration.ofHours(2));
+                    assertThat(value.toString()).doesNotContain("secret-sentinel");
+                    assertThat(value.getAuth().toString()).doesNotContain("secret-sentinel");
+                });
+    }
+
+    @Test
     void bindsKnownUnifiedRootAndRejectsUnknownConnectionFields() {
         contextRunner
                 .withPropertyValues(

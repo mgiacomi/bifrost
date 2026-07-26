@@ -12,6 +12,8 @@ public interface FinalizedTraceCatalog extends AutoCloseable
 
     TraceCatalogSlice list(long highWaterOrdinal, long beforeOrdinal, int limit);
 
+    int catalogedTraceCount();
+
     @Override
     void close();
 }

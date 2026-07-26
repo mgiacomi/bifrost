@@ -15,5 +15,5 @@ public interface ActiveExecutionRegistry
 
     long highestOrdinal();
 
-    List<ActiveExecutionSnapshot> newestFirst(long highWaterMark, int limit);
+    List<ActiveExecutionSnapshot> newestFirst(long highWaterMark, long beforeOrdinal, int limit);
 }

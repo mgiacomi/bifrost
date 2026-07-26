@@ -271,6 +271,60 @@ execution-trace:
 
 When Micrometer is on the application classpath, Bifrost records usage metrics automatically. Execution traces and the `SkillTemplate` observer callback can be used to inspect a completed skill execution.
 
+### Opt-in Console observability REST API
+
+Servlet applications can expose the read-only operator API under
+`/_bifrost/observability/v1/**`. It is disabled by default and is not exposed
+through Actuator or CORS. Use HTTPS whenever the listener is reachable beyond a
+trusted local boundary, generate at least 32 random bytes, encode them as
+unpadded base64url, and keep the resulting key in external configuration:
+
+```yaml
+bifrost:
+  observability:
+    enabled: true
+    auth:
+      api-key: ${BIFROST_OBSERVABILITY_API_KEY}
+    completion-grace-ttl: 15m
+    trace-catalog-metadata-ttl: 24h
+```
+
+The key must be 32–512 printable, non-whitespace ASCII characters and is loaded
+at startup; rotate it by restarting the application. Every request must present
+exactly one `X-Bifrost-Api-Key` header. Authenticated responses use
+`Cache-Control: no-store` and identify the current process with
+`X-Bifrost-Instance-Id`.
+
+The current routes are `instance`, `skills`, `skills/{registeredName}`,
+`active-executions`, `active-executions/{sessionId}`, `traces`, and
+`traces/{traceId}` beneath the API root. They expose all registered YAML and
+current diagnostic metadata to one operator scope. Application-provided YAML
+and diagnostic content is not secret-scanned or redacted; do not put secrets in
+skill files. Authentication secrets and internal artifact paths are never
+returned.
+
+Applications using Spring Security must let the reserved namespace reach
+Bifrost's filter while retaining their normal rules elsewhere. Bifrost does not
+create or reorder the application's `SecurityFilterChain`:
+
+```java
+@Bean
+SecurityFilterChain applicationSecurity(HttpSecurity http) throws Exception {
+    return http.authorizeHttpRequests(requests -> requests
+            .requestMatchers("/_bifrost/observability/v1/**").permitAll()
+            .anyRequest().authenticated())
+        .build();
+}
+```
+
+The `permitAll` rule does not make the API unauthenticated; the Bifrost key is
+still mandatory. A generic proxy or host-security `401`/`403` occurs before the
+adapter and is distinct from the adapter's `BIFROST_API_KEY_REJECTED` problem.
+The normal servlet context path applies to every route. If startup detects an
+invalid configuration or an overlapping application mapping, it logs a
+sanitized diagnostic and leaves the entire optional adapter, observation, and
+completion grace behavior disabled.
+
 ## Running The Sample
 
 The OpenAI-backed feedstock examples read the API key from `OPENAI_API_KEY`; keep the value in your environment rather than committing it to configuration.

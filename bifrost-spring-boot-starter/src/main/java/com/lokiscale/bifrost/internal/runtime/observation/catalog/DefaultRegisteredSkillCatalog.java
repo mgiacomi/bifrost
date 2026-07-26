@@ -66,6 +66,12 @@ public final class DefaultRegisteredSkillCatalog implements RegisteredSkillCatal
         return tail.values().stream().limit(limit).map(RegisteredSkillFile::summary).toList();
     }
 
+    @Override
+    public int registeredSkillCount()
+    {
+        return entries.size();
+    }
+
     private static String decode(byte[] bytes, String name)
     {
         try

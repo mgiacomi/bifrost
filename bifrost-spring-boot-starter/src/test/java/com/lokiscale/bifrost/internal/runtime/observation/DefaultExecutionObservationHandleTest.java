@@ -311,7 +311,7 @@ class DefaultExecutionObservationHandleTest
             }
 
             @Override
-            public List<ActiveExecutionSnapshot> newestFirst(long highWaterMark, int limit)
+            public List<ActiveExecutionSnapshot> newestFirst(long highWaterMark, long beforeOrdinal, int limit)
             {
                 return List.of();
             }

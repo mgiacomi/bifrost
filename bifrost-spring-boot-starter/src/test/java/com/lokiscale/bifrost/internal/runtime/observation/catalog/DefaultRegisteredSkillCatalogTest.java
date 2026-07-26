@@ -40,6 +40,7 @@ class DefaultRegisteredSkillCatalogTest
                 .containsExactly("beta");
         assertThat(catalog.find("Alpha").orElseThrow().yaml()).isEqualTo(alphaYaml);
         assertThat(catalog.find("alpha")).isEmpty();
+        assertThat(catalog.registeredSkillCount()).isEqualTo(2);
     }
 
     @Test

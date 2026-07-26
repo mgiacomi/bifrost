@@ -99,6 +99,12 @@ public final class DefaultExecutionObservationHandleFactory implements Execution
             }
 
             @Override
+            public int catalogedTraceCount()
+            {
+                return 0;
+            }
+
+            @Override
             public void close()
             {
             }

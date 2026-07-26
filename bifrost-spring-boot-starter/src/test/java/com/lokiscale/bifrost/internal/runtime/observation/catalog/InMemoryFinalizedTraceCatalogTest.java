@@ -36,6 +36,7 @@ class InMemoryFinalizedTraceCatalogTest
             assertThat(catalog.publish(a)).isSameAs(firstEntry);
             FinalizedTraceCatalogEntry secondEntry =
                     catalog.publish(artifact("b", second, clock.instant(), null));
+            assertThat(catalog.catalogedTraceCount()).isEqualTo(2);
 
             TraceCatalogSlice page = catalog.list(0, 0, 1);
             assertThat(page.highWaterOrdinal()).isEqualTo(secondEntry.catalogOrdinal());
@@ -44,6 +45,7 @@ class InMemoryFinalizedTraceCatalogTest
                     .extracting(FinalizedTraceCatalogEntry::traceId).containsExactly("a");
 
             clock.advance(Duration.ofMinutes(5));
+            assertThat(catalog.catalogedTraceCount()).isZero();
             assertThat(catalog.find("a")).isEmpty();
             assertThat(catalog.list(page.highWaterOrdinal(), 0, 10).entries()).isEmpty();
             assertThat(first).exists();
