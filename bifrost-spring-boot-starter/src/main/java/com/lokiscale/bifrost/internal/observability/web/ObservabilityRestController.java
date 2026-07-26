@@ -9,6 +9,7 @@ import com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTrace
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.RegisteredSkillFile;
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.TraceCatalogSlice;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.time.Instant;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -28,6 +30,7 @@ public final class ObservabilityRestController
     private final ObservabilityDtoMapper mapper;
     private final ObservabilityCursorCodec cursors;
     private final BoundedJsonPageWriter pages;
+    private final ObservabilityJsonCodec json;
     private final String releaseVersion;
 
     public ObservabilityRestController(
@@ -35,13 +38,15 @@ public final class ObservabilityRestController
             ObservabilityAccessService access,
             ObservabilityDtoMapper mapper,
             ObservabilityCursorCodec cursors,
-            BoundedJsonPageWriter pages)
+            BoundedJsonPageWriter pages,
+            ObservabilityJsonCodec json)
     {
         this.activation = activation;
         this.access = access;
         this.mapper = mapper;
         this.cursors = cursors;
         this.pages = pages;
+        this.json = json;
         this.releaseVersion = BifrostReleaseVersion.load();
     }
 
@@ -138,6 +143,62 @@ public final class ObservabilityRestController
         return json(pages.writeObject(mapper.active(runtime.activeExecutions().find(sessionId)
                 .orElseThrow(ObservabilityRestController::notFound),
                 Instant.now(runtime.clock()), runtime.quotas())));
+    }
+
+    public void activity(HttpServletRequest request, HttpServletResponse response) throws IOException
+    {
+        require(ObservabilityAccessService.Operation.ACTIVITY_SUBSCRIBE);
+        requireActivityRequest(request);
+        ObservabilityRuntime runtime = runtime();
+        requireLive(runtime);
+        String instanceValue = single(request, "instanceId");
+        String cursorValue = single(request, "afterCursor");
+        java.util.UUID instance;
+        try
+        {
+            if (!instanceValue.matches(
+                    "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))
+            {
+                throw invalidRequestShape();
+            }
+            instance = java.util.UUID.fromString(instanceValue);
+        }
+        catch (IllegalArgumentException failure)
+        {
+            throw invalidRequestShape();
+        }
+        if (!runtime.instanceId().equals(instance))
+        {
+            throw staleCursor();
+        }
+        long afterCursor = parseActivityCursor(cursorValue);
+        com.lokiscale.bifrost.internal.runtime.observation.ReplayResult replay =
+                runtime.replayBuffer().replayAfter(afterCursor, 1);
+        if (replay.status() == com.lokiscale.bifrost.internal.runtime.observation.ReplayResult.Status.FUTURE)
+        {
+            throw invalidCursor();
+        }
+        if (replay.status() == com.lokiscale.bifrost.internal.runtime.observation.ReplayResult.Status.TOO_OLD)
+        {
+            throw staleCursor();
+        }
+        ObservabilityActivityDelivery.Admission admission = runtime.activityDelivery().admit(afterCursor);
+        try
+        {
+            byte[] handshake = ObservabilityActivityStream.handshakeFrame(
+                    json,
+                    new ObservabilityDtos.ActivityHandshake(
+                            runtime.instanceId().toString(),
+                            Instant.now(runtime.clock()),
+                            Long.toString(afterCursor)));
+            ObservabilityActivityStream.open(
+                    request, response, runtime.activityDelivery(), admission, handshake);
+        }
+        catch (IOException | RuntimeException failure)
+        {
+            admission.close();
+            throw failure;
+        }
     }
 
     public ResponseEntity<byte[]> traces(HttpServletRequest request)
@@ -243,6 +304,53 @@ public final class ObservabilityRestController
         }
     }
 
+    private static void requireActivityRequest(HttpServletRequest request)
+    {
+        if (!"GET".equals(request.getMethod())
+                || !request.getParameterMap().keySet().equals(Set.of("instanceId", "afterCursor"))
+                || request.getHeader("Last-Event-ID") != null)
+        {
+            throw invalidRequestShape();
+        }
+        request.getParameterMap().forEach((name, values) ->
+        {
+            if (values == null || values.length != 1 || values[0] == null || values[0].isBlank())
+            {
+                throw invalidRequestShape();
+            }
+        });
+        try
+        {
+            List<MediaType> accepted = MediaType.parseMediaTypes(
+                    Collections.list(request.getHeaders("Accept")));
+            if (accepted.isEmpty() || accepted.stream().noneMatch(mediaType ->
+                    mediaType.getQualityValue() > 0 && mediaType.isCompatibleWith(MediaType.TEXT_EVENT_STREAM)))
+            {
+                throw invalidRequestShape();
+            }
+        }
+        catch (org.springframework.http.InvalidMediaTypeException failure)
+        {
+            throw invalidRequestShape();
+        }
+    }
+
+    private static long parseActivityCursor(String value)
+    {
+        if (value == null || !value.matches("[0-9]+"))
+        {
+            throw invalidCursor();
+        }
+        try
+        {
+            return Long.parseLong(value);
+        }
+        catch (NumberFormatException failure)
+        {
+            throw invalidCursor();
+        }
+    }
+
     private static void requireGet(HttpServletRequest request)
     {
         if (!"GET".equals(request.getMethod()))
@@ -288,6 +396,12 @@ public final class ObservabilityRestController
     {
         return new ObservabilityException(
                 400, ObservabilityProblem.Code.INVALID_CURSOR, "The continuation is invalid");
+    }
+
+    private static ObservabilityException staleCursor()
+    {
+        return new ObservabilityException(
+                410, ObservabilityProblem.Code.STALE_CURSOR, "The live activity continuation is no longer available");
     }
 
     private static ObservabilityException invalidRequestShape()

@@ -115,6 +115,7 @@ class InMemoryActivityReplayBufferTest
     {
         return new ExecutionActivity(
                 0, sessionId, "trace-" + sessionId, 1L, Instant.parse("2026-07-24T12:00:00Z"),
-                ExecutionActivityKind.TRACE_STARTED, null, null, null, "started", Map.of(), weight);
+                ExecutionActivityKind.TRACE_STARTED, null, null, null, null, null,
+                "started", Map.of(), weight);
     }
 }

@@ -17,8 +17,10 @@ public record ExecutionActivity(
         Instant timestamp,
         ExecutionActivityKind kind,
         @Nullable String frameId,
+        @Nullable String parentFrameId,
         @Nullable TraceFrameType frameType,
         @Nullable String route,
+        @Nullable String executionStatus,
         String summary,
         Map<String, Object> details,
         int retainedWeight)
@@ -38,7 +40,9 @@ public record ExecutionActivity(
         Objects.requireNonNull(timestamp, "timestamp must not be null");
         Objects.requireNonNull(kind, "kind must not be null");
         frameId = normalize(frameId);
+        parentFrameId = normalize(parentFrameId);
         route = normalize(route);
+        executionStatus = normalize(executionStatus);
         summary = ExecutionObservationLimits.truncate(summary, ExecutionObservationLimits.SUMMARY_CODE_POINTS);
         LinkedHashMap<String, Object> safeDetails = new LinkedHashMap<>();
         int detailBytes = 0;
@@ -93,8 +97,8 @@ public record ExecutionActivity(
     ExecutionActivity withDeliveryCursor(long cursor)
     {
         return new ExecutionActivity(
-                cursor, sessionId, traceId, canonicalSequence, timestamp, kind, frameId, frameType,
-                route, summary, details, retainedWeight);
+                cursor, sessionId, traceId, canonicalSequence, timestamp, kind, frameId, parentFrameId, frameType,
+                route, executionStatus, summary, details, retainedWeight);
     }
 
     ExecutionActivity withTraceAvailability(
@@ -116,7 +120,9 @@ public record ExecutionActivity(
                 + ExecutionObservationLimits.utf8Weight(sessionId)
                 + ExecutionObservationLimits.utf8Weight(traceId)
                 + ExecutionObservationLimits.utf8Weight(frameId)
+                + ExecutionObservationLimits.utf8Weight(parentFrameId)
                 + ExecutionObservationLimits.utf8Weight(route)
+                + ExecutionObservationLimits.utf8Weight(executionStatus)
                 + ExecutionObservationLimits.utf8Weight(kind.name())
                 + ExecutionObservationLimits.utf8Weight(summary);
         for (Map.Entry<String, Object> entry : enriched.entrySet())
@@ -125,8 +131,8 @@ public record ExecutionActivity(
                     + ExecutionObservationLimits.utf8Weight(String.valueOf(entry.getValue())) + 8;
         }
         return new ExecutionActivity(
-                deliveryCursor, sessionId, traceId, canonicalSequence, timestamp, kind, frameId, frameType,
-                route, summary, enriched, Math.max(1, weight));
+                deliveryCursor, sessionId, traceId, canonicalSequence, timestamp, kind, frameId, parentFrameId,
+                frameType, route, executionStatus, summary, enriched, Math.max(1, weight));
     }
 
     private static String requireNonBlank(String value, String name)

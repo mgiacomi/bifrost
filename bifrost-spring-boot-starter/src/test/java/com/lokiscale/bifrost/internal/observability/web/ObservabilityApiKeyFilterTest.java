@@ -175,6 +175,7 @@ class ObservabilityApiKeyFilterTest
                 UUID.randomUUID(),
                 Clock.systemUTC(),
                 mock(ExecutionObservationHandleFactory.class),
+                mock(ObservabilityActivityDelivery.class),
                 mock(CompletionGraceRetention.class),
                 mock(ActiveExecutionRegistry.class),
                 mock(ActivityReplayBuffer.class),

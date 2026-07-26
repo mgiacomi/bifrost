@@ -134,7 +134,10 @@ public class LiveActivityProjector
         Map<String, Object> details = boundedDetails(record);
         String summary = ExecutionObservationLimits.truncate(
                 summary(record), ExecutionObservationLimits.SUMMARY_CODE_POINTS);
-        int weight = retainedWeight(record, kind, summary, details);
+        String executionStatus = record.recordType() == TraceRecordType.TRACE_COMPLETED
+                ? state.outcome == null ? null : state.outcome.name()
+                : "ACTIVE";
+        int weight = retainedWeight(record, kind, executionStatus, summary, details);
         while (weight > ExecutionObservationLimits.ACTIVITY_UTF8_BYTES && !details.isEmpty())
         {
             LinkedHashMap<String, Object> reduced = new LinkedHashMap<>(details);
@@ -145,12 +148,12 @@ public class LiveActivityProjector
             }
             reduced.remove(last);
             details = Map.copyOf(reduced);
-            weight = retainedWeight(record, kind, summary, details);
+            weight = retainedWeight(record, kind, executionStatus, summary, details);
         }
         if (weight > ExecutionObservationLimits.ACTIVITY_UTF8_BYTES)
         {
             summary = "";
-            weight = retainedWeight(record, kind, summary, details);
+            weight = retainedWeight(record, kind, executionStatus, summary, details);
         }
         if (weight > ExecutionObservationLimits.ACTIVITY_UTF8_BYTES)
         {
@@ -164,8 +167,10 @@ public class LiveActivityProjector
                 record.timestamp(),
                 kind,
                 record.frameId(),
+                record.parentFrameId(),
                 record.frameType(),
                 record.route(),
+                executionStatus,
                 summary,
                 details,
                 Math.max(1, weight));
@@ -264,6 +269,7 @@ public class LiveActivityProjector
     private int retainedWeight(
             TraceRecord record,
             ExecutionActivityKind kind,
+            String executionStatus,
             String summary,
             Map<String, Object> details)
     {
@@ -271,7 +277,9 @@ public class LiveActivityProjector
                 + ExecutionObservationLimits.utf8Weight(record.sessionId())
                 + ExecutionObservationLimits.utf8Weight(record.traceId())
                 + ExecutionObservationLimits.utf8Weight(record.frameId())
+                + ExecutionObservationLimits.utf8Weight(record.parentFrameId())
                 + ExecutionObservationLimits.utf8Weight(record.route())
+                + ExecutionObservationLimits.utf8Weight(executionStatus)
                 + ExecutionObservationLimits.utf8Weight(kind.name())
                 + ExecutionObservationLimits.utf8Weight(summary);
         for (Map.Entry<String, Object> entry : details.entrySet())

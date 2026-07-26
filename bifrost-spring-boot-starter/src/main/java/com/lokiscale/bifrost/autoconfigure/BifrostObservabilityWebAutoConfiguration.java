@@ -78,9 +78,10 @@ public class BifrostObservabilityWebAutoConfiguration
             ObservabilityAccessService access,
             ObservabilityDtoMapper mapper,
             ObservabilityCursorCodec cursors,
-            BoundedJsonPageWriter pages)
+            BoundedJsonPageWriter pages,
+            ObservabilityJsonCodec json)
     {
-        return new ObservabilityRestController(activation, access, mapper, cursors, pages);
+        return new ObservabilityRestController(activation, access, mapper, cursors, pages, json);
     }
 
     @Bean
@@ -99,10 +100,13 @@ public class BifrostObservabilityWebAutoConfiguration
             ObservabilityActivationCoordinator activation,
             BifrostProperties properties,
             ExecutionTraceProperties traceProperties,
-            YamlSkillCatalog yamlSkills)
+            YamlSkillCatalog yamlSkills,
+            ObservabilityDtoMapper mapper,
+            ObservabilityJsonCodec json)
     {
         return new ObservabilityRouteRegistrar(
-                mappings.getIfAvailable(), controller, collisions, activation, properties, traceProperties, yamlSkills);
+                mappings.getIfAvailable(), controller, collisions, activation, properties, traceProperties,
+                yamlSkills, mapper, json);
     }
 
     @Bean

@@ -4,10 +4,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.lokiscale.bifrost.internal.core.TraceFrameType;
 import com.lokiscale.bifrost.internal.core.TraceOutcome;
 import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivityKind;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public final class ObservabilityDtos
 {
@@ -80,4 +82,26 @@ public final class ObservabilityDtos
             @JsonInclude(JsonInclude.Include.ALWAYS) String nextCursor,
             Instant observedAt,
             @JsonInclude(JsonInclude.Include.NON_NULL) String resumeCursor) {}
+
+    public record ActivityHandshake(
+            String instanceId,
+            Instant observedAt,
+            String afterCursor) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ActivityEnvelope(
+            String instanceId,
+            String cursor,
+            String sessionId,
+            String traceId,
+            Long canonicalSequence,
+            Instant timestamp,
+            ExecutionActivityKind kind,
+            String executionStatus,
+            String frameId,
+            String parentFrameId,
+            TraceFrameType frameType,
+            String route,
+            String summary,
+            Map<String, Object> details) {}
 }

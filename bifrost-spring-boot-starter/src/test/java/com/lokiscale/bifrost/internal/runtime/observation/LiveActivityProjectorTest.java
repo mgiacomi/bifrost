@@ -142,6 +142,44 @@ class LiveActivityProjectorTest
         assertThat(projection.snapshot().outcome()).isEqualTo(com.lokiscale.bifrost.internal.core.TraceOutcome.FAILED);
         assertThat(projection.activity()).isNull();
         assertThat(projection.heldTerminal().kind()).isEqualTo(ExecutionActivityKind.TRACE_COMPLETED);
+        assertThat(projection.heldTerminal().executionStatus()).isEqualTo("FAILED");
+        assertThat(projection.heldTerminal().retainedWeight())
+                .isEqualTo(expectedRetainedWeight(projection.heldTerminal()));
+    }
+
+    private static int expectedRetainedWeight(ExecutionActivity activity)
+    {
+        int weight = 128
+                + ExecutionObservationLimits.utf8Weight(activity.sessionId())
+                + ExecutionObservationLimits.utf8Weight(activity.traceId())
+                + ExecutionObservationLimits.utf8Weight(activity.frameId())
+                + ExecutionObservationLimits.utf8Weight(activity.parentFrameId())
+                + ExecutionObservationLimits.utf8Weight(activity.route())
+                + ExecutionObservationLimits.utf8Weight(activity.executionStatus())
+                + ExecutionObservationLimits.utf8Weight(activity.kind().name())
+                + ExecutionObservationLimits.utf8Weight(activity.summary());
+        for (Map.Entry<String, Object> entry : activity.details().entrySet())
+        {
+            weight += ExecutionObservationLimits.utf8Weight(entry.getKey())
+                    + ExecutionObservationLimits.utf8Weight(String.valueOf(entry.getValue())) + 8;
+        }
+        return Math.max(1, weight);
+    }
+
+    @Test
+    void projectsParentIdentityAndTruthfulExecutionStatus()
+    {
+        LiveActivityProjector projector = new LiveActivityProjector();
+        ExecutionProjectionState state = new ExecutionProjectionState("session");
+        TraceRecord nested = new TraceRecord(
+                "trace", "session", 1, Instant.parse("2026-07-24T12:00:00Z"),
+                TraceRecordType.TOOL_CALL_STARTED, "child-frame", "parent-frame",
+                TraceFrameType.TOOL_INVOCATION, "route", "thread", Map.of(), null);
+
+        ExecutionActivity activity = projector.project(state, nested).activity();
+
+        assertThat(activity.parentFrameId()).isEqualTo("parent-frame");
+        assertThat(activity.executionStatus()).isEqualTo("ACTIVE");
     }
 
     @Test
@@ -180,7 +218,7 @@ class LiveActivityProjectorTest
         }
         ExecutionActivity accepted = new ExecutionActivity(
                 0, "session", "trace", 1L, Instant.parse("2026-07-24T12:00:00Z"),
-                ExecutionActivityKind.TRACE_STARTED, null, null, null,
+                ExecutionActivityKind.TRACE_STARTED, null, null, null, null, null,
                 "😀".repeat(600), thirtyTwo, ExecutionObservationLimits.ACTIVITY_UTF8_BYTES);
         assertThat(accepted.summary().codePointCount(0, accepted.summary().length()))
                 .isEqualTo(ExecutionObservationLimits.SUMMARY_CODE_POINTS);
@@ -189,12 +227,12 @@ class LiveActivityProjectorTest
         thirtyTwo.put("overflow", "v");
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ExecutionActivity(
                 0, "session", "trace", 1L, Instant.parse("2026-07-24T12:00:00Z"),
-                ExecutionActivityKind.TRACE_STARTED, null, null, null,
+                ExecutionActivityKind.TRACE_STARTED, null, null, null, null, null,
                 "summary", thirtyTwo, 100))
                 .isInstanceOf(IllegalArgumentException.class);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ExecutionActivity(
                 0, "session", "trace", 1L, Instant.parse("2026-07-24T12:00:00Z"),
-                ExecutionActivityKind.TRACE_STARTED, null, null, null,
+                ExecutionActivityKind.TRACE_STARTED, null, null, null, null, null,
                 "summary", Map.of(), ExecutionObservationLimits.ACTIVITY_UTF8_BYTES + 1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -229,7 +267,7 @@ class LiveActivityProjectorTest
         }
         ExecutionActivity exact = new ExecutionActivity(
                 0, "session", "trace", 1L, Instant.parse("2026-07-24T12:00:00Z"),
-                ExecutionActivityKind.TRACE_STARTED, null, null, null,
+                ExecutionActivityKind.TRACE_STARTED, null, null, null, null, null,
                 "summary", exactBytes, 100);
         assertThat(exact.details()).hasSize(32);
 
@@ -238,7 +276,7 @@ class LiveActivityProjectorTest
         overBytes.put(firstKey, "v".repeat(129));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ExecutionActivity(
                 0, "session", "trace", 1L, Instant.parse("2026-07-24T12:00:00Z"),
-                ExecutionActivityKind.TRACE_STARTED, null, null, null,
+                ExecutionActivityKind.TRACE_STARTED, null, null, null, null, null,
                 "summary", overBytes, 100))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("byte limit");

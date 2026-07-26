@@ -3,6 +3,7 @@ package com.lokiscale.bifrost.internal.observability.web;
 import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.internal.observability.web.dto.ObservabilityDtos;
 import com.lokiscale.bifrost.internal.runtime.observation.ActiveExecutionSnapshot;
+import com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivity;
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTraceCatalogEntry;
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.RegisteredSkillFile;
 
@@ -56,6 +57,25 @@ public final class ObservabilityDtoMapper
         return new ObservabilityDtos.Trace(
                 source.traceId(), source.sessionId(), source.outcome(), source.finalizedAt(), source.sizeBytes(),
                 source.persistencePolicy(), source.applicationTraceExpiresAt());
+    }
+
+    public ObservabilityDtos.ActivityEnvelope activity(String instanceId, ExecutionActivity source)
+    {
+        return new ObservabilityDtos.ActivityEnvelope(
+                instanceId,
+                Long.toString(source.deliveryCursor()),
+                source.sessionId(),
+                source.traceId(),
+                source.canonicalSequence(),
+                source.timestamp(),
+                source.kind(),
+                source.executionStatus(),
+                source.frameId(),
+                source.parentFrameId(),
+                source.frameType(),
+                source.route(),
+                source.summary(),
+                java.util.Map.copyOf(source.details()));
     }
 
     private static String encodePathSegment(String value)

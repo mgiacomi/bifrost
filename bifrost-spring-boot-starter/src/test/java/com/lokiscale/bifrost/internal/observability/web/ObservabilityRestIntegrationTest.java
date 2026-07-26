@@ -164,6 +164,48 @@ class ObservabilityRestIntegrationTest
     }
 
     @Test
+    void activityRequestFailuresRemainJsonBeforeAsyncOwnership() throws Exception
+    {
+        String instanceId = activation.runtime().orElseThrow().instanceId().toString();
+        var base = get(ObservabilityApiPaths.ACTIVITY)
+                .header(ObservabilityApiKeyFilter.API_KEY_HEADER, KEY)
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE);
+
+        mvc.perform(base)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mvc.perform(get(ObservabilityApiPaths.ACTIVITY)
+                        .header(ObservabilityApiKeyFilter.API_KEY_HEADER, KEY)
+                        .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                        .param("instanceId", instanceId)
+                        .param("afterCursor", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_CURSOR"));
+        mvc.perform(get(ObservabilityApiPaths.ACTIVITY)
+                        .header(ObservabilityApiKeyFilter.API_KEY_HEADER, KEY)
+                        .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                        .param("instanceId", instanceId)
+                        .param("afterCursor", "1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_CURSOR"));
+        mvc.perform(get(ObservabilityApiPaths.ACTIVITY)
+                        .header(ObservabilityApiKeyFilter.API_KEY_HEADER, KEY)
+                        .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                        .param("instanceId", UUID.randomUUID().toString())
+                        .param("afterCursor", "0"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("STALE_CURSOR"));
+        mvc.perform(get(ObservabilityApiPaths.ACTIVITY)
+                        .header(ObservabilityApiKeyFilter.API_KEY_HEADER, KEY)
+                        .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                        .header("Last-Event-ID", "0")
+                        .param("instanceId", instanceId)
+                        .param("afterCursor", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
     void listsAndGetsCurrentActiveExecutionAndFinalizedTrace(@TempDir Path temporaryDirectory) throws Exception
     {
         var runtime = activation.runtime().orElseThrow();

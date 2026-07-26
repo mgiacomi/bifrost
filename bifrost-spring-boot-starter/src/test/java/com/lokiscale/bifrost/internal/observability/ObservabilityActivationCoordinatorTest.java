@@ -9,6 +9,7 @@ import com.lokiscale.bifrost.internal.runtime.observation.LiveMonitoringAvailabi
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.FinalizedTraceCatalog;
 import com.lokiscale.bifrost.internal.runtime.observation.catalog.RegisteredSkillCatalog;
 import com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention;
+import com.lokiscale.bifrost.internal.observability.web.ObservabilityActivityDelivery;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -25,10 +26,12 @@ class ObservabilityActivationCoordinatorTest
     {
         CompletionGraceRetention retention = mock(CompletionGraceRetention.class);
         FinalizedTraceCatalog traces = mock(FinalizedTraceCatalog.class);
+        ObservabilityActivityDelivery delivery = mock(ObservabilityActivityDelivery.class);
         ObservabilityRuntime runtime = new ObservabilityRuntime(
                 UUID.randomUUID(),
                 Clock.systemUTC(),
                 mock(ExecutionObservationHandleFactory.class),
+                delivery,
                 retention,
                 mock(ActiveExecutionRegistry.class),
                 mock(ActivityReplayBuffer.class),
@@ -46,6 +49,7 @@ class ObservabilityActivationCoordinatorTest
 
         assertThat(coordinator.state()).isEqualTo(ObservabilityActivationCoordinator.State.DISABLED);
         assertThat(coordinator.runtime()).isEmpty();
+        verify(delivery).close();
         verify(retention).close();
         verify(traces).close();
     }

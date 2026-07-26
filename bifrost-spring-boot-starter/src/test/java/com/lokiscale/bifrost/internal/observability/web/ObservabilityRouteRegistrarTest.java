@@ -58,7 +58,8 @@ class ObservabilityRouteRegistrarTest
         when(yamlSkills.getSkills()).thenThrow(new IllegalStateException("inspection projection failed"));
         var registrar = new ObservabilityRouteRegistrar(
                 null, null, null, new ObservabilityActivationCoordinator(),
-                properties, new ExecutionTraceProperties(), yamlSkills);
+                properties, new ExecutionTraceProperties(), yamlSkills,
+                new ObservabilityDtoMapper(), new ObservabilityJsonCodec());
         long before = traceCatalogThreadCount();
 
         assertThatThrownBy(() -> registrar.createRuntime(configuration))
@@ -91,7 +92,9 @@ class ObservabilityRouteRegistrarTest
                 activation,
                 properties,
                 new ExecutionTraceProperties(),
-                yamlSkills);
+                yamlSkills,
+                new ObservabilityDtoMapper(),
+                new ObservabilityJsonCodec());
 
         try
         {

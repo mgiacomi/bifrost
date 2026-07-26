@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Executors;
 import java.util.Optional;
 
@@ -32,6 +33,59 @@ class DefaultExecutionObservationHandleTest
 {
     @org.junit.jupiter.api.io.TempDir
     Path tempDir;
+
+    @Test
+    void signalsAfterSuccessfulPublicationAndFirstFailClosedTransition()
+    {
+        AtomicInteger activitySignals = new AtomicInteger();
+        AtomicInteger unavailableSignals = new AtomicInteger();
+        LiveActivitySignal signal = new LiveActivitySignal()
+        {
+            @Override
+            public void activityAvailable()
+            {
+                activitySignals.incrementAndGet();
+            }
+
+            @Override
+            public void liveUnavailable()
+            {
+                unavailableSignals.incrementAndGet();
+            }
+        };
+        LiveMonitoringAvailability availability = new LiveMonitoringAvailability();
+        DefaultExecutionObservationHandle successful = new DefaultExecutionObservationHandle(
+                "session", new LiveActivityProjector(), new InMemoryActiveExecutionRegistry(),
+                new InMemoryActivityReplayBuffer(), availability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(), signal);
+
+        successful.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
+
+        assertThat(activitySignals).hasValue(1);
+        DefaultExecutionObservationHandle failing = new DefaultExecutionObservationHandle(
+                "other",
+                new LiveActivityProjector()
+                {
+                    @Override
+                    Projection project(ExecutionProjectionState state, TraceRecord record)
+                    {
+                        throw new IllegalStateException("not logged");
+                    }
+                },
+                new InMemoryActiveExecutionRegistry(),
+                new InMemoryActivityReplayBuffer(),
+                availability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(),
+                signal);
+        failing.recordAppended(new TraceRecord(
+                "trace-other", "other", 1, Instant.parse("2026-07-24T12:00:00Z"),
+                TraceRecordType.TRACE_STARTED, null, null, null, null, "thread", Map.of(), null));
+        failing.recordAppended(new TraceRecord(
+                "trace-other", "other", 2, Instant.parse("2026-07-24T12:00:01Z"),
+                TraceRecordType.TRACE_STARTED, null, null, null, null, "thread", Map.of(), null));
+
+        assertThat(unavailableSignals).hasValue(1);
+    }
 
     @Test
     void catalogsBeforePublishingAvailableTerminal() throws Exception
@@ -47,7 +101,8 @@ class DefaultExecutionObservationHandleTest
                     new InMemoryActiveExecutionRegistry(),
                     new InMemoryActivityReplayBuffer(),
                     new LiveMonitoringAvailability(),
-                    catalog);
+                    catalog,
+                    LiveActivitySignal.NO_OP);
             ExecutionObservationHandle handle = factory.create("session");
             handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
             handle.recordAppended(record(
@@ -87,7 +142,8 @@ class DefaultExecutionObservationHandleTest
                     new InMemoryActiveExecutionRegistry(),
                     new InMemoryActivityReplayBuffer(),
                     new LiveMonitoringAvailability(),
-                    catalog);
+                    catalog,
+                    LiveActivitySignal.NO_OP);
             ExecutionObservationHandle handle = factory.create("session");
             handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
             handle.recordAppended(record(
@@ -172,6 +228,9 @@ class DefaultExecutionObservationHandleTest
         assertThat(activities.getLast().details())
                 .containsEntry("reason", "CORE_FINALIZATION_FAILED")
                 .containsEntry("outcome", "FAILED");
+        assertThat(activities.getLast().executionStatus()).isEqualTo("FAILED");
+        assertThat(activities.getLast().retainedWeight())
+                .isEqualTo(expectedRetainedWeight(activities.getLast()));
         assertThat(factory.registry().activeCount()).isZero();
     }
 
@@ -204,7 +263,9 @@ class DefaultExecutionObservationHandleTest
                 new LiveActivityProjector(),
                 new InMemoryActiveExecutionRegistry(),
                 throwing,
-                availability);
+                availability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(),
+                LiveActivitySignal.NO_OP);
 
         assertThatCode(() -> handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of())))
                 .doesNotThrowAnyException();
@@ -271,7 +332,9 @@ class DefaultExecutionObservationHandleTest
                 },
                 new InMemoryActiveExecutionRegistry(),
                 new InMemoryActivityReplayBuffer(),
-                projectorAvailability);
+                projectorAvailability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(),
+                LiveActivitySignal.NO_OP);
         assertThatCode(() -> projectorFailure.recordAppended(
                 record(TraceRecordType.TRACE_STARTED, 1, Map.of()))).doesNotThrowAnyException();
         assertThat(projectorAvailability.firstFailure().orElseThrow().operation())
@@ -321,7 +384,9 @@ class DefaultExecutionObservationHandleTest
                 new LiveActivityProjector(),
                 throwingRegistry,
                 new InMemoryActivityReplayBuffer(),
-                registryAvailability);
+                registryAvailability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(),
+                LiveActivitySignal.NO_OP);
         assertThatCode(() -> registryFailure.recordAppended(
                 record(TraceRecordType.TRACE_STARTED, 1, Map.of()))).doesNotThrowAnyException();
         assertThat(registryAvailability.firstFailure().orElseThrow().operation())
@@ -361,7 +426,9 @@ class DefaultExecutionObservationHandleTest
             }
         };
         DefaultExecutionObservationHandle handle = new DefaultExecutionObservationHandle(
-                "session", new LiveActivityProjector(), registry, failSecond, availability);
+                "session", new LiveActivityProjector(), registry, failSecond, availability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(),
+                LiveActivitySignal.NO_OP);
         handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
         handle.recordAppended(record(
                 TraceRecordType.TRACE_COMPLETED,
@@ -408,7 +475,9 @@ class DefaultExecutionObservationHandleTest
                 },
                 new InMemoryActiveExecutionRegistry(),
                 new InMemoryActivityReplayBuffer(),
-                availability);
+                availability,
+                DefaultExecutionObservationHandleFactory.unavailableCatalog(),
+                LiveActivitySignal.NO_OP);
 
         handle.recordAppended(record(TraceRecordType.TRACE_STARTED, 1, Map.of()));
         handle.recordAppended(record(TraceRecordType.TRACE_CAPTURE_POLICY_RECORDED, 2, Map.of()));
@@ -435,5 +504,24 @@ class DefaultExecutionObservationHandleTest
     {
         return new ObservationCompletionDisposition(
                 status, outcome, Instant.parse("2026-07-24T12:01:00Z"));
+    }
+
+    private static int expectedRetainedWeight(ExecutionActivity activity)
+    {
+        int weight = 128
+                + ExecutionObservationLimits.utf8Weight(activity.sessionId())
+                + ExecutionObservationLimits.utf8Weight(activity.traceId())
+                + ExecutionObservationLimits.utf8Weight(activity.frameId())
+                + ExecutionObservationLimits.utf8Weight(activity.parentFrameId())
+                + ExecutionObservationLimits.utf8Weight(activity.route())
+                + ExecutionObservationLimits.utf8Weight(activity.executionStatus())
+                + ExecutionObservationLimits.utf8Weight(activity.kind().name())
+                + ExecutionObservationLimits.utf8Weight(activity.summary());
+        for (Map.Entry<String, Object> entry : activity.details().entrySet())
+        {
+            weight += ExecutionObservationLimits.utf8Weight(entry.getKey())
+                    + ExecutionObservationLimits.utf8Weight(String.valueOf(entry.getValue())) + 8;
+        }
+        return Math.max(1, weight);
     }
 }

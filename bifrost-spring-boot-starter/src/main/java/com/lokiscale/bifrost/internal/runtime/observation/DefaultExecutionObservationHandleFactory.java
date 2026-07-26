@@ -15,6 +15,7 @@ public final class DefaultExecutionObservationHandleFactory implements Execution
     private final ActivityReplayBuffer replayBuffer;
     private final LiveMonitoringAvailability availability;
     private final FinalizedTraceCatalog traceCatalog;
+    private final LiveActivitySignal signal;
 
     public DefaultExecutionObservationHandleFactory()
     {
@@ -23,16 +24,8 @@ public final class DefaultExecutionObservationHandleFactory implements Execution
                 new InMemoryActiveExecutionRegistry(),
                 new InMemoryActivityReplayBuffer(),
                 new LiveMonitoringAvailability(),
-                unavailableCatalog());
-    }
-
-    public DefaultExecutionObservationHandleFactory(
-            LiveActivityProjector projector,
-            ActiveExecutionRegistry registry,
-            ActivityReplayBuffer replayBuffer,
-            LiveMonitoringAvailability availability)
-    {
-        this(projector, registry, replayBuffer, availability, unavailableCatalog());
+                unavailableCatalog(),
+                LiveActivitySignal.NO_OP);
     }
 
     public DefaultExecutionObservationHandleFactory(
@@ -40,20 +33,22 @@ public final class DefaultExecutionObservationHandleFactory implements Execution
             ActiveExecutionRegistry registry,
             ActivityReplayBuffer replayBuffer,
             LiveMonitoringAvailability availability,
-            FinalizedTraceCatalog traceCatalog)
+            FinalizedTraceCatalog traceCatalog,
+            LiveActivitySignal signal)
     {
         this.projector = Objects.requireNonNull(projector, "projector must not be null");
         this.registry = Objects.requireNonNull(registry, "registry must not be null");
         this.replayBuffer = Objects.requireNonNull(replayBuffer, "replayBuffer must not be null");
         this.availability = Objects.requireNonNull(availability, "availability must not be null");
         this.traceCatalog = Objects.requireNonNull(traceCatalog, "traceCatalog must not be null");
+        this.signal = Objects.requireNonNull(signal, "signal must not be null");
     }
 
     @Override
     public ExecutionObservationHandle create(String sessionId)
     {
         return new DefaultExecutionObservationHandle(
-                sessionId, projector, registry, replayBuffer, availability, traceCatalog);
+                sessionId, projector, registry, replayBuffer, availability, traceCatalog, signal);
     }
 
     public ActiveExecutionRegistry registry()
@@ -76,7 +71,7 @@ public final class DefaultExecutionObservationHandleFactory implements Execution
         return traceCatalog;
     }
 
-    private static FinalizedTraceCatalog unavailableCatalog()
+    static FinalizedTraceCatalog unavailableCatalog()
     {
         return new FinalizedTraceCatalog()
         {

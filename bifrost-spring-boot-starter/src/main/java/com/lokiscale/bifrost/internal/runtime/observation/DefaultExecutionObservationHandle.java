@@ -21,6 +21,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
     private final ActivityReplayBuffer replayBuffer;
     private final LiveMonitoringAvailability availability;
     private final FinalizedTraceCatalog traceCatalog;
+    private final LiveActivitySignal signal;
     private final ExecutionProjectionState state;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -32,52 +33,9 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             LiveActivityProjector projector,
             ActiveExecutionRegistry registry,
             ActivityReplayBuffer replayBuffer,
-            LiveMonitoringAvailability availability)
-    {
-        this(sessionId, projector, registry, replayBuffer, availability,
-                new FinalizedTraceCatalog()
-                {
-                    @Override
-                    public FinalizedTraceCatalogEntry publish(
-                            com.lokiscale.bifrost.internal.core.FinalizedTraceArtifact artifact)
-                    {
-                        throw new IllegalStateException("No finalized trace catalog is configured");
-                    }
-
-                    @Override
-                    public java.util.Optional<FinalizedTraceCatalogEntry> find(String traceId)
-                    {
-                        return java.util.Optional.empty();
-                    }
-
-                    @Override
-                    public com.lokiscale.bifrost.internal.runtime.observation.catalog.TraceCatalogSlice list(
-                            long highWaterOrdinal, long beforeOrdinal, int limit)
-                    {
-                        return new com.lokiscale.bifrost.internal.runtime.observation.catalog.TraceCatalogSlice(
-                                0, java.util.List.of());
-                    }
-
-                    @Override
-                    public int catalogedTraceCount()
-                    {
-                        return 0;
-                    }
-
-                    @Override
-                    public void close()
-                    {
-                    }
-                });
-    }
-
-    DefaultExecutionObservationHandle(
-            String sessionId,
-            LiveActivityProjector projector,
-            ActiveExecutionRegistry registry,
-            ActivityReplayBuffer replayBuffer,
             LiveMonitoringAvailability availability,
-            FinalizedTraceCatalog traceCatalog)
+            FinalizedTraceCatalog traceCatalog,
+            LiveActivitySignal signal)
     {
         this.sessionId = requireNonBlank(sessionId, "sessionId");
         this.projector = Objects.requireNonNull(projector, "projector must not be null");
@@ -85,6 +43,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
         this.replayBuffer = Objects.requireNonNull(replayBuffer, "replayBuffer must not be null");
         this.availability = Objects.requireNonNull(availability, "availability must not be null");
         this.traceCatalog = Objects.requireNonNull(traceCatalog, "traceCatalog must not be null");
+        this.signal = Objects.requireNonNull(signal, "signal must not be null");
         this.state = new ExecutionProjectionState(sessionId);
     }
 
@@ -125,6 +84,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             try
             {
                 replayBuffer.append(projection.activity());
+                signalActivity();
             }
             catch (RuntimeException ex)
             {
@@ -156,6 +116,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             {
                 heldCompletion = null;
                 replayBuffer.append(exceptionalTerminal(disposition));
+                signalActivity();
             }
         }
         catch (RuntimeException ex)
@@ -209,6 +170,7 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             }
         }
         replayBuffer.append(enriched);
+        signalActivity();
     }
 
     private ExecutionActivity exceptionalTerminal(ObservationCompletionDisposition disposition)
@@ -217,28 +179,36 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
         details.put("reason", ObservationCompletionDisposition.Status.CORE_FINALIZATION_FAILED.name());
         details.put("applicationTraceAvailability", "UNAVAILABLE");
         details.put("applicationTraceUnavailableReason", "CORE_FINALIZATION_FAILED");
+        String executionStatus = disposition.outcome() == null ? null : disposition.outcome().name();
         if (disposition.outcome() != null)
         {
-            details.put("outcome", disposition.outcome().name());
+            details.put("outcome", executionStatus);
         }
-        int weight = 192
+        String activityTraceId = traceId == null ? "unknown" : traceId;
+        String summary = "Execution observation ended during core finalization";
+        int weight = 128
                 + ExecutionObservationLimits.utf8Weight(sessionId)
-                + ExecutionObservationLimits.utf8Weight(traceId)
+                + ExecutionObservationLimits.utf8Weight(activityTraceId)
+                + ExecutionObservationLimits.utf8Weight(executionStatus)
+                + ExecutionObservationLimits.utf8Weight(ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED.name())
+                + ExecutionObservationLimits.utf8Weight(summary)
                 + details.entrySet().stream()
                         .mapToInt(entry -> ExecutionObservationLimits.utf8Weight(entry.getKey())
-                                + ExecutionObservationLimits.utf8Weight(String.valueOf(entry.getValue())))
+                                + ExecutionObservationLimits.utf8Weight(String.valueOf(entry.getValue())) + 8)
                         .sum();
         return new ExecutionActivity(
                 0L,
                 sessionId,
-                traceId == null ? "unknown" : traceId,
+                activityTraceId,
                 null,
                 disposition.closedAt(),
                 ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED,
                 null,
                 null,
                 null,
-                "Execution observation ended during core finalization",
+                null,
+                executionStatus,
+                summary,
                 Map.copyOf(details),
                 Math.max(1, weight));
     }
@@ -250,6 +220,34 @@ final class DefaultExecutionObservationHandle implements ExecutionObservationHan
             LOGGER.error(
                     "Live monitoring unavailable operation={} sessionId={} traceId={} exceptionClass={}",
                     operation,
+                    sessionId,
+                    traceId == null ? "unknown" : traceId,
+                    failure.getClass().getName());
+            try
+            {
+                signal.liveUnavailable();
+            }
+            catch (RuntimeException signalFailure)
+            {
+                LOGGER.warn(
+                        "Live monitoring signal failed operation=LIVE_UNAVAILABLE sessionId={} traceId={} exceptionClass={}",
+                        sessionId,
+                        traceId == null ? "unknown" : traceId,
+                        signalFailure.getClass().getName());
+            }
+        }
+    }
+
+    private void signalActivity()
+    {
+        try
+        {
+            signal.activityAvailable();
+        }
+        catch (RuntimeException failure)
+        {
+            LOGGER.warn(
+                    "Live activity signal failed sessionId={} traceId={} exceptionClass={}",
                     sessionId,
                     traceId == null ? "unknown" : traceId,
                     failure.getClass().getName());

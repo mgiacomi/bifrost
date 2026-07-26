@@ -38,6 +38,8 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
     private final BifrostProperties properties;
     private final ExecutionTraceProperties traceProperties;
     private final YamlSkillCatalog yamlSkills;
+    private final ObservabilityDtoMapper dtoMapper;
+    private final ObservabilityJsonCodec json;
     private final List<RequestMappingInfo> registered = new ArrayList<>();
 
     public ObservabilityRouteRegistrar(
@@ -47,7 +49,9 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
             ObservabilityActivationCoordinator activation,
             BifrostProperties properties,
             ExecutionTraceProperties traceProperties,
-            YamlSkillCatalog yamlSkills)
+            YamlSkillCatalog yamlSkills,
+            ObservabilityDtoMapper dtoMapper,
+            ObservabilityJsonCodec json)
     {
         this.mappings = mappings;
         this.controller = controller;
@@ -56,6 +60,8 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
         this.properties = properties;
         this.traceProperties = traceProperties;
         this.yamlSkills = yamlSkills;
+        this.dtoMapper = dtoMapper;
+        this.json = json;
     }
 
     @Override
@@ -99,6 +105,8 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
             registerGet(ObservabilityApiPaths.ACTIVE, "active", jakarta.servlet.http.HttpServletRequest.class);
             registerGet(ObservabilityApiPaths.ACTIVE + "/{sessionId}", "active",
                     String.class, jakarta.servlet.http.HttpServletRequest.class);
+            registerGet(ObservabilityApiPaths.ACTIVITY, "activity",
+                    jakarta.servlet.http.HttpServletRequest.class, jakarta.servlet.http.HttpServletResponse.class);
             registerGet(ObservabilityApiPaths.TRACES, "traces", jakarta.servlet.http.HttpServletRequest.class);
             registerGet(ObservabilityApiPaths.TRACES + "/{traceId}", "trace",
                     String.class, jakarta.servlet.http.HttpServletRequest.class);
@@ -121,21 +129,25 @@ public final class ObservabilityRouteRegistrar implements SmartInitializingSingl
         var replay = new InMemoryActivityReplayBuffer();
         var live = new LiveMonitoringAvailability();
         var skills = new DefaultRegisteredSkillCatalog(yamlSkills);
+        UUID instanceId = UUID.randomUUID();
         InMemoryFinalizedTraceCatalog traces = null;
         ScheduledCompletionGraceRetention grace = null;
+        ObservabilityActivityDelivery delivery = null;
         try
         {
             traces = new InMemoryFinalizedTraceCatalog(configuration.getTraceCatalogMetadataTtl(), clock);
             grace = new ScheduledCompletionGraceRetention(configuration.getCompletionGraceTtl());
+            delivery = new ObservabilityActivityDelivery(instanceId.toString(), replay, live, dtoMapper, json);
             var observation = new DefaultExecutionObservationHandleFactory(
-                    new LiveActivityProjector(), active, replay, live, traces);
+                    new LiveActivityProjector(), active, replay, live, traces, delivery);
             return new ObservabilityRuntime(
-                    UUID.randomUUID(), clock, observation, grace,
+                    instanceId, clock, observation, delivery, grace,
                     active, replay, live, skills, traces,
                     configuration, properties.getSession().getQuotas(), traceProperties.getPersistence());
         }
         catch (RuntimeException | Error failure)
         {
+            closeAfterFailure(delivery, failure);
             closeAfterFailure(grace, failure);
             closeAfterFailure(traces, failure);
             throw failure;

@@ -4,7 +4,7 @@ import org.springframework.security.core.Authentication;
 
 public final class ObservabilityAccessService
 {
-    public enum Operation { INSTANCE_READ, SKILL_READ, ACTIVE_READ, TRACE_READ }
+    public enum Operation { INSTANCE_READ, SKILL_READ, ACTIVE_READ, ACTIVITY_SUBSCRIBE, TRACE_READ }
     public static final String AUTHORITY = "BIFROST_OPERATOR";
 
     public void require(Operation operation, Authentication authentication)

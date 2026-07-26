@@ -45,6 +45,17 @@ class BifrostPropertiesTest {
     }
 
     @Test
+    void rejectsSseTuningPropertiesBecauseDeliveryLimitsAreFixed()
+    {
+        contextRunner
+                .withPropertyValues("bifrost.observability.sse.pending=128")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .isNotNull()
+                        .rootCause()
+                        .hasMessageContaining("bifrost.observability.sse.pending"));
+    }
+
+    @Test
     void bindsKnownUnifiedRootAndRejectsUnknownConnectionFields() {
         contextRunner
                 .withPropertyValues(
