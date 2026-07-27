@@ -5,20 +5,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserapi"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/browseropen"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/console"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/release"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/webassets"
-	"github.com/mgiacomi/bifrost/bifrost-console/internal/webhost"
 )
 
 type runtimeDependencies struct {
 	version string
 	verify  func() error
-	serve   func(context.Context, string) error
+	serve   func(context.Context, console.Options) error
 }
 
 func main() {
@@ -33,14 +35,12 @@ func main() {
 			_, err := webassets.Verify(files, release.ProductVersion())
 			return err
 		},
-		serve: func(context context.Context, address string) error {
-			return (webhost.Host{
-				Address: address,
-				Handler: webhost.StaticHandler(files),
-				OnListen: func(bound net.Addr) {
-					fmt.Printf("Bifrost Console %s listening on http://%s\n", release.ProductVersion(), bound)
-				},
-			}).Run(context)
+		serve: func(context context.Context, options console.Options) error {
+			return console.Run(context, options, console.Dependencies{
+				Files:       files,
+				Output:      os.Stdout,
+				OpenBrowser: browseropen.Open,
+			})
 		},
 	}
 	context, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -55,7 +55,11 @@ func run(context context.Context, arguments []string, output io.Writer, dependen
 	flags := flag.NewFlagSet("bifrost-console", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	versionOnly := flags.Bool("version", false, "print the Bifrost product version")
-	address := flags.String("listen", "127.0.0.1:7943", "explicit loopback listener address")
+	configPath := flags.String("config", "", "exact Console configuration file")
+	workDirectory := flags.String("work-dir", "", "exact managed Console work directory")
+	address := flags.String("listen", "", "process-only explicit loopback listener override")
+	developmentOrigin := flags.String("development-origin", "", "additional exact loopback Vite origin")
+	noOpenBrowser := flags.Bool("no-open-browser", false, "do not open the default browser")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -65,15 +69,31 @@ func run(context context.Context, arguments []string, output io.Writer, dependen
 	if err := release.ValidateProductVersion(dependencies.version); err != nil {
 		return err
 	}
-	if *versionOnly {
-		_, err := fmt.Fprintln(output, dependencies.version)
-		return err
-	}
 	if dependencies.verify == nil || dependencies.serve == nil {
 		return fmt.Errorf("runtime dependencies are incomplete")
 	}
 	if err := dependencies.verify(); err != nil {
 		return fmt.Errorf("validate embedded browser assets: %w", err)
 	}
-	return dependencies.serve(context, *address)
+	if *versionOnly {
+		_, err := fmt.Fprintln(output, dependencies.version)
+		return err
+	}
+	if *address != "" {
+		if err := config.ValidateListenerAddress(*address); err != nil {
+			return fmt.Errorf("--listen: %w", err)
+		}
+	}
+	if *developmentOrigin != "" {
+		if _, _, err := browserapi.ParseLoopbackOrigin(*developmentOrigin); err != nil {
+			return fmt.Errorf("--development-origin: %w", err)
+		}
+	}
+	return dependencies.serve(context, console.Options{
+		ConfigPath:        *configPath,
+		WorkDirectory:     *workDirectory,
+		ListenOverride:    *address,
+		DevelopmentOrigin: *developmentOrigin,
+		NoOpenBrowser:     *noOpenBrowser,
+	})
 }

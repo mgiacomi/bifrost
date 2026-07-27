@@ -14,6 +14,7 @@ type ListenFunc func(network, address string) (net.Listener, error)
 type Host struct {
 	Address  string
 	Handler  http.Handler
+	Prepare  func(Authority) (http.Handler, error)
 	Listen   ListenFunc
 	OnListen func(net.Addr)
 }
@@ -34,7 +35,7 @@ func (host Host) Run(runContext context.Context) error {
 	if err := ValidateLoopbackAddress(host.Address); err != nil {
 		return err
 	}
-	if host.Handler == nil {
+	if host.Handler == nil && host.Prepare == nil {
 		return fmt.Errorf("HTTP handler is required")
 	}
 	listen := host.Listen
@@ -45,12 +46,33 @@ func (host Host) Run(runContext context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", host.Address, err)
 	}
+	handler := host.Handler
+	if host.Prepare != nil {
+		authority, err := AuthorityFromAddress(listener.Addr())
+		if err != nil {
+			listener.Close()
+			return err
+		}
+		handler, err = host.Prepare(authority)
+		if err != nil {
+			listener.Close()
+			return err
+		}
+		if handler == nil {
+			listener.Close()
+			return fmt.Errorf("prepared HTTP handler is required")
+		}
+	}
 	if host.OnListen != nil {
 		host.OnListen(listener.Addr())
 	}
 	server := &http.Server{
-		Handler:           host.Handler,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 * 1024,
 	}
 	result := make(chan error, 1)
 	go func() {
@@ -67,7 +89,11 @@ func (host Host) Run(runContext context.Context) error {
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
-		return nil
+		cause := context.Cause(runContext)
+		if errors.Is(cause, context.Canceled) {
+			return nil
+		}
+		return cause
 	case err := <-result:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil

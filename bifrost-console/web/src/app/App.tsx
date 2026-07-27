@@ -1,8 +1,11 @@
 import { Outlet } from "react-router";
 import type { BuildMetadata } from "./metadata";
 import { ThemeSelect } from "./ThemeSelect";
+import { PairingPage } from "../security/PairingPage";
+import { useBrowserSession } from "../security/BrowserSessionProvider";
 
 export function App({ metadata }: { metadata: BuildMetadata }) {
+  const session = useBrowserSession();
   return (
     <div className="app-frame">
       <header className="shell-header">
@@ -13,7 +16,16 @@ export function App({ metadata }: { metadata: BuildMetadata }) {
         <ThemeSelect />
       </header>
       <main className="shell-main" id="main-content">
-        <Outlet />
+        {session.status === "paired" ? (
+          <>
+            <p className="workspace-path">
+              Verified workspace <code>{session.bootstrap.workspacePath}</code>
+            </p>
+            <Outlet />
+          </>
+        ) : (
+          <PairingPage />
+        )}
       </main>
       <footer className="shell-footer">
         <span>Build version</span>

@@ -1,0 +1,145 @@
+package console
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/http"
+	"sync"
+
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserapi"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/lifecycle"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/profile"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/webhost"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/workspace"
+)
+
+type Options struct {
+	ConfigPath        string
+	WorkDirectory     string
+	ListenOverride    string
+	DevelopmentOrigin string
+	NoOpenBrowser     bool
+}
+
+type Dependencies struct {
+	Files       fs.FS
+	Output      io.Writer
+	OpenBrowser func(string) error
+}
+
+func Run(parent context.Context, options Options, dependencies Dependencies) (result error) {
+	ownedProfile, err := profile.Open(options.ConfigPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := ownedProfile.Close(); result == nil && closeErr != nil {
+			result = fmt.Errorf("release profile lock: %w", closeErr)
+		}
+	}()
+
+	workPath := options.WorkDirectory
+	if workPath == "" {
+		workPath, err = profile.DefaultWorkspacePath(ownedProfile.Directory)
+		if err != nil {
+			return err
+		}
+	}
+	ownedWorkspace, err := workspace.Open(workPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := ownedWorkspace.Close(); result == nil && closeErr != nil {
+			result = fmt.Errorf("release work lock: %w", closeErr)
+		}
+	}()
+	if dependencies.Output != nil {
+		fmt.Fprintf(dependencies.Output, "Bifrost Console workspace: %s\n", ownedWorkspace.Root)
+	}
+
+	coordinator := lifecycle.New(parent)
+	go ownedProfile.Monitor(coordinator.Context(), 0, coordinator.Fatal)
+	go ownedWorkspace.Monitor(coordinator.Context(), 0, coordinator.Fatal)
+	pairing := browserauth.NewPairing(nil, nil)
+	sessions := browserauth.NewRegistry(nil, nil)
+	defer pairing.Close()
+	defer sessions.Close()
+
+	address := ownedProfile.Resolved.ListenerAddress
+	if options.ListenOverride != "" {
+		address = options.ListenOverride
+	}
+	processID, err := browserauth.Generate(nil)
+	if err != nil {
+		return err
+	}
+	var origin string
+	var outputMu sync.Mutex
+	printPairing := func(url string) error {
+		outputMu.Lock()
+		defer outputMu.Unlock()
+		if dependencies.Output == nil {
+			return nil
+		}
+		_, err := fmt.Fprintf(dependencies.Output, "Pairing URL: %s\n", url)
+		return err
+	}
+	host := webhost.Host{
+		Address: address,
+		Prepare: func(authority webhost.Authority) (http.Handler, error) {
+			origin = authority.Origin
+			policy, err := browserapi.NewPolicy(authority.Host, authority.Origin, options.DevelopmentOrigin)
+			if err != nil {
+				return nil, err
+			}
+			pairingURL := func(secret string) string {
+				return origin + "/#/pair/" + secret
+			}
+			api, err := browserapi.New(browserapi.Options{
+				Policy:       policy,
+				Pairing:      pairing,
+				Sessions:     sessions,
+				ProcessID:    processID,
+				Workspace:    ownedWorkspace.Root,
+				PairingURL:   pairingURL,
+				PrintPairing: printPairing,
+			})
+			if err != nil {
+				return nil, err
+			}
+			secret, err := pairing.Create(false)
+			if err != nil {
+				return nil, err
+			}
+			url := pairingURL(secret)
+			if err := printPairing(url); err != nil {
+				return nil, err
+			}
+			if !options.NoOpenBrowser && dependencies.OpenBrowser != nil {
+				if err := dependencies.OpenBrowser(url); err != nil && dependencies.Output != nil {
+					fmt.Fprintln(dependencies.Output, "Browser opener unavailable; use the printed pairing URL.")
+				}
+			}
+			return webhost.Routes(policy, api, dependencies.Files), nil
+		},
+	}
+	runErr := host.Run(coordinator.Context())
+	coordinator.Stop()
+	sessions.Close()
+	pairing.Close()
+	if err := ownedWorkspace.Cleanup(); err != nil && runErr == nil {
+		// Cleanup is best-effort during shutdown once an invariant may have
+		// failed. A healthy workspace still reports ordinary cleanup failure.
+		if ownedWorkspace.Check() == nil {
+			runErr = fmt.Errorf("clean transient workspace: %w", err)
+		}
+	}
+	if cause := coordinator.Cause(); cause != nil && cause != context.Canceled {
+		return cause
+	}
+	return runErr
+}

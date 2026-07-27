@@ -16,12 +16,13 @@ const (
 
 func StaticHandler(files fs.FS) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		ApplyBrowserHeaders(response.Header())
+		response.Header().Set("Cache-Control", noStore)
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			response.Header().Set("Allow", "GET, HEAD")
 			http.Error(response, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		response.Header().Set("X-Content-Type-Options", "nosniff")
 		name, navigation, ok := requestPath(request)
 		if !ok {
 			http.NotFound(response, request)
@@ -54,18 +55,28 @@ func StaticHandler(files fs.FS) http.Handler {
 		}
 		response.Header().Set("Content-Type", contentType)
 		response.Header().Set("Content-Length", strconv.Itoa(len(data)))
-		if name == "index.html" {
-			response.Header().Set("Cache-Control", noStore)
-		} else if isContentAddressed(name) {
+		if name != "index.html" && isContentAddressed(name) {
 			response.Header().Set("Cache-Control", immutable)
-		} else {
-			response.Header().Set("Cache-Control", noStore)
 		}
 		response.WriteHeader(http.StatusOK)
 		if request.Method == http.MethodGet {
 			_, _ = response.Write(data)
 		}
 	})
+}
+
+const browserContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; manifest-src 'self'"
+
+// ApplyBrowserHeaders installs the policy shared by every browser-visible
+// response, including errors produced before a route handler is reached.
+func ApplyBrowserHeaders(header http.Header) {
+	header.Set("Content-Security-Policy", browserContentSecurityPolicy)
+	header.Set("X-Frame-Options", "DENY")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+	header.Set("Cross-Origin-Opener-Policy", "same-origin")
+	header.Set("Cross-Origin-Resource-Policy", "same-origin")
 }
 
 func requestPath(request *http.Request) (name string, navigation bool, ok bool) {

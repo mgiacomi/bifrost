@@ -61,6 +61,24 @@ func TestStaticHandlerMethodAndHeaderPolicy(t *testing.T) {
 	}
 }
 
+func TestStaticHandlerAppliesCompleteBrowserSecurityHeaders(t *testing.T) {
+	response := request(t, StaticHandler(testFiles()), http.MethodGet, "/")
+	expected := map[string]string{
+		"Content-Security-Policy":      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; manifest-src 'self'",
+		"X-Frame-Options":              "DENY",
+		"X-Content-Type-Options":       "nosniff",
+		"Referrer-Policy":              "no-referrer",
+		"Permissions-Policy":           "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+		"Cross-Origin-Opener-Policy":   "same-origin",
+		"Cross-Origin-Resource-Policy": "same-origin",
+	}
+	for name, want := range expected {
+		if got := response.Header().Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+}
+
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(method, target, nil)
