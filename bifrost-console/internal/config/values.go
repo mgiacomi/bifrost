@@ -1,15 +1,25 @@
 package config
 
 import (
+	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io"
 	"math"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 func (file File) Resolve() (Resolved, error) {
+	return file.resolve("")
+}
+
+func (file File) resolve(configPath string) (Resolved, error) {
 	if file.Version != SchemaVersion {
 		return Resolved{}, fmt.Errorf("version: must be 1")
 	}
@@ -24,13 +34,114 @@ func (file File) Resolve() (Resolved, error) {
 	if err != nil {
 		return Resolved{}, fmt.Errorf("trace-workspace.idle-ttl: %w", err)
 	}
-	return Resolved{
+	resolved := Resolved{
 		ListenerAddress: file.Listener.Address,
 		MaxBytes:        maxBytes,
 		Unlimited:       unlimited,
 		IdleTTL:         idleTTL,
 		NeverExpire:     never,
-	}, nil
+	}
+	if file.Target != nil {
+		target, err := resolveTarget(*file.Target, configPath)
+		if err != nil {
+			return Resolved{}, err
+		}
+		resolved.Target = target
+	}
+	return resolved, nil
+}
+
+func resolveTarget(target Target, configPath string) (*ResolvedTarget, error) {
+	if target.Address == "" || target.Address != strings.TrimSpace(target.Address) || len(target.Address) > 2048 {
+		return nil, fmt.Errorf("target.address: must be nonblank, unpadded, and at most 2048 bytes")
+	}
+	connect, err := parseNetworkDuration(target.ConnectTimeout, DefaultConnectTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("target.connect-timeout: %w", err)
+	}
+	header, err := parseNetworkDuration(target.ResponseHeaderTimeout, DefaultResponseHeaderTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("target.response-header-timeout: %w", err)
+	}
+	request, err := parseNetworkDuration(target.RequestTimeout, DefaultRequestTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("target.request-timeout: %w", err)
+	}
+	resolved := &ResolvedTarget{
+		Address: target.Address, ConnectTimeout: connect,
+		ResponseHeaderTimeout: header, RequestTimeout: request,
+	}
+	if target.CABundle == "" {
+		return resolved, nil
+	}
+	if target.CABundle != strings.TrimSpace(target.CABundle) {
+		return nil, fmt.Errorf("target.ca-bundle: must be an unpadded path")
+	}
+	bundlePath := target.CABundle
+	if !filepath.IsAbs(bundlePath) {
+		if configPath == "" {
+			return nil, fmt.Errorf("target.ca-bundle: relative path requires a configuration path")
+		}
+		bundlePath = filepath.Join(filepath.Dir(configPath), bundlePath)
+	}
+	bundlePath = filepath.Clean(bundlePath)
+	content, err := readCABundle(bundlePath)
+	if err != nil {
+		return nil, fmt.Errorf("target.ca-bundle: %w", err)
+	}
+	resolved.CABundlePath = bundlePath
+	resolved.CABundlePEM = content
+	return resolved, nil
+}
+
+func parseNetworkDuration(value string, fallback time.Duration) (time.Duration, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	duration, never, err := parseDuration(value)
+	if err != nil || never {
+		return 0, fmt.Errorf("must be a positive canonical duration using s, m, or h")
+	}
+	return duration, nil
+}
+
+func readCABundle(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("must identify a readable regular PEM certificate file")
+	}
+	const maximum = 1 << 20
+	if info.Size() > maximum {
+		return nil, fmt.Errorf("must not exceed 1048576 bytes")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("must identify a readable regular PEM certificate file")
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, maximum+1))
+	if err != nil || len(content) > maximum {
+		return nil, fmt.Errorf("could not be read within the size limit")
+	}
+	rest := content
+	found := false
+	for len(bytes.TrimSpace(rest)) > 0 {
+		block, remaining := pem.Decode(rest)
+		if block == nil {
+			return nil, fmt.Errorf("must contain only valid PEM blocks")
+		}
+		if block.Type == "CERTIFICATE" {
+			if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+				return nil, fmt.Errorf("contains an invalid certificate")
+			}
+			found = true
+		}
+		rest = remaining
+	}
+	if !found {
+		return nil, fmt.Errorf("must contain at least one certificate")
+	}
+	return append([]byte(nil), content...), nil
 }
 
 func ValidateListenerAddress(address string) error {

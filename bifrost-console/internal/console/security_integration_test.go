@@ -3,9 +3,11 @@ package console
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,9 +15,42 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/profile"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/workspace"
 )
+
+func TestInvalidPromptCredentialFailsBeforeListenerStartup(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "profile", "config.yaml")
+	ownedProfile, err := profile.Open(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ownedProfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	content := config.DefaultYAML + "target:\n  address: https://application.example\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = Run(context.Background(), Options{
+		ConfigPath:              configPath,
+		WorkDirectory:           filepath.Join(root, "work"),
+		ListenOverride:          "127.0.0.1:0",
+		NoOpenBrowser:           true,
+		PromptForApplicationKey: true,
+	}, Dependencies{
+		PromptApplicationKey: func(context.Context) ([]byte, error) {
+			return []byte("too-short"), nil
+		},
+	})
+	var domain *consolecore.Error
+	if !errors.As(err, &domain) || domain.Code != consolecore.CodeInvalidArgument {
+		t.Fatalf("invalid prompt credential did not fail startup: %v", err)
+	}
+}
 
 type lineWriter struct {
 	mu    sync.Mutex
@@ -87,13 +122,13 @@ func TestLiveConsolePairsBootstrapsAndReleasesLocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var state map[string]string
+	var state map[string]any
 	if err := json.NewDecoder(bootstrap.Body).Decode(&state); err != nil {
 		t.Fatal(err)
 	}
 	bootstrap.Body.Close()
 	if bootstrap.StatusCode != http.StatusOK || state["workspacePath"] != workPath ||
-		state["tabId"] == "" || state["csrfToken"] == "" {
+		state["tabId"] == "" || state["csrfToken"] == "" || state["target"] == nil {
 		t.Fatalf("bootstrap status=%d state=%v", bootstrap.StatusCode, state)
 	}
 

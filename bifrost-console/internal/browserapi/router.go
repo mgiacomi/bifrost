@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 )
 
 const csrfHeader = "X-Bifrost-Console-CSRF"
@@ -18,6 +19,7 @@ type Options struct {
 	Workspace    string
 	PairingURL   func(string) string
 	PrintPairing func(string) error
+	Target       *target.Context
 }
 
 type Router struct {
@@ -60,6 +62,14 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		router.withSession(response, request, true, router.releaseTab)
 	case "/api/console/v1/tabs/heartbeat":
 		router.withSession(response, request, true, router.heartbeat)
+	case "/api/console/v1/target/status":
+		router.withSession(response, request, false, router.targetStatus)
+	case "/api/console/v1/target/connect":
+		router.withSession(response, request, true, router.targetConnect)
+	case "/api/console/v1/target/credential":
+		router.withSession(response, request, true, router.targetCredential)
+	case "/api/console/v1/target/recheck":
+		router.withSession(response, request, true, router.targetRecheck)
 	default:
 		writeError(response, http.StatusNotFound, "NOT_FOUND", "Console operation not found.")
 	}
@@ -144,7 +154,15 @@ func (router *Router) bootstrap(response http.ResponseWriter, request *http.Requ
 		"workspacePath": router.options.Workspace,
 		"tabId":         result.TabID,
 		"csrfToken":     result.CSRF,
+		"target":        targetResponse(router.targetSnapshot()),
 	})
+}
+
+func (router *Router) targetSnapshot() target.Snapshot {
+	if router.options.Target == nil {
+		return target.Snapshot{}
+	}
+	return router.options.Target.Snapshot()
 }
 
 func (router *Router) pairingLink(response http.ResponseWriter, request *http.Request, _ string) {

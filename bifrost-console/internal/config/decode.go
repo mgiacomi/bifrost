@@ -34,9 +34,13 @@ func Decode(path string, reader io.Reader) (File, Resolved, error) {
 		return File{}, Resolved{}, fmt.Errorf("configuration %s is invalid: %w", path, err)
 	}
 	if err := validateSchema(document.Content[0], map[string]map[string]struct{}{
-		"":                {"version": {}, "listener": {}, "trace-workspace": {}},
+		"":                {"version": {}, "listener": {}, "trace-workspace": {}, "target": {}},
 		"listener":        {"address": {}},
 		"trace-workspace": {"max-bytes": {}, "idle-ttl": {}},
+		"target": {
+			"address": {}, "connect-timeout": {}, "response-header-timeout": {},
+			"request-timeout": {}, "ca-bundle": {},
+		},
 	}, ""); err != nil {
 		return File{}, Resolved{}, fmt.Errorf("configuration %s is invalid: %w", path, err)
 	}
@@ -54,7 +58,7 @@ func Decode(path string, reader io.Reader) (File, Resolved, error) {
 	if err := decoder.Decode(&file); err != nil {
 		return File{}, Resolved{}, fmt.Errorf("configuration %s is invalid: %s", path, boundedYAMLError(err))
 	}
-	resolved, err := file.Resolve()
+	resolved, err := file.resolve(path)
 	if err != nil {
 		return File{}, Resolved{}, fmt.Errorf("configuration %s: %w", path, err)
 	}
@@ -99,7 +103,7 @@ func validateSchema(node *yaml.Node, schema map[string]map[string]struct{}, sect
 		}
 		nextSection := ""
 		switch key.Value {
-		case "listener", "trace-workspace":
+		case "listener", "trace-workspace", "target":
 			nextSection = key.Value
 			if value.Kind != yaml.MappingNode {
 				return fmt.Errorf("%s must be a mapping", key.Value)

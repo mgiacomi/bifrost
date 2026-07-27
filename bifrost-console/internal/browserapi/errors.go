@@ -7,15 +7,20 @@ import (
 	"net/http"
 )
 
-const maxJSONBody = 1024
+const (
+	maxJSONBody       = 1024
+	maxTargetJSONBody = 4 * 1024
+)
 
 type errorEnvelope struct {
 	Error browserError `json:"error"`
 }
 
 type browserError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code          string `json:"code"`
+	Message       string `json:"message"`
+	TargetScopeID string `json:"targetScopeId,omitempty"`
+	Details       any    `json:"details,omitempty"`
 }
 
 func writeError(response http.ResponseWriter, status int, code, message string) {
@@ -35,8 +40,12 @@ func writeJSON(response http.ResponseWriter, status int, value any) {
 }
 
 func decodeJSON(request *http.Request, value any) error {
-	content, err := io.ReadAll(io.LimitReader(request.Body, maxJSONBody+1))
-	if err != nil || len(content) > maxJSONBody {
+	return decodeJSONLimit(request, value, maxJSONBody)
+}
+
+func decodeJSONLimit(request *http.Request, value any, limit int64) error {
+	content, err := io.ReadAll(io.LimitReader(request.Body, limit+1))
+	if err != nil || int64(len(content)) > limit {
 		return staticError("request body exceeds limit")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))

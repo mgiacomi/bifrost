@@ -13,6 +13,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browseropen"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/console"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/credentialprompt"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/release"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/webassets"
 )
@@ -35,11 +36,14 @@ func main() {
 			_, err := webassets.Verify(files, release.ProductVersion())
 			return err
 		},
-		serve: func(context context.Context, options console.Options) error {
-			return console.Run(context, options, console.Dependencies{
+		serve: func(ctx context.Context, options console.Options) error {
+			return console.Run(ctx, options, console.Dependencies{
 				Files:       files,
 				Output:      os.Stdout,
 				OpenBrowser: browseropen.Open,
+				PromptApplicationKey: func(context.Context) ([]byte, error) {
+					return credentialprompt.Read(os.Stdin, os.Stderr)
+				},
 			})
 		},
 	}
@@ -60,6 +64,7 @@ func run(context context.Context, arguments []string, output io.Writer, dependen
 	address := flags.String("listen", "", "process-only explicit loopback listener override")
 	developmentOrigin := flags.String("development-origin", "", "additional exact loopback Vite origin")
 	noOpenBrowser := flags.Bool("no-open-browser", false, "do not open the default browser")
+	promptApplicationKey := flags.Bool("prompt-for-application-key", false, "prompt without echo for the selected target application key")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -90,10 +95,11 @@ func run(context context.Context, arguments []string, output io.Writer, dependen
 		}
 	}
 	return dependencies.serve(context, console.Options{
-		ConfigPath:        *configPath,
-		WorkDirectory:     *workDirectory,
-		ListenOverride:    *address,
-		DevelopmentOrigin: *developmentOrigin,
-		NoOpenBrowser:     *noOpenBrowser,
+		ConfigPath:              *configPath,
+		WorkDirectory:           *workDirectory,
+		ListenOverride:          *address,
+		DevelopmentOrigin:       *developmentOrigin,
+		NoOpenBrowser:           *noOpenBrowser,
+		PromptForApplicationKey: *promptApplicationKey,
 	})
 }

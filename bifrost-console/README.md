@@ -4,9 +4,9 @@ Bifrost Console is an independent Go module containing an embedded
 React/TypeScript application. A production build creates one executable; it is
 not a Maven module and it does not reuse the deprecated `bifrost-cli`.
 
-The executable owns one local profile, one disposable workspace, and a paired
-browser security realm. Target connections and diagnostic views arrive in
-later Console changes.
+The executable owns one local profile, one disposable workspace, a paired
+browser security realm, and one process-local selected Bifrost application
+target.
 
 ## Exact build prerequisites
 
@@ -52,7 +52,7 @@ The executable accepts:
 bifrost-console --version
 bifrost-console [--config FILE] [--work-dir DIRECTORY]
   [--listen 127.0.0.1:7943] [--development-origin http://127.0.0.1:5173]
-  [--no-open-browser]
+  [--no-open-browser] [--prompt-for-application-key]
 ```
 
 `--version` validates the release and embedded assets without creating files or
@@ -62,7 +62,10 @@ root. `--listen` overrides the YAML listener for this process only.
 `--development-origin` adds exactly one canonical HTTP loopback Vite
 authority/origin pair for this process; it is never persisted or enabled by a
 production default. `--no-open-browser` suppresses only the browser-opening
-attempt. A pairing URL is still printed.
+attempt. A pairing URL is still printed. `--prompt-for-application-key`
+requires a configured YAML target and reads its application key from an
+interactive terminal without echo. The Boolean flag, not the key, is visible
+in shell history and the process command line.
 
 The schema-version 1 configuration is strict and restart-only:
 
@@ -73,6 +76,11 @@ listener:
 trace-workspace:
   max-bytes: 4GiB
   idle-ttl: 4h
+target:
+  address: https://application.example/context
+  connect-timeout: 5s
+  response-header-timeout: 10s
+  request-timeout: 30s
 ```
 
 Unknown fields, duplicate keys, multiple documents, aliases, unsafe bounds, and
@@ -82,6 +90,33 @@ integer `KiB`, `MiB`, `GiB`, or `TiB` values and the exact sentinel
 `unlimited`. `idle-ttl` accepts positive integer `s`, `m`, or `h` values and the
 exact sentinel `never`. Numeric zero is invalid. Configuration never contains
 pairing, session, CSRF, application, or MCP credentials.
+
+The entire `target` mapping is optional; the generated default omits it and
+performs no application request. When present, `address` is required and may
+be an exact hierarchical HTTP or HTTPS origin with an optional clean context
+path. Browser-selected addresses reuse the restart-only timeout and trust
+policy and are not written to YAML. Network durations are positive canonical
+integer `s`, `m`, or `h` values; unlike workspace retention they do not accept
+`never`.
+
+`ca-bundle` is resolved relative to the configuration file, is loaded and
+validated before listening, and may contain up to 1 MiB of PEM certificates.
+Those certificates augment operating-system roots. They never replace system
+trust, disable hostname or validity checks, or enable an insecure mode.
+Application requests are made directly to the normalized selected authority,
+ignore environment proxy variables, never follow redirects, and have bounded
+headers and bodies. HTTP targets are allowed but the Overview persistently
+warns that the key and observability data cross the network without encryption.
+
+The application key exists only in process memory and is forgotten at Console
+shutdown. It can be entered in a paired browser or through the protected
+terminal prompt; both paths use the same credential provider and selected-target
+lifecycle. Selecting another target, replacing an existing key, or observing a
+changed application instance resets the opaque target scope and discards
+target-derived browser state. Supplying the first key for a configured
+credential-less target preserves its scope. Authentication rejection, access
+blocking, incompatibility, and temporary connection failures remain separate
+facts and do not rotate the scope by themselves.
 
 Default configuration files are:
 

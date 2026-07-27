@@ -22,15 +22,18 @@ func TestStaticHandlerServesEntryAndDeepLinks(t *testing.T) {
 }
 
 func TestStaticHandlerServesContentAddressedAssets(t *testing.T) {
-	response := request(t, StaticHandler(testFiles()), http.MethodGet, "/assets/app-12345678.js")
-	if response.Code != http.StatusOK || response.Body.String() != `console.log("bifrost")` {
-		t.Fatalf("asset response = %d %q", response.Code, response.Body.String())
-	}
-	if response.Header().Get("Cache-Control") != immutable {
-		t.Fatalf("cache = %q", response.Header().Get("Cache-Control"))
-	}
-	if !strings.HasPrefix(response.Header().Get("Content-Type"), "text/javascript") {
-		t.Fatalf("content type = %q", response.Header().Get("Content-Type"))
+	handler := StaticHandler(testFiles())
+	for _, target := range []string{"/assets/app-12345678.js", "/assets/index-mcU-Khxd.js"} {
+		response := request(t, handler, http.MethodGet, target)
+		if response.Code != http.StatusOK || response.Body.String() != `console.log("bifrost")` {
+			t.Fatalf("%s asset response = %d %q", target, response.Code, response.Body.String())
+		}
+		if response.Header().Get("Cache-Control") != immutable {
+			t.Fatalf("%s cache = %q", target, response.Header().Get("Cache-Control"))
+		}
+		if !strings.HasPrefix(response.Header().Get("Content-Type"), "text/javascript") {
+			t.Fatalf("%s content type = %q", target, response.Header().Get("Content-Type"))
+		}
 	}
 }
 
@@ -89,9 +92,10 @@ func request(t *testing.T, handler http.Handler, method, target string) *httptes
 
 func testFiles() fstest.MapFS {
 	return fstest.MapFS{
-		"index.html":              {Data: []byte("<main>Bifrost</main>")},
-		"assets/app-12345678.js":  {Data: []byte(`console.log("bifrost")`)},
-		"assets/app-12345678.css": {Data: []byte("body{}")},
-		".vite/manifest.json":     {Data: []byte("{}")},
+		"index.html":               {Data: []byte("<main>Bifrost</main>")},
+		"assets/app-12345678.js":   {Data: []byte(`console.log("bifrost")`)},
+		"assets/index-mcU-Khxd.js": {Data: []byte(`console.log("bifrost")`)},
+		"assets/app-12345678.css":  {Data: []byte("body{}")},
+		".vite/manifest.json":      {Data: []byte("{}")},
 	}
 }

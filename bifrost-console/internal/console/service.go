@@ -8,26 +8,33 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/applicationclient"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserapi"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/lifecycle"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/profile"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/release"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/webhost"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/workspace"
 )
 
 type Options struct {
-	ConfigPath        string
-	WorkDirectory     string
-	ListenOverride    string
-	DevelopmentOrigin string
-	NoOpenBrowser     bool
+	ConfigPath              string
+	WorkDirectory           string
+	ListenOverride          string
+	DevelopmentOrigin       string
+	NoOpenBrowser           bool
+	PromptForApplicationKey bool
 }
 
 type Dependencies struct {
-	Files       fs.FS
-	Output      io.Writer
-	OpenBrowser func(string) error
+	Files                fs.FS
+	Output               io.Writer
+	OpenBrowser          func(string) error
+	PromptApplicationKey func(context.Context) ([]byte, error)
 }
 
 func Run(parent context.Context, options Options, dependencies Dependencies) (result error) {
@@ -59,6 +66,47 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 	}()
 	if dependencies.Output != nil {
 		fmt.Fprintf(dependencies.Output, "Bifrost Console workspace: %s\n", ownedWorkspace.Root)
+	}
+
+	networkPolicy := applicationclient.NetworkPolicy{
+		ConnectTimeout:        config.DefaultConnectTimeout,
+		ResponseHeaderTimeout: config.DefaultResponseHeaderTimeout,
+		RequestTimeout:        config.DefaultRequestTimeout,
+	}
+	if ownedProfile.Resolved.Target != nil {
+		networkPolicy.ConnectTimeout = ownedProfile.Resolved.Target.ConnectTimeout
+		networkPolicy.ResponseHeaderTimeout = ownedProfile.Resolved.Target.ResponseHeaderTimeout
+		networkPolicy.RequestTimeout = ownedProfile.Resolved.Target.RequestTimeout
+		networkPolicy.CABundlePEM = ownedProfile.Resolved.Target.CABundlePEM
+	}
+	targetContext, err := target.New(func(address applicationclient.Address) (target.ProbeClient, error) {
+		return applicationclient.New(address, networkPolicy, release.ProductVersion())
+	}, nil, nil)
+	if err != nil {
+		return err
+	}
+	defer targetContext.Close()
+	if ownedProfile.Resolved.Target != nil {
+		if domain := targetContext.Select(ownedProfile.Resolved.Target.Address); domain != nil {
+			return domain
+		}
+	}
+	if options.PromptForApplicationKey {
+		if ownedProfile.Resolved.Target == nil {
+			return fmt.Errorf("--prompt-for-application-key requires a configured target")
+		}
+		if dependencies.PromptApplicationKey == nil {
+			return fmt.Errorf("application-key prompt is unavailable")
+		}
+		key, promptErr := dependencies.PromptApplicationKey(parent)
+		if promptErr != nil {
+			return promptErr
+		}
+		_, domain := targetContext.SupplyCredential(parent, key)
+		clear(key)
+		if domain != nil && domain.Code == consolecore.CodeInvalidArgument {
+			return domain
+		}
 	}
 
 	coordinator := lifecycle.New(parent)
@@ -107,6 +155,7 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 				Workspace:    ownedWorkspace.Root,
 				PairingURL:   pairingURL,
 				PrintPairing: printPairing,
+				Target:       targetContext,
 			})
 			if err != nil {
 				return nil, err
@@ -127,6 +176,7 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 			return webhost.Routes(policy, api, dependencies.Files), nil
 		},
 	}
+	targetContext.StartServing()
 	runErr := host.Run(coordinator.Context())
 	coordinator.Stop()
 	sessions.Close()

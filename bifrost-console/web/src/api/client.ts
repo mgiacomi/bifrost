@@ -3,6 +3,8 @@ import type {
   BrowserErrorCode,
   ErrorEnvelope,
   PairingLinkResponse,
+  TargetResponse,
+  BrowserErrorDetails,
 } from "./contracts";
 
 export class BrowserAPIError extends Error {
@@ -10,6 +12,8 @@ export class BrowserAPIError extends Error {
     readonly code: BrowserErrorCode,
     message: string,
     readonly status: number,
+    readonly targetScopeId?: string,
+    readonly details?: BrowserErrorDetails,
   ) {
     super(message);
   }
@@ -43,7 +47,13 @@ async function post<T>(
   const parsed = (await response.json()) as T | ErrorEnvelope;
   if (!response.ok) {
     const error = (parsed as ErrorEnvelope).error;
-    throw new BrowserAPIError(error.code, error.message, response.status);
+    throw new BrowserAPIError(
+      error.code,
+      error.message,
+      response.status,
+      error.targetScopeId,
+      error.details,
+    );
   }
   return parsed as T;
 }
@@ -70,4 +80,27 @@ export function releaseTab(security: SecurityState): Promise<{ released: boolean
 
 export function heartbeatTab(security: SecurityState): Promise<{ active: boolean }> {
   return post("/api/console/v1/tabs/heartbeat", {}, security);
+}
+
+export function targetStatus(): Promise<TargetResponse> {
+  return post("/api/console/v1/target/status", {});
+}
+
+export function connectTarget(
+  targetAddress: string,
+  applicationKey: string,
+  security: SecurityState,
+): Promise<TargetResponse> {
+  return post("/api/console/v1/target/connect", { targetAddress, applicationKey }, security);
+}
+
+export function supplyTargetCredential(
+  applicationKey: string,
+  security: SecurityState,
+): Promise<TargetResponse> {
+  return post("/api/console/v1/target/credential", { applicationKey }, security);
+}
+
+export function recheckTarget(security: SecurityState): Promise<TargetResponse> {
+  return post("/api/console/v1/target/recheck", {}, security);
 }

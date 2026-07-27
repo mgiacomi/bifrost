@@ -3,6 +3,7 @@ import type { BuildMetadata } from "./metadata";
 import { ThemeSelect } from "./ThemeSelect";
 import { PairingPage } from "../security/PairingPage";
 import { useBrowserSession } from "../security/BrowserSessionProvider";
+import { TargetProvider } from "../target/TargetProvider";
 
 export function App({ metadata }: { metadata: BuildMetadata }) {
   const session = useBrowserSession();
@@ -21,7 +22,9 @@ export function App({ metadata }: { metadata: BuildMetadata }) {
             <p className="workspace-path">
               Verified workspace <code>{session.bootstrap.workspacePath}</code>
             </p>
-            <Outlet />
+            <TargetProvider initial={session.bootstrap.target}>
+              <Outlet />
+            </TargetProvider>
           </>
         ) : (
           <PairingPage />
@@ -35,24 +38,12 @@ export function App({ metadata }: { metadata: BuildMetadata }) {
   );
 }
 
-export function Foundation() {
-  return (
-    <section aria-labelledby="foundation-title" className="foundation-card">
-      <p className="eyebrow">Build foundation</p>
-      <h2 id="foundation-title">Console shell ready</h2>
-      <p>
-        The embedded browser and Go host share one verified Bifrost release.
-      </p>
-    </section>
-  );
-}
-
 export function NotFound() {
   return (
     <section aria-labelledby="not-found-title" className="foundation-card">
       <p className="eyebrow">Not found</p>
       <h2 id="not-found-title">This Console route does not exist</h2>
-      <p>Check the address and return to the Console foundation.</p>
+      <p>Check the address and return to the Console Overview.</p>
     </section>
   );
 }

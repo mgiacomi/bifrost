@@ -30,7 +30,7 @@ func TestREADMEDeclaresEveryRuntimeFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, flag := range []string{"--version", "--config", "--work-dir", "--listen", "--development-origin", "--no-open-browser"} {
+	for _, flag := range []string{"--version", "--config", "--work-dir", "--listen", "--development-origin", "--no-open-browser", "--prompt-for-application-key"} {
 		if !strings.Contains(string(content), flag) {
 			t.Errorf("README does not declare %s", flag)
 		}

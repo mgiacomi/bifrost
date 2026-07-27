@@ -1,5 +1,6 @@
 import { createBrowserRouter, createMemoryRouter } from "react-router";
-import { App, Foundation, NotFound } from "./App";
+import { App, NotFound } from "./App";
+import { Overview } from "../target/Overview";
 import { buildMetadata, type BuildMetadata } from "./metadata";
 
 function definitions(metadata: BuildMetadata) {
@@ -8,8 +9,7 @@ function definitions(metadata: BuildMetadata) {
       path: "/",
       element: <App metadata={metadata} />,
       children: [
-        { index: true, element: <Foundation /> },
-        { path: "foundation/deep-link", element: <Foundation /> },
+        { index: true, element: <Overview /> },
         { path: "*", element: <NotFound /> },
       ],
     },

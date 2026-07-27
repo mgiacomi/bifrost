@@ -15,7 +15,12 @@ import {
   heartbeatTab,
   releaseTab,
   requestManualPairing,
+  targetStatus,
+  connectTarget,
+  supplyTargetCredential,
+  recheckTarget,
 } from "../api/client";
+import type { TargetResponse } from "../api/contracts";
 import {
   sessionReducer,
   type BrowserSessionState,
@@ -26,6 +31,10 @@ const tabHeartbeatIntervalMilliseconds = 60_000;
 type BrowserSessionContextValue = BrowserSessionState & {
   pair(secret: string): Promise<void>;
   requestManualChallenge(): Promise<void>;
+  readTargetStatus(): Promise<TargetResponse>;
+  connectTarget(address: string, key: string): Promise<TargetResponse>;
+  supplyTargetCredential(key: string): Promise<TargetResponse>;
+  recheckTarget(): Promise<TargetResponse>;
 };
 
 const BrowserSessionContext = createContext<BrowserSessionContextValue>({
@@ -35,9 +44,25 @@ const BrowserSessionContext = createContext<BrowserSessionContextValue>({
     workspacePath: "test-workspace",
     tabId: "test-tab",
     csrfToken: "test-token",
+    target: {
+      unencrypted: false,
+      status: {
+        observedAt: "2026-07-27T00:00:00Z",
+        targetSelection: "NONE",
+        targetConnection: "NOT_APPLICABLE",
+        targetAuthentication: "NOT_APPLICABLE",
+        javaGoCompatibility: "NOT_APPLICABLE",
+        runtimeIdentity: "NOT_APPLICABLE",
+        liveMonitoring: "NOT_APPLICABLE",
+      },
+    },
   },
   async pair() {},
   async requestManualChallenge() {},
+  async readTargetStatus() { return this.bootstrap.target; },
+  async connectTarget() { return this.bootstrap.target; },
+  async supplyTargetCredential() { return this.bootstrap.target; },
+  async recheckTarget() { return this.bootstrap.target; },
 });
 
 export function BrowserSessionProvider({
@@ -150,6 +175,22 @@ export function BrowserSessionProvider({
       },
       requestManualChallenge: async () => {
         await requestManualPairing();
+      },
+      readTargetStatus: targetStatus,
+      connectTarget: async (address: string, key: string) => {
+        const security = currentSecurity.current;
+        if (!security) throw new BrowserAPIError("SESSION_REQUIRED", "Pairing is required.", 401);
+        return connectTarget(address, key, security);
+      },
+      supplyTargetCredential: async (key: string) => {
+        const security = currentSecurity.current;
+        if (!security) throw new BrowserAPIError("SESSION_REQUIRED", "Pairing is required.", 401);
+        return supplyTargetCredential(key, security);
+      },
+      recheckTarget: async () => {
+        const security = currentSecurity.current;
+        if (!security) throw new BrowserAPIError("SESSION_REQUIRED", "Pairing is required.", 401);
+        return recheckTarget(security);
       },
     }),
     [load, state],

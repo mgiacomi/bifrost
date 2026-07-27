@@ -1,5 +1,15 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { bootstrap, createPairingLink, exchangePairing, heartbeatTab } from "./client";
+import {
+  bootstrap,
+  BrowserAPIError,
+  connectTarget,
+  createPairingLink,
+  exchangePairing,
+  heartbeatTab,
+  recheckTarget,
+  supplyTargetCredential,
+  targetStatus,
+} from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -79,4 +89,70 @@ test("heartbeats with the current in-memory tab security state", async () => {
       }),
     }),
   );
+});
+
+test("submits target operations with session-only status and protected mutations", async () => {
+  const target = {
+    unencrypted: false,
+    status: {
+      observedAt: "2026-07-27T00:00:00Z",
+      targetSelection: "NONE",
+      targetConnection: "NOT_APPLICABLE",
+      targetAuthentication: "NOT_APPLICABLE",
+      javaGoCompatibility: "NOT_APPLICABLE",
+      runtimeIdentity: "NOT_APPLICABLE",
+      liveMonitoring: "NOT_APPLICABLE",
+    },
+  };
+  const fetch = vi.fn().mockImplementation(() => Promise.resolve(
+    new Response(JSON.stringify(target), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  ));
+  vi.stubGlobal("fetch", fetch);
+  const security = { tabId: "tab", csrfToken: "csrf" };
+  await targetStatus();
+  await connectTarget("https://application.example", "k".repeat(32), security);
+  await supplyTargetCredential("r".repeat(32), security);
+  await recheckTarget(security);
+  expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+    "/api/console/v1/target/status",
+    "/api/console/v1/target/connect",
+    "/api/console/v1/target/credential",
+    "/api/console/v1/target/recheck",
+  ]);
+  expect((fetch.mock.calls[0]?.[1] as RequestInit).headers).not.toHaveProperty(
+    "X-Bifrost-Console-CSRF",
+  );
+  expect((fetch.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({
+    "X-Bifrost-Console-Tab": "tab",
+    "X-Bifrost-Console-CSRF": "csrf",
+  });
+});
+
+test("preserves shared target error scope and typed details", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "TARGET_CHANGED",
+            message: "Target changed.",
+            targetScopeId: "old",
+            details: { currentTargetScopeId: "new" },
+          },
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  const error = await targetStatus().catch((value: unknown) => value);
+  expect(error).toBeInstanceOf(BrowserAPIError);
+  expect(error).toMatchObject({
+    code: "TARGET_CHANGED",
+    targetScopeId: "old",
+    details: { currentTargetScopeId: "new" },
+  });
 });

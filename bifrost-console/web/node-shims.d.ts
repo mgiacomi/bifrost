@@ -40,6 +40,30 @@ declare module "node:child_process" {
   ): ChildProcessWithoutNullStreams;
 }
 
+declare module "node:http" {
+  type IncomingMessage = {
+    method?: string;
+    url?: string;
+    headers: Record<string, string | string[] | undefined>;
+  };
+  type ServerResponse = {
+    writeHead(status: number, headers?: Record<string, string>): ServerResponse;
+    end(body?: string): void;
+  };
+  type AddressInfo = { port: number };
+  type Server = {
+    listen(port: number, host: string, callback: () => void): void;
+    address(): AddressInfo | string | null;
+    close(callback: (error?: Error) => void): void;
+  };
+  const http: {
+    createServer(
+      listener: (request: IncomingMessage, response: ServerResponse) => void,
+    ): Server;
+  };
+  export default http;
+}
+
 declare module "node:events" {
   export class EventEmitter {
     on(event: string, listener: (...args: any[]) => void): this;

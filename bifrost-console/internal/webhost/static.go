@@ -5,6 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -13,6 +14,8 @@ const (
 	noStore   = "no-store"
 	immutable = "public, max-age=31536000, immutable"
 )
+
+var contentAddressedAsset = regexp.MustCompile(`(?:^|/)[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$`)
 
 func StaticHandler(files fs.FS) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -107,17 +110,5 @@ func requestPath(request *http.Request) (name string, navigation bool, ok bool) 
 }
 
 func isContentAddressed(name string) bool {
-	base := path.Base(name)
-	extension := path.Ext(base)
-	stem := strings.TrimSuffix(base, extension)
-	dash := strings.LastIndex(stem, "-")
-	if dash < 0 || len(stem)-dash-1 < 8 {
-		return false
-	}
-	for _, character := range stem[dash+1:] {
-		if !strings.ContainsRune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_", character) {
-			return false
-		}
-	}
-	return true
+	return contentAddressedAsset.MatchString(name)
 }

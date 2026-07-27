@@ -87,6 +87,7 @@ func TestRunPassesCLIOverridesToService(t *testing.T) {
 		"--listen", "127.0.0.1:0",
 		"--development-origin", "http://127.0.0.1:5173",
 		"--no-open-browser",
+		"--prompt-for-application-key",
 	}, &bytes.Buffer{}, runtimeDependencies{
 		version: "0.1.0-SNAPSHOT",
 		verify:  func() error { return nil },
@@ -101,7 +102,7 @@ func TestRunPassesCLIOverridesToService(t *testing.T) {
 	if options.ConfigPath != "profile.yaml" || options.WorkDirectory != "work" ||
 		options.ListenOverride != "127.0.0.1:0" ||
 		options.DevelopmentOrigin != "http://127.0.0.1:5173" ||
-		!options.NoOpenBrowser {
+		!options.NoOpenBrowser || !options.PromptForApplicationKey {
 		t.Fatalf("options=%#v", options)
 	}
 }
