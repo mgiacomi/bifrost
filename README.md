@@ -28,11 +28,16 @@ The result is a hybrid system that combines the structure of HTNs with the adapt
 
 ## Project Structure
 
-Bifrost currently contains three projects:
+Bifrost currently contains four projects:
 
 - `bifrost-spring-boot-starter`: the core starter.
 - `bifrost-sample`: a sample Spring Boot application.
+- `bifrost-console`: an independent Go module with an embedded React application. Its explicit build uses pinned Go, Node.js, and npm toolchains and is not part of the Maven reactor.
 - `bifrost-cli`: a deprecated trace-viewer proof of concept retained temporarily as a reference; it will be removed after Bifrost Console is implemented.
+
+Ordinary Java development and `mvn test` do not invoke Console tooling. See
+[`bifrost-console/README.md`](bifrost-console/README.md) for the Console build
+and local hot-reload workflow.
 
 ## Getting Started
 

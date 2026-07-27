@@ -47,3 +47,12 @@ logs/
 *.swp
 *.bak
 *~
+
+# Bifrost Console build outputs
+bifrost-console/web/node_modules/
+bifrost-console/web/coverage/
+bifrost-console/web/test-results/
+bifrost-console/web/playwright-report/
+bifrost-console/internal/webassets/generated/*
+!bifrost-console/internal/webassets/generated/embed-placeholder.txt
+bifrost-console/build/
