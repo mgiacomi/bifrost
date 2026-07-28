@@ -14,6 +14,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/lifecycle"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/profile"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/release"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
@@ -148,14 +149,15 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 				return origin + "/#/pair/" + secret
 			}
 			api, err := browserapi.New(browserapi.Options{
-				Policy:       policy,
-				Pairing:      pairing,
-				Sessions:     sessions,
-				ProcessID:    processID,
-				Workspace:    ownedWorkspace.Root,
-				PairingURL:   pairingURL,
-				PrintPairing: printPairing,
-				Target:       targetContext,
+				Policy:        policy,
+				Pairing:       pairing,
+				Sessions:      sessions,
+				ProcessID:     processID,
+				Workspace:     ownedWorkspace.Root,
+				PairingURL:    pairingURL,
+				PrintPairing:  printPairing,
+				Target:        targetContext,
+				Observability: observability.New(),
 			})
 			if err != nil {
 				return nil, err

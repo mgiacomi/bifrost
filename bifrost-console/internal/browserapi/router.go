@@ -6,20 +6,22 @@ import (
 	"strings"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 )
 
 const csrfHeader = "X-Bifrost-Console-CSRF"
 
 type Options struct {
-	Policy       Policy
-	Pairing      *browserauth.Pairing
-	Sessions     *browserauth.Registry
-	ProcessID    string
-	Workspace    string
-	PairingURL   func(string) string
-	PrintPairing func(string) error
-	Target       *target.Context
+	Policy        Policy
+	Pairing       *browserauth.Pairing
+	Sessions      *browserauth.Registry
+	ProcessID     string
+	Workspace     string
+	PairingURL    func(string) string
+	PrintPairing  func(string) error
+	Target        *target.Context
+	Observability *observability.Service
 }
 
 type Router struct {
@@ -70,6 +72,20 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		router.withSession(response, request, true, router.targetCredential)
 	case "/api/console/v1/target/recheck":
 		router.withSession(response, request, true, router.targetRecheck)
+	case "/api/console/v1/observability/instance":
+		router.withSession(response, request, false, router.observabilityInstance)
+	case "/api/console/v1/skills/list":
+		router.withSession(response, request, false, router.skillsList)
+	case "/api/console/v1/skills/detail":
+		router.withSession(response, request, false, router.skillDetail)
+	case "/api/console/v1/active-executions/list":
+		router.withSession(response, request, false, router.activeExecutionsList)
+	case "/api/console/v1/active-executions/detail":
+		router.withSession(response, request, false, router.activeExecutionDetail)
+	case "/api/console/v1/traces/list":
+		router.withSession(response, request, false, router.tracesList)
+	case "/api/console/v1/traces/detail":
+		router.withSession(response, request, false, router.traceDetail)
 	default:
 		writeError(response, http.StatusNotFound, "NOT_FOUND", "Console operation not found.")
 	}

@@ -79,3 +79,99 @@ export type BootstrapResponse = {
 export type PairingLinkResponse = {
   pairingUrl: string;
 };
+
+export type InstanceStatus = {
+  targetScopeId: string;
+  instanceId: string;
+  consoleCompatibilityVersion: string;
+  observedAt: string;
+  liveMonitoringAvailable: boolean;
+  registeredSkillCount: number;
+  activeExecutionCount: number;
+  catalogedTraceCount: number;
+  tracePersistencePolicy: string;
+  completionGraceTtl: string;
+  traceCatalogMetadataTtl: string;
+};
+
+export type SkillSummary = {
+  registeredName: string;
+  sourcePath: string;
+  href?: string;
+};
+
+export type SkillDetail = {
+  targetScopeId: string;
+  registeredName: string;
+  sourcePath: string;
+  yaml: string;
+};
+
+export type FramePathEntry = {
+  frameId: string;
+  frameType: string;
+  route: string;
+};
+
+export type Usage = {
+  skillInvocations: number;
+  toolInvocations: number;
+  linterRetries: number;
+  modelCalls: number;
+  promptUnits: number;
+  completionUnits: number;
+  usageUnits: number;
+  exactModelResponses: number;
+  heuristicModelResponses: number;
+  unavailableModelResponses: number;
+};
+
+export type ConfiguredLimits = {
+  maxSkillInvocations: number;
+  maxToolInvocations: number;
+  maxLinterRetries: number;
+  maxModelCalls: number;
+  maxUsageUnits: number;
+};
+
+export type ActiveExecution = {
+  targetScopeId: string;
+  sessionId: string;
+  traceId: string;
+  lastCanonicalSequence: number;
+  startedAt: string;
+  updatedAt: string;
+  elapsedMillis: number;
+  entrySkill: string;
+  status: string;
+  phase: string;
+  summary: string;
+  activePath: FramePathEntry[];
+  totalFrameDepth: number;
+  activePathTruncated: boolean;
+  usage: Usage;
+  configuredLimits: ConfiguredLimits;
+};
+
+export type Trace = {
+  targetScopeId: string;
+  traceId: string;
+  sessionId: string;
+  outcome: string;
+  finalizedAt: string;
+  sizeBytes: number;
+  persistencePolicy: string;
+  applicationTraceExpiresAt: string;
+};
+
+export type Page<T> = {
+  targetScopeId: string;
+  items: T[];
+  hasMore: boolean;
+  nextCursor: string | null;
+  observedAt: string;
+};
+
+export type ActivePage = Page<ActiveExecution> & {
+  resumeCursor: string | null;
+};

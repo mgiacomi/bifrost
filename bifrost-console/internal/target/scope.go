@@ -3,9 +3,12 @@ package target
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/applicationclient"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 )
 
 type ScopeID string
@@ -17,6 +20,7 @@ type Scope struct {
 	InstanceID string
 	client     ProbeClient
 	credential applicationclient.Credential
+	authority  *Context
 }
 
 func (scope Scope) Probe(parent context.Context) (applicationclient.Instance, error) {
@@ -30,6 +34,57 @@ func (scope Scope) Probe(parent context.Context) (applicationclient.Instance, er
 		cancel()
 	}()
 	return scope.client.Probe(operation, scope.credential)
+}
+
+func (scope Scope) Upstream(parent context.Context, endpoint string, maxBytes int64) ([]byte, *consolecore.Error) {
+	if scope.credential == nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetAuthentication, "An application key is required.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	if scope.client == nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The selected target has no application access.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	operation, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(scope.Context, cancel)
+	defer func() {
+		stop()
+		cancel()
+	}()
+	body, instanceID, err := scope.client.Get(operation, endpoint, maxBytes, scope.credential)
+	if instanceID != "" && scope.InstanceID != "" && scope.InstanceID != instanceID {
+		slog.Error("upstream instance ID mismatch", "scopeId", scope.ID, "expected", scope.InstanceID, "actual", instanceID)
+		if scope.authority != nil {
+			scope.authority.revalidateAfterMismatch(parent, scope.ID)
+			if domain := scope.authority.RequireCurrent(scope.ID); domain != nil {
+				return nil, domain
+			}
+		}
+		return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			if parent.Err() != nil {
+				slog.Error("upstream operation canceled by caller", "scopeId", scope.ID)
+				return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The operation was canceled.", string(scope.ID), consolecore.Details{}, err)
+			}
+			slog.Error("upstream operation canceled by scope rotation", "scopeId", scope.ID)
+			return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, err)
+		}
+		var failure *applicationclient.Failure
+		if errors.As(err, &failure) {
+			slog.Error("upstream request failed", "scopeId", scope.ID, "failureKind", failure.Kind)
+			return nil, failure.ConsoleError(string(scope.ID))
+		}
+		slog.Error("upstream request transport error", "scopeId", scope.ID)
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The selected target is unavailable.", string(scope.ID), consolecore.Details{}, err)
+	}
+	return body, nil
+}
+
+func (scope Scope) RequireCurrent() *consolecore.Error {
+	if scope.authority == nil {
+		return nil
+	}
+	return scope.authority.RequireCurrent(scope.ID)
 }
 
 func (scope Scope) GoString() string {

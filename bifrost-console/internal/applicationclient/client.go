@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -18,6 +19,7 @@ const (
 	APIKeyHeader     = "X-Bifrost-Api-Key"
 	InstanceIDHeader = "X-Bifrost-Instance-Id"
 	maxResponseBytes = 64 * 1024
+	problemMaxBytes  = 4 * 1024
 )
 
 type Credential interface {
@@ -86,6 +88,69 @@ func New(address Address, policy NetworkPolicy, expectedVersion string) (*Client
 
 func (client *Client) Close() { client.transport.CloseIdleConnections() }
 
+func (client *Client) Get(parent context.Context, endpoint string, maxBytes int64, credential Credential) ([]byte, string, error) {
+	if credential == nil {
+		return nil, "", newFailure(FailureAuthentication, "", nil)
+	}
+	requestContext, cancel := context.WithTimeout(parent, client.requestTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, "", protocolFailure()
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
+	request.Header.Set("Cache-Control", "no-store")
+	if err := credential.Apply(request); err != nil {
+		return nil, "", newFailure(FailureAuthentication, "", nil)
+	}
+	if len(request.Header.Values(APIKeyHeader)) != 1 {
+		return nil, "", newFailure(FailureAuthentication, "", nil)
+	}
+	response, err := client.http.Do(request)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, "", context.Canceled
+		}
+		return nil, "", classifyTransport(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		return nil, "", newFailure(FailureUnavailable, CategoryRedirect, nil)
+	}
+	if encoding := response.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(encoding, "identity") {
+		return nil, "", protocolFailure()
+	}
+	if response.StatusCode != http.StatusOK {
+		body, err := readBounded(response.Body, problemMaxBytes)
+		if err != nil {
+			slog.Error("upstream error body read failed", "status", response.StatusCode, "limit", problemMaxBytes, "err", err)
+			return nil, "", protocolFailure()
+		}
+		failure := mapProblem(response.StatusCode, response.Header.Get("Content-Type"), body)
+		if f, ok := failure.(*Failure); ok {
+			slog.Error("upstream returned non-200", "status", response.StatusCode, "failureKind", f.Kind)
+		} else {
+			slog.Error("upstream returned non-200", "status", response.StatusCode)
+		}
+		instanceID, identityErr := optionalResponseInstanceID(response.Header.Values(InstanceIDHeader))
+		if identityErr != nil {
+			return nil, "", protocolFailure()
+		}
+		return nil, instanceID, failure
+	}
+	instanceID, err := responseInstanceID(response.Header.Values(InstanceIDHeader))
+	if err != nil {
+		return nil, "", protocolFailure()
+	}
+	body, err := readBounded(response.Body, maxBytes)
+	if err != nil {
+		slog.Error("upstream response body exceeds limit", "maxBytes", maxBytes, "err", err)
+		return nil, "", newFailure(FailureLimitExceeded, "", nil)
+	}
+	return body, instanceID, nil
+}
+
 func (client *Client) Probe(parent context.Context, credential Credential) (Instance, error) {
 	if credential == nil {
 		return Instance{}, newFailure(FailureAuthentication, "", nil)
@@ -119,7 +184,7 @@ func (client *Client) Probe(parent context.Context, credential Credential) (Inst
 	if encoding := response.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(encoding, "identity") {
 		return Instance{}, protocolFailure()
 	}
-	body, err := readBounded(response.Body)
+	body, err := readBounded(response.Body, maxResponseBytes)
 	if err != nil {
 		return Instance{}, protocolFailure()
 	}
@@ -177,12 +242,29 @@ func ValidateCredential(value []byte) error {
 	return nil
 }
 
-func readBounded(reader io.Reader) ([]byte, error) {
-	content, err := io.ReadAll(io.LimitReader(reader, maxResponseBytes+1))
-	if err != nil || len(content) > maxResponseBytes {
+func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
+	content, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil || int64(len(content)) > maxBytes {
 		return nil, fmt.Errorf("upstream body exceeds limit")
 	}
 	return content, nil
+}
+
+func responseInstanceID(values []string) (string, error) {
+	if len(values) != 1 || strings.Contains(values[0], ",") {
+		return "", fmt.Errorf("response must contain exactly one instance ID")
+	}
+	if _, err := parseUUID(values[0]); err != nil {
+		return "", err
+	}
+	return values[0], nil
+}
+
+func optionalResponseInstanceID(values []string) (string, error) {
+	if len(values) == 0 {
+		return "", nil
+	}
+	return responseInstanceID(values)
 }
 
 func decodeOne(content []byte, value any) error {

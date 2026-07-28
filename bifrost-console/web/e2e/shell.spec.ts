@@ -15,7 +15,7 @@ test("embedded shell serves root, deep link, version, theme, and assets", async 
 
   const entryResponse = await page.goto(consoleProcess.pairingUrl);
   await expect(page.getByRole("heading", { name: "Bifrost Console" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Instance Overview", exact: true })).toBeVisible();
   await expect(page.getByTestId("build-version")).toHaveText(expectedVersion ?? "");
   expect(entryResponse?.headers()["cache-control"]).toBe("no-store");
 

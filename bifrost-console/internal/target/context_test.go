@@ -29,6 +29,11 @@ func (client *fakeClient) Probe(context.Context, applicationclient.Credential) (
 	defer client.mu.Unlock()
 	return client.instance, client.err
 }
+func (client *fakeClient) Get(context.Context, string, int64, applicationclient.Credential) ([]byte, string, error) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return []byte(`{}`), client.instance.InstanceID, client.err
+}
 func (*fakeClient) Close() {}
 
 func fixedInstance(id string) applicationclient.Instance {
@@ -203,6 +208,95 @@ func TestContextEstablishesFirstIdentityWithoutRotationAndRotatesChangedIdentity
 	}
 }
 
+func TestOrdinaryResponseMismatchRequestsAuthoritativeRevalidation(t *testing.T) {
+	client := &fakeClient{instance: fixedInstance("11111111-1111-4111-8111-111111111111")}
+	ids := []ScopeID{"scope-1", "scope-2"}
+	targetContext, _ := New(
+		func(applicationclient.Address) (ProbeClient, error) { return client, nil },
+		func() (ScopeID, error) {
+			id := ids[0]
+			ids = ids[1:]
+			return id, nil
+		},
+		time.Now,
+	)
+	defer targetContext.Close()
+	if domain := targetContext.Select("http://127.0.0.1:8080"); domain != nil {
+		t.Fatal(domain)
+	}
+	if _, domain := targetContext.SupplyCredential(context.Background(), []byte(strings.Repeat("a", 32))); domain != nil {
+		t.Fatal(domain)
+	}
+	scope, domain := targetContext.Capture()
+	if domain != nil {
+		t.Fatal(domain)
+	}
+	client.mu.Lock()
+	client.instance = fixedInstance("22222222-2222-4222-8222-222222222222")
+	client.mu.Unlock()
+
+	if _, domain = scope.Upstream(context.Background(), scope.Target.SkillsEndpoint(), 1024); domain == nil ||
+		domain.Code != consolecore.CodeTargetChanged {
+		t.Fatalf("expected mismatched response to be rejected, got %#v", domain)
+	}
+	snapshot := targetContext.Snapshot()
+	if snapshot.Status.TargetScopeID != "scope-2" ||
+		snapshot.Status.InstanceID != "22222222-2222-4222-8222-222222222222" {
+		t.Fatalf("authoritative revalidation did not rotate runtime identity: %#v", snapshot)
+	}
+}
+
+func TestScopeRotationDoesNotWaitForSocketPublication(t *testing.T) {
+	ids := []ScopeID{"scope-1", "scope-2"}
+	client := &fakeClient{instance: fixedInstance("11111111-1111-4111-8111-111111111111")}
+	targetContext, _ := New(
+		func(applicationclient.Address) (ProbeClient, error) { return client, nil },
+		func() (ScopeID, error) {
+			id := ids[0]
+			ids = ids[1:]
+			return id, nil
+		},
+		time.Now,
+	)
+	defer targetContext.Close()
+	if domain := targetContext.Select("http://127.0.0.1:8080"); domain != nil {
+		t.Fatal(domain)
+	}
+	if _, domain := targetContext.SupplyCredential(context.Background(), []byte(strings.Repeat("a", 32))); domain != nil {
+		t.Fatal(domain)
+	}
+	scope, domain := targetContext.Capture()
+	if domain != nil {
+		t.Fatal(domain)
+	}
+	publishing := make(chan struct{})
+	release := make(chan struct{})
+	published := make(chan *consolecore.Error, 1)
+	go func() {
+		published <- targetContext.PublishCurrent(scope.ID, func() {
+			close(publishing)
+			<-release
+		})
+	}()
+	<-publishing
+	rotated := make(chan *consolecore.Error, 1)
+	go func() {
+		rotated <- targetContext.Select("http://127.0.0.1:8081")
+	}()
+	select {
+	case domain := <-rotated:
+		if domain != nil {
+			t.Fatal(domain)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("scope rotation was blocked by response publication")
+	}
+	close(release)
+	if domain := <-published; domain != nil {
+		t.Fatal(domain)
+	}
+}
+
 type ownerRecorder struct {
 	name  string
 	order *[]string
@@ -304,5 +398,44 @@ func TestCallerCancellationDoesNotPublishFailureOrScheduleRetry(t *testing.T) {
 	status := targetContext.Snapshot().Status
 	if status.TargetConnection != consolecore.ConnectionUnknown || timers != 0 {
 		t.Fatalf("cancellation published failure or retry: status=%#v timers=%d", status, timers)
+	}
+}
+
+func TestContextFailureMappingCoversNewFailureKinds(t *testing.T) {
+	tests := []struct {
+		name string
+		kind applicationclient.FailureKind
+		code consolecore.Code
+	}{
+		{"invalid_argument", applicationclient.FailureInvalidArgument, consolecore.CodeInvalidArgument},
+		{"invalid_cursor", applicationclient.FailureInvalidCursor, consolecore.CodeInvalidCursor},
+		{"stale_cursor", applicationclient.FailureStaleCursor, consolecore.CodeStaleCursor},
+		{"not_found", applicationclient.FailureNotFound, consolecore.CodeNotFound},
+		{"limit_exceeded", applicationclient.FailureLimitExceeded, consolecore.CodeLimitExceeded},
+		{"live_monitoring_unavailable", applicationclient.FailureLiveMonitoringUnavailable, consolecore.CodeLiveMonitoringUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeClient{err: &applicationclient.Failure{Kind: test.kind}}
+			targetContext, _ := New(
+				func(applicationclient.Address) (ProbeClient, error) { return client, nil },
+				func() (ScopeID, error) { return "scope-1", nil },
+				time.Now,
+			)
+			targetContext.timerFactory = func(time.Duration, func()) timerHandle { return &fakeTimer{} }
+			if err := targetContext.Select("http://127.0.0.1:8080"); err != nil {
+				t.Fatal(err)
+			}
+			_, domain := targetContext.SupplyCredential(context.Background(), []byte(strings.Repeat("a", 32)))
+			if domain == nil {
+				t.Fatalf("expected error for %s", test.name)
+			}
+			if domain.Code != test.code {
+				t.Fatalf("expected %s, got %s", test.code, domain.Code)
+			}
+			if domain.TargetScopeID != "scope-1" {
+				t.Fatalf("expected targetScopeId=scope-1, got %s", domain.TargetScopeID)
+			}
+		})
 	}
 }

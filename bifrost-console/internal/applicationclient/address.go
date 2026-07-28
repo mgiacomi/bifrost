@@ -127,3 +127,17 @@ func (address Address) ObservabilityRoot() string { return address.observability
 func (address Address) Unencrypted() bool         { return address.scheme == "http" }
 func (address Address) Equal(other Address) bool  { return address.display == other.display }
 func (address Address) InstanceEndpoint() string  { return address.observabilityRoot + "/instance" }
+func (address Address) SkillsEndpoint() string    { return address.observabilityRoot + "/skills" }
+func (address Address) SkillEndpoint(registeredName string) string {
+	return address.observabilityRoot + "/skills/" + url.PathEscape(registeredName)
+}
+func (address Address) ActiveExecutionsEndpoint() string {
+	return address.observabilityRoot + "/active-executions"
+}
+func (address Address) ActiveExecutionEndpoint(sessionId string) string {
+	return address.observabilityRoot + "/active-executions/" + url.PathEscape(sessionId)
+}
+func (address Address) TracesEndpoint() string { return address.observabilityRoot + "/traces" }
+func (address Address) TraceEndpoint(traceId string) string {
+	return address.observabilityRoot + "/traces/" + url.PathEscape(traceId)
+}

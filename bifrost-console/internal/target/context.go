@@ -15,6 +15,7 @@ import (
 
 type ProbeClient interface {
 	Probe(context.Context, applicationclient.Credential) (applicationclient.Instance, error)
+	Get(context.Context, string, int64, applicationclient.Credential) ([]byte, string, error)
 	Close()
 }
 
@@ -247,8 +248,12 @@ func (target *Context) Capture() (Scope, *consolecore.Error) {
 	return Scope{
 		ID: target.current.id, Context: target.current.context, Target: target.current.address,
 		InstanceID: target.current.instance.InstanceID, client: target.current.client,
-		credential: target.credentials.capability(),
+		credential: target.credentials.capability(), authority: target,
 	}, nil
+}
+
+func (target *Context) revalidateAfterMismatch(parent context.Context, expected ScopeID) {
+	_, _ = target.probe(parent, false, expected)
 }
 
 func (target *Context) IsCurrent(scope ScopeID) bool {
@@ -272,6 +277,18 @@ func (target *Context) RequireCurrent(scope ScopeID) *consolecore.Error {
 	}
 	return consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.",
 		string(scope), consolecore.Details{CurrentTargetScopeID: current}, nil)
+}
+
+func (target *Context) PublishCurrent(scope ScopeID, publish func()) *consolecore.Error {
+	target.mu.Lock()
+	if target.closed || target.current == nil || target.current.id != scope {
+		domain := target.changedLocked(scope)
+		target.mu.Unlock()
+		return domain
+	}
+	target.mu.Unlock()
+	publish()
+	return nil
 }
 
 func (target *Context) Snapshot() Snapshot {
@@ -409,6 +426,18 @@ func (target *Context) commitFailureLocked(current *state, err error) *consoleco
 		details.ExpectedCompatibilityVersion = failure.Expected
 		details.ObservedCompatibilityVersion = failure.Observed
 		return consolecore.NewError(consolecore.CodeIncompatibleTarget, "The selected target uses a different Bifrost release.", string(current.id), details, err)
+	case applicationclient.FailureInvalidArgument:
+		return consolecore.NewError(consolecore.CodeInvalidArgument, "The request was invalid.", string(current.id), details, err)
+	case applicationclient.FailureInvalidCursor:
+		return consolecore.NewError(consolecore.CodeInvalidCursor, "The continuation is invalid.", string(current.id), details, err)
+	case applicationclient.FailureStaleCursor:
+		return consolecore.NewError(consolecore.CodeStaleCursor, "The continuation belongs to another application instance.", string(current.id), details, err)
+	case applicationclient.FailureNotFound:
+		return consolecore.NewError(consolecore.CodeNotFound, "The requested observability resource was not found.", string(current.id), details, err)
+	case applicationclient.FailureLimitExceeded:
+		return consolecore.NewError(consolecore.CodeLimitExceeded, "The observability response exceeds the configured limit.", string(current.id), details, err)
+	case applicationclient.FailureLiveMonitoringUnavailable:
+		return consolecore.NewError(consolecore.CodeLiveMonitoringUnavailable, "Live execution monitoring is unavailable.", string(current.id), details, err)
 	default:
 		if failure.Category == applicationclient.CategoryUpstreamProtocol {
 			current.status.TargetConnection = consolecore.ConnectionReachable

@@ -32,11 +32,20 @@ func writeError(response http.ResponseWriter, status int, code, message string) 
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {
+	content, err := json.Marshal(value)
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "CONSOLE_ERROR", "The Console response could not be created.")
+		return
+	}
+	writeJSONBytes(response, status, append(content, '\n'))
+}
+
+func writeJSONBytes(response http.ResponseWriter, status int, content []byte) {
 	ApplyHeaders(response.Header())
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(value)
+	_, _ = response.Write(content)
 }
 
 func decodeJSON(request *http.Request, value any) error {

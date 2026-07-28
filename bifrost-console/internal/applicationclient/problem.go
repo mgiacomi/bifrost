@@ -18,8 +18,27 @@ func mapProblem(status int, contentType string, body []byte) error {
 	recognized := strings.HasPrefix(strings.ToLower(contentType), "application/json") &&
 		json.Unmarshal(body, &problem) == nil && problem.Status == status &&
 		problem.Code != "" && problem.Message != ""
-	if recognized && status == http.StatusUnauthorized && problem.Code == "BIFROST_API_KEY_REJECTED" {
-		return newFailure(FailureAuthentication, "", nil)
+	if recognized {
+		switch problem.Code {
+		case "BIFROST_API_KEY_REJECTED":
+			return newFailure(FailureAuthentication, "", nil)
+		case "INVALID_REQUEST":
+			return newFailure(FailureInvalidArgument, "", nil)
+		case "INVALID_CURSOR":
+			return newFailure(FailureInvalidCursor, "", nil)
+		case "STALE_CURSOR":
+			return newFailure(FailureStaleCursor, "", nil)
+		case "NOT_FOUND":
+			return newFailure(FailureNotFound, "", nil)
+		case "LIMIT_EXCEEDED":
+			return newFailure(FailureLimitExceeded, "", nil)
+		case "LIVE_MONITORING_UNAVAILABLE":
+			return newFailure(FailureLiveMonitoringUnavailable, "", nil)
+		case "APPLICATION_ERROR":
+			failure := newFailure(FailureUnavailable, CategoryUpstreamServer, nil)
+			failure.Retryable = true
+			return failure
+		}
 	}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return newFailure(FailureAccess, "", nil)

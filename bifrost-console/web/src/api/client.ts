@@ -5,6 +5,13 @@ import type {
   PairingLinkResponse,
   TargetResponse,
   BrowserErrorDetails,
+  InstanceStatus,
+  SkillSummary,
+  SkillDetail,
+  ActiveExecution,
+  ActivePage,
+  Trace,
+  Page,
 } from "./contracts";
 
 export class BrowserAPIError extends Error {
@@ -103,4 +110,41 @@ export function supplyTargetCredential(
 
 export function recheckTarget(security: SecurityState): Promise<TargetResponse> {
   return post("/api/console/v1/target/recheck", {}, security);
+}
+
+export function getObservabilityInstance(): Promise<InstanceStatus> {
+  return post("/api/console/v1/observability/instance", {});
+}
+
+export function listSkills(
+  cursor?: string,
+  pageSize?: number,
+): Promise<Page<SkillSummary>> {
+  return post("/api/console/v1/skills/list", { cursor: cursor ?? "", pageSize: pageSize ?? 0 });
+}
+
+export function getSkillDetail(registeredName: string): Promise<SkillDetail> {
+  return post("/api/console/v1/skills/detail", { registeredName });
+}
+
+export function listActiveExecutions(
+  cursor?: string,
+  pageSize?: number,
+): Promise<ActivePage> {
+  return post("/api/console/v1/active-executions/list", { cursor: cursor ?? "", pageSize: pageSize ?? 0 });
+}
+
+export function getActiveExecutionDetail(sessionId: string): Promise<ActiveExecution> {
+  return post("/api/console/v1/active-executions/detail", { sessionId });
+}
+
+export function listTraces(
+  cursor?: string,
+  pageSize?: number,
+): Promise<Page<Trace>> {
+  return post("/api/console/v1/traces/list", { cursor: cursor ?? "", pageSize: pageSize ?? 0 });
+}
+
+export function getTraceDetail(traceId: string): Promise<Trace> {
+  return post("/api/console/v1/traces/detail", { traceId });
 }

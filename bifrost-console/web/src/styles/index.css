@@ -37,6 +37,13 @@ button,
   padding: 2rem 0;
 }
 
+.app-frame > *,
+.shell-main,
+.overview-card,
+.foundation-card {
+  min-width: 0;
+}
+
 .shell-header,
 .shell-footer {
   display: flex;
@@ -68,6 +75,7 @@ h1 {
 
 .foundation-card,
 .overview-card {
+  width: 100%;
   max-width: 45rem;
   padding: clamp(1.5rem, 5vw, 4rem);
   border: 1px solid var(--bf-border);
@@ -219,4 +227,150 @@ h1 {
     border-color: CanvasText;
     box-shadow: none;
   }
+}
+
+.observability-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.global-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.global-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--bf-border);
+  border-radius: 0.6rem;
+  background: var(--bf-surface);
+  font-size: 0.82rem;
+}
+
+.global-context span {
+  color: var(--bf-muted);
+}
+
+.global-context > *,
+.workspace-path,
+.workspace-path code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.global-context a {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+@media (max-width: 35rem) {
+  .shell-header,
+  .shell-footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .global-context {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .global-context a {
+    margin-left: 0;
+  }
+}
+
+.global-nav a {
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.45rem;
+  color: var(--bf-text);
+  text-decoration: none;
+}
+
+.global-nav a[aria-current="page"] {
+  background: color-mix(in srgb, var(--bf-accent) 16%, var(--bf-surface));
+  font-weight: 700;
+}
+
+.observability-nav a {
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--bf-border);
+  border-radius: 0.5rem;
+  background: var(--bf-surface);
+  color: var(--bf-text);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.observability-nav a:hover {
+  background: color-mix(in srgb, var(--bf-accent) 12%, var(--bf-surface));
+}
+
+.observability-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.observability-table-region {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.observability-table-region:focus-visible {
+  outline: 0.2rem solid var(--bf-accent);
+  outline-offset: 0.2rem;
+}
+
+.observability-table th,
+.observability-table td {
+  padding: 0.6rem;
+  border: 1px solid var(--bf-border);
+  text-align: left;
+}
+
+.observability-table th {
+  color: var(--bf-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.observability-table a {
+  color: var(--bf-accent);
+  text-decoration: none;
+}
+
+.observability-table a:hover {
+  text-decoration: underline;
+}
+
+.source-path {
+  color: var(--bf-muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.yaml-block {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--bf-border);
+  border-radius: 0.5rem;
+  background: var(--bf-background);
+  color: var(--bf-text);
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

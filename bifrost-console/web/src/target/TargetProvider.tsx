@@ -42,8 +42,15 @@ export function TargetProvider({
     (next: TargetResponse, preserveError = false) => {
       const changed =
         state.target.status.targetScopeId !== next.status.targetScopeId;
+      const replacedExistingScope =
+        Boolean(state.target.status.targetScopeId) && changed;
       dispatch({ type: "replace", target: next, preserveError });
-      if (changed) navigate("/", { replace: true });
+      if (changed) {
+        navigate("/", {
+          replace: true,
+          state: replacedExistingScope ? { staleTargetScope: true } : undefined,
+        });
+      }
     },
     [navigate, state.target.status.targetScopeId],
   );
@@ -56,7 +63,12 @@ export function TargetProvider({
       } catch (error) {
         if (error instanceof BrowserAPIError) {
           dispatch({ type: "error", error });
-          if (error.code === "TARGET_CHANGED") navigate("/", { replace: true });
+          if (error.code === "TARGET_CHANGED") {
+            navigate("/", {
+              replace: true,
+              state: { staleTargetScope: true },
+            });
+          }
           try {
             apply(await session.readTargetStatus(), true);
           } catch {

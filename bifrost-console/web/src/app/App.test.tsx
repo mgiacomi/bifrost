@@ -8,7 +8,12 @@ const metadata = { version: "0.1.0-SNAPSHOT" };
 test("renders the console shell and exact build version", () => {
   render(<RouterProvider router={memoryRouter("/", metadata)} />);
   expect(screen.getByRole("heading", { name: "Bifrost Console" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Overview" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Instance Overview" })).toBeVisible();
+  expect(screen.getByRole("navigation", { name: "Console" })).toBeVisible();
+  expect(screen.getByRole("complementary", { name: "Current target and live context" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Skills" })).toHaveAttribute("href", "/skills");
+  expect(screen.getByRole("link", { name: "Active Executions" })).toHaveAttribute("href", "/active-executions");
+  expect(screen.getByRole("link", { name: "Traces" })).toHaveAttribute("href", "/traces");
   expect(screen.getByTestId("build-version")).toHaveTextContent("0.1.0-SNAPSHOT");
 });
 
