@@ -16,6 +16,7 @@ import (
 type ProbeClient interface {
 	Probe(context.Context, applicationclient.Credential) (applicationclient.Instance, error)
 	Get(context.Context, string, int64, applicationclient.Credential) ([]byte, string, error)
+	OpenActivity(parent context.Context, instanceID, afterCursor string, credential applicationclient.Credential) (*applicationclient.ActivityStream, error)
 	Close()
 }
 
@@ -29,6 +30,7 @@ type timerHandle interface {
 
 type ScopeOwner interface {
 	InvalidateTargetScope(previous ScopeID, cancelled context.Context)
+	ActivateActivity(scope Scope)
 }
 
 type ownerRegistration struct {
@@ -37,13 +39,14 @@ type ownerRegistration struct {
 }
 
 type state struct {
-	id       ScopeID
-	context  context.Context
-	cancel   context.CancelFunc
-	address  applicationclient.Address
-	client   ProbeClient
-	instance applicationclient.Instance
-	status   consolecore.StatusSnapshot
+	id        ScopeID
+	context   context.Context
+	cancel    context.CancelFunc
+	address   applicationclient.Address
+	client    ProbeClient
+	instance  applicationclient.Instance
+	status    consolecore.StatusSnapshot
+	activated bool
 }
 
 type Snapshot struct {
@@ -291,6 +294,18 @@ func (target *Context) PublishCurrent(scope ScopeID, publish func()) *consolecor
 	return nil
 }
 
+// PublishCurrentAtomic linearizes one bounded publication with target rotation.
+// Callers must pre-encode the response and keep publish free of unbounded work.
+func (target *Context) PublishCurrentAtomic(scope ScopeID, publish func()) *consolecore.Error {
+	target.mu.Lock()
+	defer target.mu.Unlock()
+	if target.closed || target.current == nil || target.current.id != scope {
+		return target.changedLocked(scope)
+	}
+	publish()
+	return nil
+}
+
 func (target *Context) Snapshot() Snapshot {
 	if target.invalidating.Load() {
 		return Snapshot{Status: consolecore.NoTargetStatus(target.clock())}
@@ -398,8 +413,21 @@ func (target *Context) probe(parent context.Context, manual bool, expected Scope
 	}
 	target.current.status.ObservedAt = target.clock()
 	target.stopRetryLocked()
+	needActivation := !target.current.activated
+	target.current.activated = true
+	scope := Scope{
+		ID: target.current.id, Context: target.current.context, Target: target.current.address,
+		InstanceID: target.current.instance.InstanceID, client: target.current.client,
+		credential: target.credentials.capability(), authority: target,
+	}
+	owners := append([]ownerRegistration(nil), target.owners...)
 	snapshot := target.snapshotLocked()
 	target.mu.Unlock()
+	if needActivation {
+		for _, registration := range owners {
+			registration.owner.ActivateActivity(scope)
+		}
+	}
 	return snapshot, nil
 }
 

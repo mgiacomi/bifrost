@@ -87,6 +87,59 @@ func (scope Scope) RequireCurrent() *consolecore.Error {
 	return scope.authority.RequireCurrent(scope.ID)
 }
 
+func (scope Scope) OpenActivity(parent context.Context, afterCursor string) (*applicationclient.ActivityStream, *consolecore.Error) {
+	if scope.credential == nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetAuthentication, "An application key is required.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	if scope.client == nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The selected target has no application access.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	if err := parent.Err(); err != nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The operation was canceled.", string(scope.ID), consolecore.Details{}, err)
+	}
+	operation, cancel := context.WithCancel(parent)
+	stopScopeCancellation := context.AfterFunc(scope.Context, cancel)
+	stream, err := scope.client.OpenActivity(operation, scope.InstanceID, afterCursor, scope.credential)
+	if err != nil {
+		stopScopeCancellation()
+		cancel()
+		var mismatch *applicationclient.InstanceMismatch
+		if errors.As(err, &mismatch) && scope.authority != nil {
+			scope.authority.revalidateAfterMismatch(parent, scope.ID)
+			if domain := scope.authority.RequireCurrent(scope.ID); domain != nil {
+				return nil, domain
+			}
+		}
+		if errors.Is(err, context.Canceled) {
+			if parent.Err() != nil {
+				slog.Error("activity stream canceled by caller", "scopeId", scope.ID)
+				return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The operation was canceled.", string(scope.ID), consolecore.Details{}, err)
+			}
+			slog.Error("activity stream canceled by scope rotation", "scopeId", scope.ID)
+			return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, err)
+		}
+		var failure *applicationclient.Failure
+		if errors.As(err, &failure) {
+			slog.Error("activity stream upstream failure", "scopeId", scope.ID, "failureKind", failure.Kind)
+			return nil, failure.ConsoleError(string(scope.ID))
+		}
+		slog.Error("activity stream transport error", "scopeId", scope.ID)
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The selected target is unavailable.", string(scope.ID), consolecore.Details{}, err)
+	}
+	context.AfterFunc(operation, func() {
+		_ = stream.Close()
+	})
+	return stream, nil
+}
+
+func (scope Scope) RevalidateInstance(parent context.Context) *consolecore.Error {
+	if scope.authority == nil {
+		return nil
+	}
+	scope.authority.revalidateAfterMismatch(parent, scope.ID)
+	return scope.authority.RequireCurrent(scope.ID)
+}
+
 func (scope Scope) GoString() string {
 	return fmt.Sprintf("Scope{ID:%q,Target:%q,InstanceID:%q}", scope.ID, scope.Target.String(), scope.InstanceID)
 }

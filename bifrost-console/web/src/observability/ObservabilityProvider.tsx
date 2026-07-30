@@ -200,6 +200,10 @@ export function useObservability() {
   return value;
 }
 
+export function useOptionalObservability() {
+  return useContext(ObservabilityContext);
+}
+
 function isExpiredCursor(error: unknown) {
   return error instanceof BrowserAPIError &&
     error.code === "STALE_CURSOR";

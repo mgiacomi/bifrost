@@ -34,6 +34,9 @@ func (c *fakeUpstreamClient) Get(ctx context.Context, _ string, _ int64, _ appli
 	return c.body, c.instanceID, c.err
 }
 func (*fakeUpstreamClient) Close() {}
+func (c *fakeUpstreamClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
+	return nil, c.err
+}
 
 func TestScopeUpstreamAppliesCredentialsAndDetectsIdentityMismatch(t *testing.T) {
 	client := &fakeUpstreamClient{
@@ -223,5 +226,54 @@ func TestScopeUpstreamContextCombinesParentAndScope(t *testing.T) {
 	}
 	if parentCtx.Err() != nil {
 		t.Fatal("expected parent context to still be active")
+	}
+}
+
+func TestScopeOpenActivityRejectsNilCredential(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scope := Scope{
+		ID:         "scope-1",
+		InstanceID: "11111111-1111-4111-8111-111111111111",
+		client:     &fakeUpstreamClient{},
+		credential: nil,
+		Context:    ctx,
+	}
+	_, domain := scope.OpenActivity(context.Background(), "0")
+	if domain == nil || domain.Code != consolecore.CodeTargetAuthentication {
+		t.Fatalf("expected TARGET_AUTHENTICATION, got %v", domain)
+	}
+}
+
+func TestScopeOpenActivityRejectsNilClient(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scope := Scope{
+		ID:         "scope-1",
+		InstanceID: "11111111-1111-4111-8111-111111111111",
+		client:     nil,
+		credential: testCredentialValue(),
+		Context:    ctx,
+	}
+	_, domain := scope.OpenActivity(context.Background(), "0")
+	if domain == nil || domain.Code != consolecore.CodeTargetUnavailable {
+		t.Fatalf("expected TARGET_UNAVAILABLE, got %v", domain)
+	}
+}
+
+func TestScopeOpenActivityMapsFailureToConsoleError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &fakeUpstreamClient{err: &applicationclient.Failure{Kind: applicationclient.FailureLiveMonitoringUnavailable}}
+	scope := Scope{
+		ID:         "scope-1",
+		InstanceID: "11111111-1111-4111-8111-111111111111",
+		client:     client,
+		credential: testCredentialValue(),
+		Context:    ctx,
+	}
+	_, domain := scope.OpenActivity(context.Background(), "0")
+	if domain == nil || domain.Code != consolecore.CodeLiveMonitoringUnavailable {
+		t.Fatalf("expected LIVE_MONITORING_UNAVAILABLE, got %v", domain)
 	}
 }

@@ -175,3 +175,103 @@ export type Page<T> = {
 export type ActivePage = Page<ActiveExecution> & {
   resumeCursor: string | null;
 };
+
+export type ActivityKind =
+  | "TRACE_STARTED"
+  | "FRAME_OPENED"
+  | "FRAME_CLOSED"
+  | "MODEL_REQUEST_SENT"
+  | "MODEL_RESPONSE_RECEIVED"
+  | "PLAN_CREATED"
+  | "PLAN_UPDATED"
+  | "PLAN_VALIDATION_FAILED"
+  | "PLAN_RETRY_REQUESTED"
+  | "TOOL_CALL_STARTED"
+  | "TOOL_CALL_COMPLETED"
+  | "TOOL_CALL_FAILED"
+  | "STEP_STARTED"
+  | "STEP_ACTION_REJECTED"
+  | "STEP_COMPLETED"
+  | "ERROR_RECORDED"
+  | "TRACE_COMPLETED"
+  | "EXECUTION_OBSERVATION_ENDED";
+
+export const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = {
+  TRACE_STARTED: "Execution started",
+  FRAME_OPENED: "Skill execution started",
+  FRAME_CLOSED: "Skill execution completed",
+  MODEL_REQUEST_SENT: "Model request sent",
+  MODEL_RESPONSE_RECEIVED: "Model response received",
+  PLAN_CREATED: "Plan created",
+  PLAN_UPDATED: "Plan updated",
+  PLAN_VALIDATION_FAILED: "Plan validation failed",
+  PLAN_RETRY_REQUESTED: "Plan retry requested",
+  TOOL_CALL_STARTED: "Tool call started",
+  TOOL_CALL_COMPLETED: "Tool call completed",
+  TOOL_CALL_FAILED: "Tool call failed",
+  STEP_STARTED: "Step started",
+  STEP_ACTION_REJECTED: "Step action rejected",
+  STEP_COMPLETED: "Step completed",
+  ERROR_RECORDED: "Execution error recorded",
+  TRACE_COMPLETED: "Execution completed",
+  EXECUTION_OBSERVATION_ENDED: "Execution observation ended",
+};
+
+export type ResetCause =
+  | "target_scope_changed"
+  | "instance_changed"
+  | "upstream_stale_cursor"
+  | "shutdown";
+
+export type ResetFact = {
+  cause: ResetCause;
+  timestamp: string;
+  cursor?: string;
+};
+
+export type Continuity = {
+  intervalId: string;
+  targetScopeId: string;
+  instanceId: string;
+  firstCursor?: string;
+  lastCursor?: string;
+  observedAt?: string;
+  reset?: ResetFact;
+};
+
+export type ConnectionFact = {
+  connected: boolean;
+  reason?: string;
+  at?: string;
+};
+
+export type Activity = {
+  instanceId: string;
+  cursor: string;
+  sessionId: string;
+  traceId: string;
+  canonicalSequence?: number;
+  timestamp: string;
+  kind: ActivityKind;
+  executionStatus?: string;
+  frameId?: string;
+  parentFrameId?: string;
+  frameType?: string;
+  route?: string;
+  summary: string;
+  details: Record<string, unknown>;
+};
+
+export type RecentActivityRequest = {
+  cursor?: string;
+  sessionId?: string;
+  limit?: number;
+};
+
+export type RecentActivityResponse = {
+  items: Activity[];
+  hasMore: boolean;
+  nextCursor: string;
+  continuity?: Continuity;
+  beginningUnavailable: boolean;
+};

@@ -1,0 +1,275 @@
+import http from "node:http";
+import { test as consoleTest, expect } from "./fixtures/consoleProcess";
+
+type TargetState = {
+  instanceId: string;
+  activityEvents: string[];
+  activeExecutions: string;
+};
+
+function activePage(sessionId: string, traceId: string): string {
+  return JSON.stringify({
+    items: [{
+      sessionId,
+      traceId,
+      lastCanonicalSequence: 0,
+      startedAt: "2026-07-27T00:00:00Z",
+      updatedAt: "2026-07-27T00:00:00Z",
+      elapsedMillis: 0,
+      entrySkill: "test-skill",
+      status: "RUNNING",
+      phase: "EXECUTING",
+      summary: "Execution is active",
+      activePath: [],
+      totalFrameDepth: 0,
+      activePathTruncated: false,
+      usage: {
+        skillInvocations: 0, toolInvocations: 0, linterRetries: 0,
+        modelCalls: 0, promptUnits: 0, completionUnits: 0, usageUnits: 0,
+        exactModelResponses: 0, heuristicModelResponses: 0, unavailableModelResponses: 0,
+      },
+      configuredLimits: {
+        maxSkillInvocations: 10, maxToolInvocations: 10, maxLinterRetries: 3,
+        maxModelCalls: 10, maxUsageUnits: 1000,
+      },
+    }],
+    hasMore: false,
+    nextCursor: null,
+    observedAt: "2026-07-27T00:00:00Z",
+    resumeCursor: "0",
+  });
+}
+
+function makeTargetServer(initialState: TargetState) {
+  let state = initialState;
+  let activityClient: any = null;
+  let activityRequest: any = null;
+
+  const server = http.createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+
+    if (request.method !== "GET") {
+      response.writeHead(404).end();
+      return;
+    }
+
+    if ((request.headers["x-bifrost-api-key"] ?? "").toString().length < 32) {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end('{"status":401,"code":"BIFROST_API_KEY_REJECTED","message":"Bifrost API key was rejected"}');
+      return;
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Bifrost-Instance-Id": state.instanceId,
+    };
+
+    if (path === "/_bifrost/observability/v1/instance") {
+      response.writeHead(200, headers);
+      response.end(
+        JSON.stringify({
+          instanceId: state.instanceId,
+          consoleCompatibilityVersion: "0.1.0-SNAPSHOT",
+          observedAt: "2026-07-27T00:00:00Z",
+          liveMonitoringAvailable: true,
+          registeredSkillCount: 0,
+          activeExecutionCount: 1,
+          catalogedTraceCount: 0,
+          tracePersistencePolicy: "PERSISTENT",
+          completionGraceTtl: "PT2M",
+          traceCatalogMetadataTtl: "PT168H",
+        }),
+      );
+      return;
+    }
+
+    if (path === "/_bifrost/observability/v1/active-executions") {
+      response.writeHead(200, headers);
+      response.end(state.activeExecutions);
+      return;
+    }
+    if (path.startsWith("/_bifrost/observability/v1/active-executions/")) {
+      const sessionId = decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
+      const page = JSON.parse(state.activeExecutions);
+      const execution = page.items.find((item: { sessionId: string }) => item.sessionId === sessionId);
+      if (!execution) {
+        response.writeHead(404, { "Content-Type": "application/json" });
+        response.end('{"status":404,"code":"NOT_FOUND","message":"not found"}');
+        return;
+      }
+      response.writeHead(200, headers);
+      response.end(JSON.stringify(execution));
+      return;
+    }
+
+    if (path === "/_bifrost/observability/v1/activity") {
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "X-Bifrost-Instance-Id": state.instanceId,
+        "Cache-Control": "no-store",
+      });
+      response.write(
+        `event: handshake\ndata: {"instanceId":"${state.instanceId}","observedAt":"2026-07-27T00:00:00Z","afterCursor":"0"}\n\n`,
+      );
+      for (const evt of state.activityEvents) {
+        response.write(evt);
+      }
+      activityClient = response;
+      activityRequest = request;
+      request.on("close", () => {
+        activityClient = null;
+        activityRequest = null;
+      });
+      return;
+    }
+
+    response.writeHead(404).end();
+  });
+
+  return {
+    listen: () =>
+      new Promise<{ origin: string; close: () => Promise<void>; setState: (s: TargetState) => void; pushEvent: (evt: string) => void; closeActivity: () => void }>(
+        (resolve, reject) => {
+          server.listen(0, "127.0.0.1", () => {
+            const address = server.address();
+            if (!address || typeof address === "string") {
+              reject(new Error("Target test server did not bind"));
+              return;
+            }
+            resolve({
+              origin: `http://127.0.0.1:${address.port}`,
+              close: () =>
+                new Promise<void>((res, rej) => {
+                  activityClient?.end();
+                  activityClient = null;
+                  server.close((err) => (err ? rej(err) : res()));
+                }),
+              setState: (s) => { state = s; },
+              pushEvent: (evt) => {
+                activityClient?.write(evt);
+              },
+              closeActivity: () => {
+                activityClient?.end();
+                activityClient = null;
+              },
+            });
+          });
+        },
+      ),
+  };
+}
+
+const test = consoleTest.extend<{
+  targetApp: {
+    origin: string;
+    close: () => Promise<void>;
+    setState: (s: TargetState) => void;
+    pushEvent: (evt: string) => void;
+    closeActivity: () => void;
+  };
+}>({
+  targetApp: async ({}, use) => {
+    const server = makeTargetServer({
+      instanceId: "11111111-1111-4111-8111-111111111111",
+      activityEvents: [
+        'id: 1\nevent: activity\ndata: {"instanceId":"11111111-1111-4111-8111-111111111111","cursor":"1","sessionId":"session-1","traceId":"trace-1","canonicalSequence":1,"timestamp":"2026-07-27T00:00:00Z","kind":"TRACE_STARTED","executionStatus":"RUNNING","summary":"Execution started","details":{}}\n\n',
+        'id: 2\nevent: activity\ndata: {"instanceId":"11111111-1111-4111-8111-111111111111","cursor":"2","sessionId":"session-1","traceId":"trace-1","canonicalSequence":2,"timestamp":"2026-07-27T00:00:01Z","kind":"STEP_COMPLETED","executionStatus":"RUNNING","summary":"Step completed","details":{}}\n\n',
+      ],
+      activeExecutions: activePage("session-1", "trace-1"),
+    });
+    const handle = await server.listen();
+    try {
+      await use(handle);
+    } finally {
+      await handle.close();
+    }
+  },
+});
+
+test.use({ trace: "off", screenshot: "off", video: "off" });
+
+test("WF-SE live execution preserves selection while activity advances", async ({
+  page,
+  consoleProcess,
+  targetApp,
+}) => {
+  await page.goto(consoleProcess.pairingUrl);
+  await page.goto(`${consoleProcess.origin}/target`);
+  await page.getByLabel("Target address").fill(targetApp.origin);
+  await page.getByLabel("Application key").fill("E2E_APPLICATION_KEY_12345678901234567890");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("heading", { name: "Instance Overview" })).toBeFocused();
+
+  await page.goto(`${consoleProcess.origin}/active-executions`);
+  await page.getByRole("link", { name: "session-1" }).click();
+  await expect(page.getByRole("heading", { name: "Active Execution Detail" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Live activity" })).toBeVisible();
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Step completed" })).toBeVisible();
+
+  targetApp.pushEvent(
+    'id: 3\nevent: activity\ndata: {"instanceId":"11111111-1111-4111-8111-111111111111","cursor":"3","sessionId":"session-1","traceId":"trace-1","canonicalSequence":3,"timestamp":"2026-07-27T00:00:02Z","kind":"STEP_STARTED","executionStatus":"RUNNING","summary":"New step started","details":{}}\n\n',
+  );
+  await expect(page.locator(".activity-narrative-summary", { hasText: "New step started" })).toBeVisible({ timeout: 10_000 });
+  await expect(page).toHaveURL(/\/active-executions\/session-1/);
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible();
+});
+
+test("WF-SE terminal and observation-ended transitions remain in place", async ({
+  page,
+  consoleProcess,
+  targetApp,
+}) => {
+  await page.goto(consoleProcess.pairingUrl);
+  await page.goto(`${consoleProcess.origin}/target`);
+  await page.getByLabel("Target address").fill(targetApp.origin);
+  await page.getByLabel("Application key").fill("E2E_APPLICATION_KEY_12345678901234567890");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("heading", { name: "Instance Overview" })).toBeFocused();
+
+  await page.goto(`${consoleProcess.origin}/active-executions`);
+  await page.getByRole("link", { name: "session-1" }).click();
+  await expect(page.getByRole("heading", { name: "Live activity" })).toBeVisible();
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible({ timeout: 10_000 });
+
+  targetApp.pushEvent(
+    'id: 10\nevent: activity\ndata: {"instanceId":"11111111-1111-4111-8111-111111111111","cursor":"10","sessionId":"session-1","traceId":"trace-1","canonicalSequence":10,"timestamp":"2026-07-27T00:00:10Z","kind":"TRACE_COMPLETED","executionStatus":"COMPLETED","summary":"Execution completed","details":{"outcome":"succeeded","artifactAvailability":"AVAILABLE"}}\n\n',
+  );
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution completed" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Outcome:/)).toBeVisible();
+  await expect(page).toHaveURL(/\/active-executions\/session-1/);
+  await expect(page.getByRole("link", { name: "Inspect trace" })).toBeVisible();
+});
+
+test("WF-SE target change discards prior live state", async ({
+  page,
+  consoleProcess,
+  targetApp,
+}) => {
+  await page.goto(consoleProcess.pairingUrl);
+  await page.goto(`${consoleProcess.origin}/target`);
+  await page.getByLabel("Target address").fill(targetApp.origin);
+  await page.getByLabel("Application key").fill("E2E_APPLICATION_KEY_12345678901234567890");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("heading", { name: "Instance Overview" })).toBeFocused();
+
+  await page.goto(`${consoleProcess.origin}/`);
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible({ timeout: 10_000 });
+
+  targetApp.setState({
+    instanceId: "22222222-2222-4222-8222-222222222222",
+    activityEvents: [
+      'id: 1\nevent: activity\ndata: {"instanceId":"22222222-2222-4222-8222-222222222222","cursor":"1","sessionId":"session-2","traceId":"trace-2","canonicalSequence":1,"timestamp":"2026-07-27T00:01:00Z","kind":"TRACE_STARTED","executionStatus":"RUNNING","summary":"New execution after restart","details":{}}\n\n',
+    ],
+    activeExecutions: activePage("session-2", "trace-2"),
+  });
+  targetApp.closeActivity();
+
+  await page.goto(`${consoleProcess.origin}/target`);
+  await expect(page.getByRole("heading", { name: "Instance Overview" })).toBeFocused();
+  await expect(page.getByText("22222222-2222-4222-8222-222222222222", { exact: true })).toBeVisible();
+
+  await page.goto(`${consoleProcess.origin}/`);
+  await expect(page.getByText("New execution after restart", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("log").getByText("session-1", { exact: true })).toHaveCount(0);
+});

@@ -27,6 +27,17 @@ describe("Vite configuration", () => {
     expect(Object.keys(config.server?.proxy ?? {})).toEqual(["/api/console/"]);
   });
 
+  test("activity streaming routes are proxied via /api/console/ prefix", () => {
+    const config = createViteConfig({
+      command: "serve",
+      mode: "development",
+      environment: { BIFROST_CONSOLE_GO_ORIGIN: "http://127.0.0.1:7943" },
+    });
+    const proxyKeys = Object.keys(config.server?.proxy ?? {});
+    expect(proxyKeys).toContain("/api/console/");
+    expect(proxyKeys.some((k) => k.startsWith("/_bifrost/"))).toBe(false);
+  });
+
   test("development config rejects non-loopback Go origin", () => {
     for (const value of ["http://0.0.0.0:7943", "http://example.com", "https://127.0.0.1:7943", "http://localhost:7943"]) {
       expect(() => validateLoopbackOrigin(value)).toThrow("loopback");

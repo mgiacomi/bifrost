@@ -23,6 +23,9 @@ func (*fakeProbeClient) Probe(context.Context, applicationclient.Credential) (ap
 func (*fakeProbeClient) Get(context.Context, string, int64, applicationclient.Credential) ([]byte, string, error) {
 	return nil, "", nil
 }
+func (*fakeProbeClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
+	return nil, nil
+}
 func (*fakeProbeClient) Close() {}
 
 type fixtureObservabilityClient struct{}
@@ -58,6 +61,9 @@ func (*fixtureObservabilityClient) Get(_ context.Context, endpoint string, _ int
 	return []byte(body), instanceID, nil
 }
 
+func (*fixtureObservabilityClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
+	return nil, nil
+}
 func (*fixtureObservabilityClient) Close() {}
 
 func activeExecutionFixture() string {

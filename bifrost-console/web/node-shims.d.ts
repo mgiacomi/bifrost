@@ -45,9 +45,11 @@ declare module "node:http" {
     method?: string;
     url?: string;
     headers: Record<string, string | string[] | undefined>;
+    on(event: string, listener: (...args: any[]) => void): IncomingMessage;
   };
   type ServerResponse = {
     writeHead(status: number, headers?: Record<string, string>): ServerResponse;
+    write(body: string): boolean;
     end(body?: string): void;
   };
   type AddressInfo = { port: number };

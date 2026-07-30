@@ -9,7 +9,7 @@ import (
 const (
 	requiredGo   = "1.26.5"
 	requiredNode = "24.18.0"
-	requiredNPM  = "12.0.1"
+	requiredNPM  = "12.0.2"
 )
 
 var goVersionPattern = regexp.MustCompile(`^go version go([0-9]+\.[0-9]+\.[0-9]+) (?:[^\s]+)$`)

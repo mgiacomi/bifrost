@@ -137,6 +137,12 @@ func (address Address) ActiveExecutionsEndpoint() string {
 func (address Address) ActiveExecutionEndpoint(sessionId string) string {
 	return address.observabilityRoot + "/active-executions/" + url.PathEscape(sessionId)
 }
+func (address Address) ActivityEndpoint(instanceID, afterCursor string) string {
+	params := url.Values{}
+	params.Set("instanceId", instanceID)
+	params.Set("afterCursor", afterCursor)
+	return address.observabilityRoot + "/activity?" + params.Encode()
+}
 func (address Address) TracesEndpoint() string { return address.observabilityRoot + "/traces" }
 func (address Address) TraceEndpoint(traceId string) string {
 	return address.observabilityRoot + "/traces/" + url.PathEscape(traceId)

@@ -12,7 +12,7 @@ target.
 
 - Go 1.26.5
 - Node.js 24.18.0
-- npm 12.0.1
+- npm 12.0.2
 
 The repository declares these values in `go.mod`, `.node-version`, and
 `web/package.json`. Direct frontend dependencies are exact versions and
@@ -201,3 +201,45 @@ explicit HTTP loopback origin. The Java application namespace
 service worker is included in production. The Go
 `--development-origin` value must exactly match the Vite authority/origin;
 near-matches remain rejected.
+
+## Live activity monitoring
+
+Console maintains one upstream SSE connection to the selected target's
+`/_bifrost/observability/v1/activity` endpoint. The connection is opened
+automatically when a target scope is activated and closed on scope rotation
+or shutdown. The coordinator owns a bounded in-memory ring buffer (2048
+activities or 8 MiB) with duplicate-cursor detection and strict cursor
+ordering. A reset fact is emitted whenever the upstream instance changes,
+the target scope rotates, or the upstream rejects a stale cursor.
+
+Browser tabs subscribe to the coordinator via a POST SSE relay at
+`/api/console/v1/activity/stream`. Each relay requires the session cookie
+and `X-Bifrost-Console-Tab` header. The relay emits `console.connection`
+and `console.continuity` events on connect, `bifrost.activity` events for
+each activity, `console.replay_gap` when the per-tab frame or byte limit is
+exceeded, and a closing `console.connection` event on disconnect. Each tab
+has independent pending-frame (256) and pending-byte (1 MiB) bounds; those
+bounds do not cap the lifetime throughput of a healthy tab.
+
+A POST recent-activity query at `/api/console/v1/activity/recent` returns a
+bounded suffix of the ring buffer filtered by optional session ID and
+cursor. The response includes a continuity fact with the current interval
+identity and any reset cause, plus a `beginningUnavailable` flag when
+earlier activity was evicted.
+
+The coordinator periodically refreshes the active-execution baseline (every
+30 seconds) and signals adapters to reload authoritative snapshots. If the
+upstream reports `LIVE_MONITORING_UNAVAILABLE`, the coordinator enters a
+terminal state and stops reconnecting. Reconnect backoff is exponential with
+jitter, capped at 30 seconds.
+
+The React activity experience renders a target-wide recent narrative on the
+overview and filters the current summary, bounded active path, and
+follow/pause narrative to the execution selected in the active-execution
+detail route. Completion preserves that selected route and exposes trace
+inspection only when the terminal activity reports availability. Active and
+temporary recent-completion collections remain separate. Connection, reset,
+freshness, and replay-gap facts are announced
+via ARIA live regions. The SSE decoder handles split UTF-8 chunks
+incrementally and validates event names against the `bifrost.activity` and
+`console.*` namespaces.

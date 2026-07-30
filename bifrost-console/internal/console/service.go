@@ -14,6 +14,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/lifecycle"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/live"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/profile"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/release"
@@ -118,6 +119,33 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 	defer pairing.Close()
 	defer sessions.Close()
 
+	observabilityService := observability.New()
+	liveService := live.NewService(coordinator.Context())
+	liveService.SetBaselineLoader(func(ctx context.Context, scope target.Scope) (live.Baseline, *consolecore.Error) {
+		page, domain := observabilityService.ListActiveExecutions(ctx, scope, observability.ListRequest{})
+		if domain != nil {
+			return live.Baseline{}, domain
+		}
+		resumeCursor := "0"
+		if page.ResumeCursor != nil {
+			resumeCursor = *page.ResumeCursor
+		}
+		executions := append([]observability.ActiveExecution(nil), page.Items...)
+		observedAt := page.ObservedAt
+		for page.HasMore && page.NextCursor != nil {
+			page, domain = observabilityService.ListActiveExecutions(ctx, scope, observability.ListRequest{Cursor: *page.NextCursor})
+			if domain != nil {
+				return live.Baseline{}, domain
+			}
+			executions = append(executions, page.Items...)
+		}
+		return live.Baseline{Executions: executions, ResumeCursor: resumeCursor, ObservedAt: observedAt}, nil
+	})
+	if err := targetContext.RegisterOwner("live", liveService); err != nil {
+		return err
+	}
+	defer liveService.Close()
+
 	address := ownedProfile.Resolved.ListenerAddress
 	if options.ListenOverride != "" {
 		address = options.ListenOverride
@@ -157,7 +185,8 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 				PairingURL:    pairingURL,
 				PrintPairing:  printPairing,
 				Target:        targetContext,
-				Observability: observability.New(),
+				Observability: observabilityService,
+				Live:          liveService,
 			})
 			if err != nil {
 				return nil, err

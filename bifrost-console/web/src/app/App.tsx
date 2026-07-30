@@ -6,6 +6,7 @@ import { PairingPage } from "../security/PairingPage";
 import { useBrowserSession } from "../security/BrowserSessionProvider";
 import { TargetProvider, useTarget } from "../target/TargetProvider";
 import { ObservabilityProvider, useObservability } from "../observability/ObservabilityProvider";
+import { ActivityProvider } from "../activity/ActivityProvider";
 import type { InstanceStatus } from "../api/contracts";
 
 export function App({ metadata }: { metadata: BuildMetadata }) {
@@ -27,7 +28,9 @@ export function App({ metadata }: { metadata: BuildMetadata }) {
             </p>
             <TargetProvider initial={session.bootstrap.target}>
               <ObservabilityProvider>
-                <ConsoleWorkspace />
+                <ActivityProvider>
+                  <ConsoleWorkspace />
+                </ActivityProvider>
               </ObservabilityProvider>
             </TargetProvider>
           </>

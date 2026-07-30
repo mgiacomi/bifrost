@@ -40,6 +40,25 @@ vi.mock("../target/TargetProvider", () => ({
   }),
 }));
 
+const activityView = vi.hoisted(() => ({
+  current: {
+    activities: [],
+    recentCompletions: [],
+    connected: false,
+    connectionFact: null,
+    error: null,
+    loading: false,
+    beginningUnavailable: false,
+    continuity: null,
+    loadRecent: vi.fn(),
+  },
+}));
+
+vi.mock("../activity/ActivityProvider", () => ({
+  useActivity: () => activityView.current,
+  ActivityProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
 vi.mock("react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => (
     <a href={to}>{children}</a>

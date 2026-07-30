@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/live"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 )
@@ -22,6 +23,7 @@ type Options struct {
 	PrintPairing  func(string) error
 	Target        *target.Context
 	Observability *observability.Service
+	Live          *live.Service
 }
 
 type Router struct {
@@ -86,6 +88,10 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		router.withSession(response, request, false, router.tracesList)
 	case "/api/console/v1/traces/detail":
 		router.withSession(response, request, false, router.traceDetail)
+	case "/api/console/v1/activity/stream":
+		router.withSessionSSE(response, request, router.activityStream)
+	case "/api/console/v1/activity/recent":
+		router.withSession(response, request, false, router.activityRecent)
 	default:
 		writeError(response, http.StatusNotFound, "NOT_FOUND", "Console operation not found.")
 	}

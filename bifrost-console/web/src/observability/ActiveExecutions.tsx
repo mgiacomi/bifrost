@@ -3,10 +3,12 @@ import { Link } from "react-router";
 import { useObservability } from "./ObservabilityProvider";
 import type { ActiveExecution } from "../api/contracts";
 import { scopeBoundPath } from "./scope";
+import { useOptionalActivity } from "../activity/ActivityProvider";
 
 export function ActiveExecutions() {
   const { activeExecutions, loadActiveExecutions } = useObservability();
   const heading = useRef<HTMLHeadingElement>(null);
+  const recentCompletions = useOptionalActivity()?.recentCompletions ?? [];
 
   useEffect(() => {
     heading.current?.focus();
@@ -81,6 +83,22 @@ export function ActiveExecutions() {
         <button type="button" disabled={activeExecutions.loading} onClick={() => void loadActiveExecutions(activeExecutions.nextCursor ?? undefined)}>
           Load more
         </button>
+      )}
+
+      <h3>Recent completions</h3>
+      <p className="observability-note">Temporary current-run activity; finalized trace availability is authoritative.</p>
+      {recentCompletions.length === 0 ? (
+        <p>No recent completions.</p>
+      ) : (
+        <ul aria-label="Temporary recent completions">
+          {recentCompletions.map((completion) => (
+            <li key={`${completion.instanceId}:${completion.cursor}`}>
+              <span>{completion.sessionId}</span>
+              {" — "}
+              <span>{completion.summary}</span>
+            </li>
+          ))}
+        </ul>
       )}
 
     </section>

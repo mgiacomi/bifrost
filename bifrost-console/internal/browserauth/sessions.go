@@ -17,10 +17,11 @@ const (
 )
 
 type tab struct {
-	id       string
-	csrf     []byte
-	lastSeen time.Time
-	relay    bool
+	id          string
+	csrf        []byte
+	lastSeen    time.Time
+	relay       bool
+	cancelRelay func()
 }
 
 type session struct {
@@ -136,11 +137,14 @@ func (registry *Registry) ReleaseTab(sessionID, tabID string) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	if current := registry.findSessionLocked(sessionID); current != nil {
+		if selected := current.tabs[tabID]; selected != nil && selected.cancelRelay != nil {
+			selected.cancelRelay()
+		}
 		delete(current.tabs, tabID)
 	}
 }
 
-func (registry *Registry) AdmitRelay(sessionID, tabID string) (func(), error) {
+func (registry *Registry) AdmitRelay(sessionID, tabID string, cancel func()) (func(), error) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	registry.expireLocked()
@@ -149,12 +153,14 @@ func (registry *Registry) AdmitRelay(sessionID, tabID string) (func(), error) {
 		return nil, fmt.Errorf("relay admission rejected")
 	}
 	current.tabs[tabID].relay = true
+	current.tabs[tabID].cancelRelay = cancel
 	current.lastActive = registry.clock()
 	return func() {
 		registry.mu.Lock()
 		defer registry.mu.Unlock()
 		if active := registry.findSessionLocked(sessionID); active != nil && active.tabs[tabID] != nil {
 			active.tabs[tabID].relay = false
+			active.tabs[tabID].cancelRelay = nil
 			active.tabs[tabID].lastSeen = registry.clock()
 		}
 	}, nil
@@ -164,6 +170,13 @@ func (registry *Registry) Close() {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	registry.closed = true
+	for _, current := range registry.sessions {
+		for _, selected := range current.tabs {
+			if selected.cancelRelay != nil {
+				selected.cancelRelay()
+			}
+		}
+	}
 	clear(registry.sessions)
 }
 
@@ -199,11 +212,19 @@ func (registry *Registry) expireLocked() {
 			}
 		}
 		if now.Sub(current.lastActive) >= SessionIdle {
+			for _, selected := range current.tabs {
+				if selected.cancelRelay != nil {
+					selected.cancelRelay()
+				}
+			}
 			delete(registry.sessions, id)
 			continue
 		}
 		for tabID, selected := range current.tabs {
 			if !selected.relay && now.Sub(selected.lastSeen) >= DisconnectedTabTTL {
+				if selected.cancelRelay != nil {
+					selected.cancelRelay()
+				}
 				delete(current.tabs, tabID)
 			}
 		}

@@ -12,7 +12,14 @@ import type {
   ActivePage,
   Trace,
   Page,
+  Activity,
+  ActivityKind,
+  RecentActivityResponse,
+  RecentActivityRequest,
+  ConnectionFact,
+  Continuity,
 } from "./contracts";
+import { openActivityStream as openStream } from "./activityStream";
 
 export class BrowserAPIError extends Error {
   constructor(
@@ -147,4 +154,41 @@ export function listTraces(
 
 export function getTraceDetail(traceId: string): Promise<Trace> {
   return post("/api/console/v1/traces/detail", { traceId });
+}
+
+export function fetchRecentActivities(
+  request?: RecentActivityRequest,
+  security?: SecurityState,
+): Promise<RecentActivityResponse> {
+  return post("/api/console/v1/activity/recent", {
+    cursor: request?.cursor ?? "",
+    sessionId: request?.sessionId ?? "",
+    limit: request?.limit ?? 0,
+  }, security);
+}
+
+export type ActivityStreamCallbacks = {
+  onActivity: (activity: Activity) => void;
+  onConnection?: (fact: ConnectionFact) => void;
+  onContinuity?: (continuity: Continuity) => void;
+  onReplayGap?: (reason: string) => void;
+  onBaselineRefreshed?: (observedAt?: string) => void;
+  onError?: (error: Error) => void;
+  onClose?: () => void;
+};
+
+export function openActivityStream(
+  callbacks: ActivityStreamCallbacks,
+  security: SecurityState,
+  afterCursor?: string,
+): () => void {
+  return openStream(
+    {
+      url: "/api/console/v1/activity/stream",
+      body: { afterCursor: afterCursor ?? "" },
+      tabId: security.tabId,
+      csrfToken: security.csrfToken,
+    },
+    callbacks,
+  );
 }

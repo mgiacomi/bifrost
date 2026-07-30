@@ -34,6 +34,9 @@ func (client *fakeClient) Get(context.Context, string, int64, applicationclient.
 	defer client.mu.Unlock()
 	return []byte(`{}`), client.instance.InstanceID, client.err
 }
+func (client *fakeClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
+	return nil, nil
+}
 func (*fakeClient) Close() {}
 
 func fixedInstance(id string) applicationclient.Instance {
@@ -297,13 +300,54 @@ func TestScopeRotationDoesNotWaitForSocketPublication(t *testing.T) {
 	}
 }
 
+func TestAtomicPublicationRejectsRotatedScopeBeforeWriting(t *testing.T) {
+	ids := []ScopeID{"scope-1", "scope-2"}
+	targetContext, _ := New(
+		func(applicationclient.Address) (ProbeClient, error) {
+			return &fakeClient{instance: fixedInstance("11111111-1111-4111-8111-111111111111")}, nil
+		},
+		func() (ScopeID, error) {
+			id := ids[0]
+			ids = ids[1:]
+			return id, nil
+		},
+		time.Now,
+	)
+	defer targetContext.Close()
+	if domain := targetContext.Select("http://127.0.0.1:8080"); domain != nil {
+		t.Fatal(domain)
+	}
+	old, domain := targetContext.Capture()
+	if domain != nil {
+		t.Fatal(domain)
+	}
+	if domain := targetContext.Select("http://127.0.0.1:8081"); domain != nil {
+		t.Fatal(domain)
+	}
+	wrote := false
+	domain = targetContext.PublishCurrentAtomic(old.ID, func() { wrote = true })
+	if domain == nil || domain.Code != consolecore.CodeTargetChanged {
+		t.Fatalf("expected TARGET_CHANGED, got %#v", domain)
+	}
+	if wrote {
+		t.Fatal("old-scope publication ran after target rotation")
+	}
+}
+
 type ownerRecorder struct {
-	name  string
-	order *[]string
+	name      string
+	order     *[]string
+	activated *[]string
 }
 
 func (owner ownerRecorder) InvalidateTargetScope(ScopeID, context.Context) {
 	*owner.order = append(*owner.order, owner.name)
+}
+
+func (owner ownerRecorder) ActivateActivity(scope Scope) {
+	if owner.activated != nil {
+		*owner.activated = append(*owner.activated, owner.name)
+	}
 }
 
 func TestRotationInvalidatesOwnersInRegistrationOrder(t *testing.T) {
@@ -311,10 +355,10 @@ func TestRotationInvalidatesOwnersInRegistrationOrder(t *testing.T) {
 	targetContext, _ := New(func(applicationclient.Address) (ProbeClient, error) { return &fakeClient{}, nil },
 		func() (ScopeID, error) { id := ids[0]; ids = ids[1:]; return id, nil }, time.Now)
 	var order []string
-	if err := targetContext.RegisterOwner("skills", ownerRecorder{"skills", &order}); err != nil {
+	if err := targetContext.RegisterOwner("skills", ownerRecorder{"skills", &order, nil}); err != nil {
 		t.Fatal(err)
 	}
-	if err := targetContext.RegisterOwner("artifacts", ownerRecorder{"artifacts", &order}); err != nil {
+	if err := targetContext.RegisterOwner("artifacts", ownerRecorder{"artifacts", &order, nil}); err != nil {
 		t.Fatal(err)
 	}
 	if err := targetContext.Select("http://127.0.0.1:8080"); err != nil {
@@ -325,6 +369,37 @@ func TestRotationInvalidatesOwnersInRegistrationOrder(t *testing.T) {
 	}
 	if strings.Join(order, ",") != "skills,artifacts" {
 		t.Fatalf("owner order=%v", order)
+	}
+}
+
+func TestActivateActivityCalledOnceOnFirstProbeAndNotOnRecheck(t *testing.T) {
+	client := &fakeClient{instance: fixedInstance("11111111-1111-4111-8111-111111111111")}
+	ids := []ScopeID{"scope-1", "scope-2"}
+	targetContext, _ := New(
+		func(applicationclient.Address) (ProbeClient, error) { return client, nil },
+		func() (ScopeID, error) { id := ids[0]; ids = ids[1:]; return id, nil },
+		time.Now,
+	)
+	defer targetContext.Close()
+	var order []string
+	var activated []string
+	if err := targetContext.RegisterOwner("activity", ownerRecorder{"activity", &order, &activated}); err != nil {
+		t.Fatal(err)
+	}
+	if err := targetContext.Select("http://127.0.0.1:8080"); err != nil {
+		t.Fatal(err)
+	}
+	if _, domain := targetContext.SupplyCredential(context.Background(), []byte(strings.Repeat("a", 32))); domain != nil {
+		t.Fatal(domain)
+	}
+	if len(activated) != 1 || activated[0] != "activity" {
+		t.Fatalf("expected single activation call, got %v", activated)
+	}
+	if _, domain := targetContext.Recheck(context.Background()); domain != nil {
+		t.Fatal(domain)
+	}
+	if len(activated) != 1 {
+		t.Fatalf("recheck should not trigger activation again, got %v", activated)
 	}
 }
 

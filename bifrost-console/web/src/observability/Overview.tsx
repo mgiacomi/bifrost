@@ -4,6 +4,7 @@ import { useObservability } from "./ObservabilityProvider";
 import type { InstanceStatus } from "../api/contracts";
 import { useTarget } from "../target/TargetProvider";
 import { Overview as TargetOverview } from "../target/Overview";
+import { LiveActivity } from "../activity/LiveActivity";
 
 export function ObservabilityOverview() {
   const { instance, loadInstance } = useObservability();
@@ -79,6 +80,8 @@ export function ObservabilityOverview() {
             <Link to="/active-executions">Active Executions</Link>
             <Link to="/traces">Trace Catalog</Link>
           </nav>
+
+          <LiveActivity />
         </>
       )}
     </section>

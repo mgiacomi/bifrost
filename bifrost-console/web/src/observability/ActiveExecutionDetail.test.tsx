@@ -5,8 +5,10 @@ import type { ActiveExecution } from "../api/contracts";
 
 const route = vi.hoisted(() => ({
   scope: "scope-1",
+  sessionId: "session-1",
   navigate: vi.fn(),
 }));
+const activityView = vi.hoisted(() => ({ current: undefined as any }));
 
 vi.mock("../api/client", () => ({
   getActiveExecutionDetail: vi.fn(),
@@ -25,7 +27,7 @@ vi.mock("react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => (
     <a href={to}>{children}</a>
   ),
-  useParams: () => ({ sessionId: "session-1" }),
+  useParams: () => ({ sessionId: route.sessionId }),
   useNavigate: () => route.navigate,
   useSearchParams: () => [new URLSearchParams({ targetScopeId: route.scope })],
 }));
@@ -36,6 +38,10 @@ vi.mock("../target/TargetProvider", () => ({
     scopeGeneration: 0,
     refresh: vi.fn().mockResolvedValue(undefined),
   }),
+}));
+
+vi.mock("../activity/ActivityProvider", () => ({
+  useOptionalActivity: () => activityView.current,
 }));
 
 import { getActiveExecutionDetail } from "../api/client";
@@ -70,7 +76,9 @@ const execution: ActiveExecution = {
 beforeEach(() => {
   vi.mocked(getActiveExecutionDetail).mockReset();
   route.scope = "scope-1";
+  route.sessionId = "session-1";
   route.navigate.mockReset();
+  activityView.current = undefined;
 });
 
 test("stale execution deep link resets before requesting the identifier", async () => {
@@ -84,11 +92,11 @@ test("active execution detail renders facts when loaded", async () => {
   vi.mocked(getActiveExecutionDetail).mockResolvedValue(execution);
   render(<ActiveExecutionDetailView />);
   await vi.waitFor(() => {
-    expect(screen.getByText("session-1")).toBeInTheDocument();
+    expect(screen.getAllByText("session-1").length).toBeGreaterThan(0);
   });
-  expect(screen.getByText("trace-1")).toBeInTheDocument();
+  expect(screen.getAllByText("trace-1").length).toBeGreaterThan(0);
   expect(screen.getByText("CheckDns")).toBeInTheDocument();
-  expect(screen.getByText("EXECUTING")).toBeInTheDocument();
+  expect(screen.getAllByText("EXECUTING").length).toBeGreaterThan(0);
 });
 
 test("active execution detail renders loading state", () => {
@@ -106,4 +114,125 @@ test("active execution detail renders error state", async () => {
   await vi.waitFor(() => {
     expect(screen.getByText("Execution not found")).toBeInTheDocument();
   });
+});
+
+test("terminal activity preserves selected context when the active detail request returns not found", async () => {
+  const { BrowserAPIError } = await import("../api/client");
+  activityView.current = {
+    activities: [{
+      instanceId: "11111111-1111-4111-8111-111111111111",
+      cursor: "7",
+      sessionId: "session-1",
+      traceId: "trace-1",
+      canonicalSequence: 7,
+      timestamp: "2026-07-27T10:05:00Z",
+      kind: "TRACE_COMPLETED",
+      executionStatus: "COMPLETED",
+      summary: "Execution completed",
+      details: { outcome: "succeeded" },
+    }],
+    connected: true,
+    continuity: null,
+  };
+  vi.mocked(getActiveExecutionDetail).mockRejectedValue(
+    new BrowserAPIError("NOT_FOUND", "Execution not found", 404),
+  );
+
+  render(<ActiveExecutionDetailView />);
+
+  await vi.waitFor(() => {
+    expect(screen.getByText("Execution completed. Context is preserved.")).toBeInTheDocument();
+  });
+  expect(screen.queryByText("Execution not found")).toBeNull();
+  expect(screen.getByLabelText("Current execution summary")).toBeInTheDocument();
+  expect(screen.getAllByText("Execution completed", { exact: true }).length).toBeGreaterThan(0);
+});
+
+test("missed terminal reconciliation preserves context without retaining an active claim", async () => {
+  const { BrowserAPIError } = await import("../api/client");
+  activityView.current = {
+    activities: [],
+    connected: true,
+    continuity: null,
+    baselineObservedAt: "2026-07-27T10:05:00Z",
+  };
+  vi.mocked(getActiveExecutionDetail)
+    .mockResolvedValueOnce(execution)
+    .mockRejectedValueOnce(
+      new BrowserAPIError("NOT_FOUND", "Execution not found", 404),
+    );
+
+  const { rerender } = render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getByLabelText("Status: ACTIVE")).toBeInTheDocument();
+  });
+
+  activityView.current = {
+    ...activityView.current,
+    baselineObservedAt: "2026-07-27T10:05:30Z",
+  };
+  rerender(<ActiveExecutionDetailView />);
+
+  await vi.waitFor(() => {
+    expect(
+      screen.getByText(/No terminal activity was observed/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Status: OBSERVATION ENDED"),
+    ).toBeInTheDocument();
+  });
+  expect(screen.queryByLabelText("Status: ACTIVE")).toBeNull();
+  expect(screen.queryByText("ACTIVE", { exact: true })).toBeNull();
+  expect(screen.queryByLabelText("Terminal")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Inspect trace" })).toBeNull();
+});
+
+test("switching execution identifiers never renders the previous execution snapshot", async () => {
+  vi.mocked(getActiveExecutionDetail)
+    .mockResolvedValueOnce(execution)
+    .mockReturnValueOnce(new Promise(() => {}));
+  const { rerender } = render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getAllByText("session-1").length).toBeGreaterThan(0);
+  });
+
+  route.sessionId = "session-2";
+  rerender(<ActiveExecutionDetailView />);
+
+  expect(screen.queryByText("session-1")).toBeNull();
+});
+
+test("finalization failure is distinct from a completed outcome", async () => {
+  const { BrowserAPIError } = await import("../api/client");
+  activityView.current = {
+    activities: [{
+      instanceId: "11111111-1111-4111-8111-111111111111",
+      cursor: "8",
+      sessionId: "session-1",
+      traceId: "trace-1",
+      canonicalSequence: 8,
+      timestamp: "2026-07-27T10:05:01Z",
+      kind: "EXECUTION_OBSERVATION_ENDED",
+      executionStatus: "COMPLETED",
+      summary: "Trace finalization failed",
+      details: { artifactAvailability: "CORE_FINALIZATION_FAILED" },
+    }],
+    connected: false,
+    continuity: null,
+  };
+  vi.mocked(getActiveExecutionDetail).mockRejectedValue(
+    new BrowserAPIError("NOT_FOUND", "Execution not found", 404),
+  );
+
+  render(<ActiveExecutionDetailView />);
+
+  await vi.waitFor(() => {
+    expect(
+      screen.getByText(
+        "Execution observation ended without an outcome because trace finalization failed.",
+      ),
+    ).toBeInTheDocument();
+  });
+  expect(screen.getByLabelText("Terminal")).toHaveTextContent("observation ended");
+  expect(screen.queryByRole("link", { name: "Inspect trace" })).toBeNull();
 });

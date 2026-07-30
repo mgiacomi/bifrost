@@ -209,6 +209,11 @@ func TestAddressEndpointsEncodePathVariables(t *testing.T) {
 	if got := address.ActiveExecutionEndpoint("session-1"); !strings.HasSuffix(got, "/active-executions/session-1") {
 		t.Fatalf("unexpected active execution endpoint: %s", got)
 	}
+	if got := address.ActivityEndpoint("11111111-1111-4111-8111-111111111111", "0"); !strings.Contains(got, "/activity?") ||
+		!strings.Contains(got, "instanceId=11111111-1111-4111-8111-111111111111") ||
+		!strings.Contains(got, "afterCursor=0") {
+		t.Fatalf("unexpected activity endpoint: %s", got)
+	}
 	if got := address.TracesEndpoint(); !strings.HasSuffix(got, "/traces") {
 		t.Fatalf("unexpected traces endpoint: %s", got)
 	}

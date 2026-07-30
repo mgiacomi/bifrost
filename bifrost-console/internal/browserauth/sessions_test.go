@@ -121,11 +121,11 @@ func TestActiveRelayKeepsSessionAliveAndOneRelayPerTabIsEnforced(t *testing.T) {
 	registry := NewRegistry(func() time.Time { return now }, deterministicEntropy())
 	sessionID, _ := registry.CreateSession()
 	bootstrap, _ := registry.Bootstrap(sessionID, "")
-	release, err := registry.AdmitRelay(sessionID, bootstrap.TabID)
+	release, err := registry.AdmitRelay(sessionID, bootstrap.TabID, func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.AdmitRelay(sessionID, bootstrap.TabID); err == nil {
+	if _, err := registry.AdmitRelay(sessionID, bootstrap.TabID, func() {}); err == nil {
 		t.Fatal("second relay admitted")
 	}
 	now = now.Add(SessionIdle)
@@ -133,4 +133,21 @@ func TestActiveRelayKeepsSessionAliveAndOneRelayPerTabIsEnforced(t *testing.T) {
 		t.Fatal("live relay did not keep session active")
 	}
 	release()
+}
+
+func TestReleaseTabCancelsActiveRelay(t *testing.T) {
+	registry := NewRegistry(nil, deterministicEntropy())
+	sessionID, _ := registry.CreateSession()
+	bootstrap, _ := registry.Bootstrap(sessionID, "")
+	cancelled := make(chan struct{})
+	_, err := registry.AdmitRelay(sessionID, bootstrap.TabID, func() { close(cancelled) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.ReleaseTab(sessionID, bootstrap.TabID)
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("tab release did not cancel its relay")
+	}
 }
