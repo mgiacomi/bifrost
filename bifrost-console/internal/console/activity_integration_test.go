@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +22,7 @@ import (
 func TestActivitySSEEndToEndRelay(t *testing.T) {
 	const instanceID = "11111111-1111-4111-8111-111111111111"
 	const sseResponse = "event: handshake\ndata: {\"instanceId\":\"" + instanceID + "\",\"observedAt\":\"2026-07-25T12:00:00Z\",\"afterCursor\":\"0\"}\n\n" +
-		"id: 7\nevent: activity\ndata: {\"instanceId\":\"" + instanceID + "\",\"cursor\":\"7\",\"sessionId\":\"session-1\",\"traceId\":\"trace-1\",\"canonicalSequence\":7,\"timestamp\":\"2026-07-25T12:00:00Z\",\"kind\":\"TRACE_COMPLETED\",\"executionStatus\":\"COMPLETED\",\"summary\":\"Execution completed\",\"details\":{\"artifactAvailability\":\"AVAILABLE\"}}\n\n"
+		"id: 7\nevent: activity\ndata: {\"instanceId\":\"" + instanceID + "\",\"cursor\":\"7\",\"sessionId\":\"session-1\",\"traceId\":\"trace-1\",\"canonicalSequence\":7,\"timestamp\":\"2026-07-25T12:00:00Z\",\"kind\":\"TRACE_COMPLETED\",\"executionStatus\":\"COMPLETED\",\"summary\":\"Execution completed\",\"details\":{\"applicationTraceAvailability\":\"AVAILABLE\"}}\n\n"
 
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if strings.Contains(request.URL.Path, "/activity") {
@@ -372,4 +374,88 @@ func TestActivitySSEStreamDoesNotTreatLifetimeThroughputAsBackpressure(t *testin
 	if !strings.Contains(body, `"cursor":"513"`) {
 		t.Fatalf("relay did not deliver sustained activity through cursor 513: %s", body[max(0, len(body)-500):])
 	}
+}
+
+// TestCommittedTerminalActivityUsesCanonicalApplicationTraceAvailability is the
+// PR12-R14 boundary-contract test. It loads the committed terminal-activity SSE
+// fixture through the existing application activity decoder and asserts that the
+// relayed terminal activity exposes the canonical applicationTraceAvailability
+// field used by the live Java producer, with no remaining obsolete availability
+// key. See ai/thoughts/plans/2026-07-29-PR-12-bifrost-console-artifact-service-testing.md.
+func TestCommittedTerminalActivityUsesCanonicalApplicationTraceAvailability(t *testing.T) {
+	const instanceID = "11111111-1111-4111-8111-111111111111"
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "bifrost-console-fixtures", "application-sse", "activity-trace-completed.sse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set(applicationclient.InstanceIDHeader, instanceID)
+		response.Header().Set("Content-Type", "text/event-stream")
+		handshake := "event: handshake\ndata: {\"instanceId\":\"" + instanceID + "\",\"observedAt\":\"2026-07-25T12:00:00Z\",\"afterCursor\":\"0\"}\n\n"
+		_, _ = response.Write([]byte(handshake))
+		_, _ = response.Write(fixture)
+	}))
+	defer server.Close()
+
+	address, _ := applicationclient.NormalizeAddress(server.URL)
+	client, _ := applicationclient.New(address, applicationclient.NetworkPolicy{
+		ConnectTimeout: time.Second, ResponseHeaderTimeout: time.Second, RequestTimeout: time.Second,
+	}, "0.1.0-SNAPSHOT")
+	defer client.Close()
+
+	stream, err := client.OpenActivity(context.Background(), instanceID, "0", testCredentialValue())
+	if err != nil {
+		t.Fatalf("open activity stream: %v", err)
+	}
+	defer stream.Close()
+
+	if _, err := stream.Next(); err != nil {
+		t.Fatalf("read handshake frame: %v", err)
+	}
+	terminal, err := stream.Next()
+	if err != nil {
+		t.Fatalf("read terminal activity frame: %v", err)
+	}
+	if terminal.Event != "activity" {
+		t.Fatalf("expected activity event, got %q", terminal.Event)
+	}
+
+	var details map[string]json.RawMessage
+	var envelope struct {
+		Details json.RawMessage `json:"details"`
+	}
+	if err := json.Unmarshal(terminal.Data, &envelope); err != nil {
+		t.Fatalf("decode activity envelope: %v", err)
+	}
+	if err := json.Unmarshal(envelope.Details, &details); err != nil {
+		t.Fatalf("decode activity details: %v", err)
+	}
+
+	availability, ok := details["applicationTraceAvailability"]
+	if !ok {
+		t.Fatalf("committed terminal activity is missing applicationTraceAvailability: %s", string(envelope.Details))
+	}
+	var value string
+	if err := json.Unmarshal(availability, &value); err != nil || value != "AVAILABLE" {
+		t.Fatalf("applicationTraceAvailability = %q, want AVAILABLE", string(availability))
+	}
+	obsoleteField := "artifact" + "Availability"
+	if _, present := details[obsoleteField]; present {
+		t.Fatalf("committed terminal activity still carries obsolete availability field: %s", string(envelope.Details))
+	}
+}
+
+func testCredentialValue() applicationclient.Credential {
+	return testCredential(strings.Repeat("k", 32))
+}
+
+type testCredential []byte
+
+func (credential testCredential) Apply(request *http.Request) error {
+	if err := applicationclient.ValidateCredential(credential); err != nil {
+		return err
+	}
+	request.Header.Set(applicationclient.APIKeyHeader, string(credential))
+	return nil
 }

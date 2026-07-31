@@ -81,12 +81,12 @@ describe("presentActivity", () => {
   });
 
   it("reports artifact availability for TRACE_COMPLETED", () => {
-    const p = presentActivity(makeActivity("TRACE_COMPLETED", { artifactAvailability: "AVAILABLE" }));
+    const p = presentActivity(makeActivity("TRACE_COMPLETED", { applicationTraceAvailability: "AVAILABLE" }));
     expect(p.artifactAvailable).toBe(true);
   });
 
   it("does not report artifact availability for non-terminal kinds", () => {
-    const p = presentActivity(makeActivity("STEP_COMPLETED", { artifactAvailability: "AVAILABLE" }));
+    const p = presentActivity(makeActivity("STEP_COMPLETED", { applicationTraceAvailability: "AVAILABLE" }));
     expect(p.artifactAvailable).toBe(false);
   });
 

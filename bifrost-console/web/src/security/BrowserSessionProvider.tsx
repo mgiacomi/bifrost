@@ -28,6 +28,11 @@ import {
 
 const tabHeartbeatIntervalMilliseconds = 60_000;
 
+type SecurityState = {
+  tabId: string;
+  csrfToken: string;
+};
+
 type BrowserSessionContextValue = BrowserSessionState & {
   pair(secret: string): Promise<void>;
   requestManualChallenge(): Promise<void>;
@@ -35,6 +40,7 @@ type BrowserSessionContextValue = BrowserSessionState & {
   connectTarget(address: string, key: string): Promise<TargetResponse>;
   supplyTargetCredential(key: string): Promise<TargetResponse>;
   recheckTarget(): Promise<TargetResponse>;
+  getSecurity(): SecurityState | undefined;
 };
 
 const BrowserSessionContext = createContext<BrowserSessionContextValue>({
@@ -63,6 +69,7 @@ const BrowserSessionContext = createContext<BrowserSessionContextValue>({
   async connectTarget() { return this.bootstrap.target; },
   async supplyTargetCredential() { return this.bootstrap.target; },
   async recheckTarget() { return this.bootstrap.target; },
+  getSecurity() { return { tabId: this.bootstrap.tabId, csrfToken: this.bootstrap.csrfToken }; },
 });
 
 export function BrowserSessionProvider({
@@ -192,6 +199,7 @@ export function BrowserSessionProvider({
         if (!security) throw new BrowserAPIError("SESSION_REQUIRED", "Pairing is required.", 401);
         return recheckTarget(security);
       },
+      getSecurity: () => currentSecurity.current,
     }),
     [load, state],
   );

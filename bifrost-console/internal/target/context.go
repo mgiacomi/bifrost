@@ -17,6 +17,7 @@ type ProbeClient interface {
 	Probe(context.Context, applicationclient.Credential) (applicationclient.Instance, error)
 	Get(context.Context, string, int64, applicationclient.Credential) ([]byte, string, error)
 	OpenActivity(parent context.Context, instanceID, afterCursor string, credential applicationclient.Credential) (*applicationclient.ActivityStream, error)
+	OpenArtifact(parent context.Context, traceId, instanceID string, credential applicationclient.Credential) (*applicationclient.ArtifactStream, error)
 	Close()
 }
 

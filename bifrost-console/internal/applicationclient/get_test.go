@@ -220,4 +220,10 @@ func TestAddressEndpointsEncodePathVariables(t *testing.T) {
 	if got := address.TraceEndpoint("trace-1"); !strings.HasSuffix(got, "/traces/trace-1") {
 		t.Fatalf("unexpected trace endpoint: %s", got)
 	}
+	if got := address.ArtifactEndpoint("trace-1"); !strings.HasSuffix(got, "/traces/trace-1/artifact") {
+		t.Fatalf("unexpected artifact endpoint: %s", got)
+	}
+	if got := address.ArtifactEndpoint("a b"); !strings.Contains(got, "a%20b") {
+		t.Fatalf("artifact endpoint did not encode space: %s", got)
+	}
 }

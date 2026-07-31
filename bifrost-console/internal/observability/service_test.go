@@ -55,6 +55,9 @@ func (*fakeGetClient) Close() {}
 func (c *fakeGetClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
 	return nil, nil
 }
+func (c *fakeGetClient) OpenArtifact(context.Context, string, string, applicationclient.Credential) (*applicationclient.ArtifactStream, error) {
+	return nil, nil
+}
 
 func TestObservabilityServiceReturnsSkillPageFromFixture(t *testing.T) {
 	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "bifrost-console-fixtures", "application-rest", "skills-page.json"))

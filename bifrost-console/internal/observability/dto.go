@@ -84,6 +84,9 @@ type Trace struct {
 	SizeBytes                 int64     `json:"sizeBytes"`
 	PersistencePolicy         string    `json:"persistencePolicy"`
 	ApplicationTraceExpiresAt time.Time `json:"applicationTraceExpiresAt"`
+	LocalAvailable            bool      `json:"localAvailable"`
+	ArtifactHandle            string    `json:"artifactHandle,omitempty"`
+	ApplicationAvailability   string    `json:"applicationAvailability,omitempty"`
 }
 
 type Page[T any] struct {

@@ -40,6 +40,7 @@ type ActivityStream struct {
 	instanceID    string
 	afterCursor   string
 	handshakeSeen bool
+	closeHooks    []func()
 	closed        bool
 	mu            sync.Mutex
 }
@@ -189,6 +190,22 @@ func (stream *ActivityStream) readBoundedLine() ([]byte, error) {
 	}
 }
 
+// AddCloseHook registers lifecycle cleanup that runs exactly once when the
+// stream closes. If the stream is already closed, the hook runs immediately.
+func (stream *ActivityStream) AddCloseHook(hook func()) {
+	if hook == nil {
+		return
+	}
+	stream.mu.Lock()
+	if stream.closed {
+		stream.mu.Unlock()
+		hook()
+		return
+	}
+	stream.closeHooks = append(stream.closeHooks, hook)
+	stream.mu.Unlock()
+}
+
 func (stream *ActivityStream) Close() error {
 	stream.mu.Lock()
 	if stream.closed {
@@ -197,7 +214,12 @@ func (stream *ActivityStream) Close() error {
 	}
 	stream.closed = true
 	body := stream.response.Body
+	hooks := stream.closeHooks
+	stream.closeHooks = nil
 	stream.mu.Unlock()
+	for _, hook := range hooks {
+		hook()
+	}
 	return body.Close()
 }
 

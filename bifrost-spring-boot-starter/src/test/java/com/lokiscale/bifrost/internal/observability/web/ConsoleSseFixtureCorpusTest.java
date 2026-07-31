@@ -31,11 +31,11 @@ class ConsoleSseFixtureCorpusTest
                 json, new ObservabilityDtos.ActivityHandshake(INSTANCE, OBSERVED, "0"));
         byte[] completed = ObservabilityActivityStream.activityFrame(
                 json, activity("7", ExecutionActivityKind.TRACE_COMPLETED, "COMPLETED",
-                        "Execution completed", Map.of("artifactAvailability", "AVAILABLE")));
+                        "Execution completed", Map.of("applicationTraceAvailability", "AVAILABLE")));
         byte[] failed = ObservabilityActivityStream.activityFrame(
                 json, activity("8", ExecutionActivityKind.EXECUTION_OBSERVATION_ENDED, "COMPLETED",
                         "Trace finalization failed",
-                        Map.of("artifactAvailability", "CORE_FINALIZATION_FAILED")));
+                        Map.of("applicationTraceAvailability", "CORE_FINALIZATION_FAILED")));
         fixtures.put("handshake.sse", handshake);
         fixtures.put("activity-trace-completed.sse", completed);
         fixtures.put("activity-core-finalization-failed.sse", failed);

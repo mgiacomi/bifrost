@@ -17,6 +17,7 @@ export type BrowserErrorCode =
   | "INVALID_CURSOR"
   | "STALE_CURSOR"
   | "ARTIFACT_EXPIRED"
+  | "ARTIFACT_IN_USE"
   | "INVALID_ARTIFACT"
   | "LIVE_MONITORING_UNAVAILABLE"
   | "LOCAL_STORAGE_UNAVAILABLE"
@@ -162,6 +163,51 @@ export type Trace = {
   sizeBytes: number;
   persistencePolicy: string;
   applicationTraceExpiresAt: string;
+  localAvailable: boolean;
+  artifactHandle?: string;
+  applicationAvailability?: string;
+};
+
+export type AcquiredArtifact = {
+  artifactHandle: string;
+  traceId: string;
+  sessionId: string;
+  outcome: string;
+  finalizedAt: string;
+  localBytes: number;
+  acquiredAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  hasIdleExpiry: boolean;
+};
+
+export type StoredEntry = {
+  traceId: string;
+  sessionId: string;
+  outcome: string;
+  persistencePolicy: string;
+  finalizedAt: string;
+  acquiredAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  hasIdleExpiry: boolean;
+  localBytes: number;
+  applicationTraceExpiresAt: string;
+  applicationAvailability: string;
+  localAvailable: boolean;
+  activePin: boolean;
+};
+
+export type StorageSnapshot = {
+  targetScopeId: string;
+  workspaceLabel: string;
+  maxBytes: number;
+  unlimited: boolean;
+  idleTtl: string;
+  neverExpire: boolean;
+  chargedBytes: number;
+  acquiredCount: number;
+  entries: StoredEntry[];
 };
 
 export type Page<T> = {

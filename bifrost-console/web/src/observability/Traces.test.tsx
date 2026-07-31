@@ -34,6 +34,7 @@ const trace: Trace = {
   sizeBytes: 4096,
   persistencePolicy: "PERSISTENT",
   applicationTraceExpiresAt: "2026-08-03T10:10:00Z",
+  localAvailable: false,
 };
 
 beforeEach(() => {

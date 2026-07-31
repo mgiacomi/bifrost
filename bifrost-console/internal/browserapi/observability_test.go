@@ -3,6 +3,7 @@ package browserapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/applicationclient"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
@@ -26,9 +28,14 @@ func (*fakeProbeClient) Get(context.Context, string, int64, applicationclient.Cr
 func (*fakeProbeClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
 	return nil, nil
 }
+func (*fakeProbeClient) OpenArtifact(context.Context, string, string, applicationclient.Credential) (*applicationclient.ArtifactStream, error) {
+	return nil, nil
+}
 func (*fakeProbeClient) Close() {}
 
-type fixtureObservabilityClient struct{}
+type fixtureObservabilityClient struct {
+	failRequests bool
+}
 
 func (*fixtureObservabilityClient) Probe(context.Context, applicationclient.Credential) (applicationclient.Instance, error) {
 	return applicationclient.Instance{
@@ -39,7 +46,10 @@ func (*fixtureObservabilityClient) Probe(context.Context, applicationclient.Cred
 	}, nil
 }
 
-func (*fixtureObservabilityClient) Get(_ context.Context, endpoint string, _ int64, _ applicationclient.Credential) ([]byte, string, error) {
+func (client *fixtureObservabilityClient) Get(_ context.Context, endpoint string, _ int64, _ applicationclient.Credential) ([]byte, string, error) {
+	if client.failRequests {
+		return nil, "", errors.New("application unavailable")
+	}
 	const instanceID = "11111111-1111-4111-8111-111111111111"
 	var body string
 	switch {
@@ -62,6 +72,9 @@ func (*fixtureObservabilityClient) Get(_ context.Context, endpoint string, _ int
 }
 
 func (*fixtureObservabilityClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
+	return nil, nil
+}
+func (*fixtureObservabilityClient) OpenArtifact(context.Context, string, string, applicationclient.Credential) (*applicationclient.ArtifactStream, error) {
 	return nil, nil
 }
 func (*fixtureObservabilityClient) Close() {}
@@ -299,5 +312,67 @@ func TestObservabilityRoutesReturnCanonicalDTOs(t *testing.T) {
 				t.Fatalf("expected Cache-Control: no-store, got %q", response.Header().Get("Cache-Control"))
 			}
 		})
+	}
+}
+
+func TestTraceRoutesFallBackToInstalledAcquisitionFacts(t *testing.T) {
+	entropy := bytes.Repeat([]byte{13}, 32*16)
+	pairing := browserauth.NewPairing(nil, bytes.NewReader(entropy))
+	registry := browserauth.NewRegistry(nil, bytes.NewReader(entropy))
+	sessionID, _ := registry.CreateSession()
+	policy, _ := NewPolicy("127.0.0.1:7943", "http://127.0.0.1:7943", "")
+	client := &fixtureObservabilityClient{}
+	targetContext, _ := target.New(func(applicationclient.Address) (target.ProbeClient, error) {
+		return client, nil
+	}, func() (target.ScopeID, error) { return "scope-1", nil }, nil)
+	if err := targetContext.Select("http://127.0.0.1:8080"); err != nil {
+		t.Fatal(err)
+	}
+	if _, domain := targetContext.SupplyCredential(context.Background(), []byte(strings.Repeat("k", 32))); domain != nil {
+		t.Fatal(domain)
+	}
+	acquiredAt := time.Date(2026, 7, 27, 0, 0, 3, 0, time.UTC)
+	metadata := artifact.TraceMetadata{
+		TraceID: "trace-1", SessionID: "session-1", Outcome: "SUCCEEDED",
+		FinalizedAt: acquiredAt.Add(-time.Minute), SizeBytes: 100,
+		PersistencePolicy: "RETAINED", ApplicationTraceExpiresAt: acquiredAt.Add(time.Hour),
+	}
+	artifacts := &fakeArtifactService{
+		lookupResult: artifact.LookupResult{
+			Handle: artifact.Handle(strings.Repeat("a", 64)), Metadata: metadata,
+			LocalAvailable: true, ApplicationAvailability: artifact.ApplicationAvailable,
+			AcquiredAt: acquiredAt, LastUsedAt: acquiredAt, LocalBytes: 100,
+		},
+		snapshotResult: artifact.StorageSnapshot{Entries: []artifact.StoredEntry{{
+			TraceID: "trace-1", AcquiredAt: acquiredAt,
+		}}},
+	}
+	router, _ := New(Options{
+		Policy: policy, Pairing: pairing, Sessions: registry,
+		PairingURL: func(value string) string { return value },
+		Target:     targetContext, Observability: observability.New(), Artifacts: artifacts,
+	})
+	client.failRequests = true
+
+	for _, test := range []struct {
+		path string
+		body string
+	}{
+		{"/api/console/v1/traces/detail", `{"traceId":"trace-1"}`},
+		{"/api/console/v1/traces/list", `{"pageSize":10}`},
+	} {
+		response := apiRequest(router, test.path, test.body, browserauth.SessionCookie(sessionID))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", test.path, response.Code, response.Body.String())
+		}
+		body := response.Body.String()
+		for _, want := range []string{
+			`"traceId":"trace-1"`, `"localAvailable":true`,
+			`"applicationAvailability":"AVAILABLE"`, `"persistencePolicy":"RETAINED"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s body missing %s: %s", test.path, want, body)
+			}
+		}
 	}
 }

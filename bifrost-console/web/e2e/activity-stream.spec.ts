@@ -37,7 +37,7 @@ const test = consoleTest.extend<{ targetApplication: { origin: string; close(): 
           "Cache-Control": "no-store",
         });
         response.write("event: handshake\ndata: {\"instanceId\":\"11111111-1111-4111-8111-111111111111\",\"observedAt\":\"2026-07-27T00:00:00Z\",\"afterCursor\":\"0\"}\n\n");
-        response.write("id: 7\nevent: activity\ndata: {\"instanceId\":\"11111111-1111-4111-8111-111111111111\",\"cursor\":\"7\",\"sessionId\":\"session-1\",\"traceId\":\"trace-1\",\"canonicalSequence\":7,\"timestamp\":\"2026-07-27T00:00:00Z\",\"kind\":\"TRACE_COMPLETED\",\"executionStatus\":\"COMPLETED\",\"summary\":\"Execution completed\",\"details\":{\"artifactAvailability\":\"AVAILABLE\"}}\n\n");
+        response.write("id: 7\nevent: activity\ndata: {\"instanceId\":\"11111111-1111-4111-8111-111111111111\",\"cursor\":\"7\",\"sessionId\":\"session-1\",\"traceId\":\"trace-1\",\"canonicalSequence\":7,\"timestamp\":\"2026-07-27T00:00:00Z\",\"kind\":\"TRACE_COMPLETED\",\"executionStatus\":\"COMPLETED\",\"summary\":\"Execution completed\",\"details\":{\"applicationTraceAvailability\":\"AVAILABLE\"}}\n\n");
         response.end();
         return;
       }

@@ -14,6 +14,7 @@ declare module "node:url" {
 declare module "node:fs" {
   const fs: {
     readFileSync(path: string, encoding: "utf8"): string;
+    readFileSync(path: string): Buffer;
     mkdtempSync(prefix: string): string;
     rmSync(path: string, options: { recursive: boolean; force: boolean }): void;
   };
@@ -49,8 +50,8 @@ declare module "node:http" {
   };
   type ServerResponse = {
     writeHead(status: number, headers?: Record<string, string>): ServerResponse;
-    write(body: string): boolean;
-    end(body?: string): void;
+    write(body: string | Uint8Array): boolean;
+    end(body?: string | Uint8Array): void;
   };
   type AddressInfo = { port: number };
   type Server = {
@@ -73,7 +74,12 @@ declare module "node:events" {
   }
 }
 
-declare class Buffer {
+declare class Buffer extends Uint8Array {
+  static isBuffer(value: unknown): value is Buffer;
+  static from(value: Uint8Array | string, encoding?: string): Buffer;
+  static concat(list: Uint8Array[]): Buffer;
+  readonly length: number;
+  equals(other: Uint8Array): boolean;
   toString(encoding?: string): string;
 }
 

@@ -326,7 +326,7 @@ func TestActivityJSONRoundTrip(t *testing.T) {
 		Kind:              KindTraceCompleted,
 		ExecutionStatus:   "COMPLETED",
 		Summary:           "Execution completed",
-		Details:           json.RawMessage(`{"artifactAvailability":"AVAILABLE"}`),
+		Details:           json.RawMessage(`{"applicationTraceAvailability":"AVAILABLE"}`),
 	}
 	data, err := json.Marshal(original)
 	if err != nil {

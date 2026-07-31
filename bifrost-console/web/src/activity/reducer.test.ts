@@ -161,7 +161,7 @@ describe("activityReducer", () => {
     const completed = makeActivity("7", "TRACE_COMPLETED");
     const observationEnded = {
       ...makeActivity("8", "EXECUTION_OBSERVATION_ENDED"),
-      details: { artifactAvailability: "CORE_FINALIZATION_FAILED" },
+      details: { applicationTraceAvailability: "CORE_FINALIZATION_FAILED" },
     };
     const first = activityReducer(initialActivityState, {
       type: "stream-activity",

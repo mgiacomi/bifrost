@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
-import type { ActiveExecution } from "../api/contracts";
+import type { ActiveExecution, AcquiredArtifact } from "../api/contracts";
 
 const route = vi.hoisted(() => ({
   scope: "scope-1",
@@ -12,6 +12,7 @@ const activityView = vi.hoisted(() => ({ current: undefined as any }));
 
 vi.mock("../api/client", () => ({
   getActiveExecutionDetail: vi.fn(),
+  acquireArtifact: vi.fn(),
   BrowserAPIError: class BrowserAPIError extends Error {
     code: string;
     status: number;
@@ -40,11 +41,17 @@ vi.mock("../target/TargetProvider", () => ({
   }),
 }));
 
+vi.mock("../security/BrowserSessionProvider", () => ({
+  useBrowserSession: () => ({
+    getSecurity: () => ({ tabId: "test-tab", csrfToken: "test-token" }),
+  }),
+}));
+
 vi.mock("../activity/ActivityProvider", () => ({
   useOptionalActivity: () => activityView.current,
 }));
 
-import { getActiveExecutionDetail } from "../api/client";
+import { getActiveExecutionDetail, acquireArtifact } from "../api/client";
 import { ActiveExecutionDetailView } from "./ActiveExecutionDetail";
 
 const execution: ActiveExecution = {
@@ -75,6 +82,7 @@ const execution: ActiveExecution = {
 
 beforeEach(() => {
   vi.mocked(getActiveExecutionDetail).mockReset();
+  vi.mocked(acquireArtifact).mockReset();
   route.scope = "scope-1";
   route.sessionId = "session-1";
   route.navigate.mockReset();
@@ -215,7 +223,7 @@ test("finalization failure is distinct from a completed outcome", async () => {
       kind: "EXECUTION_OBSERVATION_ENDED",
       executionStatus: "COMPLETED",
       summary: "Trace finalization failed",
-      details: { artifactAvailability: "CORE_FINALIZATION_FAILED" },
+      details: { applicationTraceAvailability: "CORE_FINALIZATION_FAILED" },
     }],
     connected: false,
     continuity: null,
@@ -235,4 +243,84 @@ test("finalization failure is distinct from a completed outcome", async () => {
   });
   expect(screen.getByLabelText("Terminal")).toHaveTextContent("observation ended");
   expect(screen.queryByRole("link", { name: "Inspect trace" })).toBeNull();
+});
+
+const acquiredArtifact: AcquiredArtifact = {
+  artifactHandle: "handle-abc",
+  traceId: "trace-1",
+  sessionId: "session-1",
+  outcome: "SUCCEEDED",
+  finalizedAt: "2026-07-27T10:10:00Z",
+  localBytes: 4096,
+  acquiredAt: "2026-07-27T10:15:00Z",
+  lastUsedAt: "2026-07-27T10:15:00Z",
+  expiresAt: "2026-07-27T10:20:00Z",
+  hasIdleExpiry: true,
+};
+
+function completedActivity() {
+  return {
+    activities: [{
+      instanceId: "11111111-1111-4111-8111-111111111111",
+      cursor: "7",
+      sessionId: "session-1",
+      traceId: "trace-1",
+      canonicalSequence: 7,
+      timestamp: "2026-07-27T10:05:00Z",
+      kind: "TRACE_COMPLETED",
+      executionStatus: "COMPLETED",
+      summary: "Execution completed",
+      details: { outcome: "succeeded", applicationTraceAvailability: "AVAILABLE" },
+    }],
+    connected: true,
+    continuity: null,
+  };
+}
+
+test("completed execution renders acquire button when artifact is available", async () => {
+  activityView.current = completedActivity();
+  vi.mocked(getActiveExecutionDetail).mockRejectedValue(
+    new (await import("../api/client")).BrowserAPIError("NOT_FOUND", "Execution not found", 404),
+  );
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getByRole("button", { name: "Acquire for analysis" })).toBeInTheDocument();
+  });
+});
+
+test("completed execution acquire button calls acquireArtifact and shows success state", async () => {
+  activityView.current = completedActivity();
+  vi.mocked(acquireArtifact).mockResolvedValue(acquiredArtifact);
+  vi.mocked(getActiveExecutionDetail).mockRejectedValue(
+    new (await import("../api/client")).BrowserAPIError("NOT_FOUND", "Execution not found", 404),
+  );
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getByRole("button", { name: "Acquire for analysis" })).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Acquire for analysis" }));
+  await vi.waitFor(() => {
+    expect(screen.getByText("Artifact acquired successfully.")).toBeInTheDocument();
+  });
+  expect(acquireArtifact).toHaveBeenCalledWith("trace-1", { tabId: "test-tab", csrfToken: "test-token" });
+  expect(screen.getByText("handle-abc")).toBeInTheDocument();
+});
+
+test("completed execution acquire button shows error on failure", async () => {
+  const { BrowserAPIError } = await import("../api/client");
+  activityView.current = completedActivity();
+  vi.mocked(acquireArtifact).mockRejectedValue(
+    new BrowserAPIError("ARTIFACT_IN_USE", "Artifact in use", 409),
+  );
+  vi.mocked(getActiveExecutionDetail).mockRejectedValue(
+    new BrowserAPIError("NOT_FOUND", "Execution not found", 404),
+  );
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getByRole("button", { name: "Acquire for analysis" })).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Acquire for analysis" }));
+  await vi.waitFor(() => {
+    expect(screen.getByText("Artifact in use")).toBeInTheDocument();
+  });
 });

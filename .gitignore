@@ -62,3 +62,6 @@ bifrost-console/web/playwright-report/
 bifrost-console/internal/webassets/generated/*
 !bifrost-console/internal/webassets/generated/embed-placeholder.txt
 bifrost-console/build/
+
+# Go test binaries
+*.test.exe

@@ -243,3 +243,92 @@ freshness, and replay-gap facts are announced
 via ARIA live regions. The SSE decoder handles split UTF-8 chunks
 incrementally and validates event names against the `bifrost.activity` and
 `console.*` namespaces.
+
+## Artifact cache and raw download
+
+Console maintains a local artifact cache beneath the verified workspace
+`transient/` subtree. Acquiring a trace artifact downloads the finalized
+NDJSON trace from the upstream application and installs it as a
+randomly named immutable file. Each installed entry carries an opaque handle, a
+charged byte count, and an idle TTL deadline. Entries with active leases
+(pins) cannot be removed; expiry during a pin defers removal until the last
+lease closes.
+
+### Capacity and eviction
+
+The `trace-workspace.max-bytes` setting bounds the aggregate bytes charged
+across all partial reservations and complete installed artifacts. When the
+cache is full, expired unused entries are evicted first, followed by
+least-recently-successfully-used (LRU) unpinned entries. Active leases are
+never evicted. The sentinel `unlimited` disables aggregate-capacity
+eviction entirely.
+
+### Idle TTL
+
+The `trace-workspace.idle-ttl` setting controls how long an unused entry
+remains after its last successful handle use. The TTL clock starts at the
+moment a lease closes successfully; viewing the storage snapshot or listing
+traces does not refresh it. The sentinel `never` disables idle expiry.
+Neither `unlimited` nor `never` changes scope rotation, shutdown, or restart
+cleanup.
+
+### Lifecycle and cleanup
+
+All local artifacts are bound to their acquiring target scope. When the
+target scope rotates (new target selected, credential replaced, or instance
+identity changes), every entry for the prior scope is invalidated and its
+installed file is removed. On process shutdown the entire `transient/`
+subtree is cleaned. On restart, any prior-process files beneath `transient/`
+are removed before the workspace is served; no prior-process cache metadata
+is adopted.
+
+### Handles and paths
+
+Artifact handles are opaque, process-local, and scope-bound identifiers.
+They are never durable across restarts, never shared between processes, and
+never derived from filesystem paths. Local filesystem paths never appear in
+handles, browser DTOs, HTTP headers, error messages, fixtures, or logs.
+
+### Browser API operations
+
+The browser API exposes five artifact operations:
+
+- **Acquire** (`POST /api/console/v1/artifacts/acquire`) — installs or joins
+  an existing local copy for a trace ID. Returns the opaque handle, local
+  byte count, and expiry facts. Requires session cookie, tab ID, and CSRF.
+- **Storage snapshot** (`POST /api/console/v1/artifacts/storage`) — returns a
+  side-effect-free view of the cache including charged bytes, entry count,
+  and per-entry metadata. Requires session cookie only (no CSRF).
+- **Remove** (`POST /api/console/v1/artifacts/remove`) — removes one unused
+  entry. Returns `ARTIFACT_IN_USE` (409) if the entry has an active lease.
+  Requires session cookie, tab ID, and CSRF.
+- **Clear expired** (`POST /api/console/v1/artifacts/clear-expired`) — removes
+  all expired unpinned entries. Requires session cookie, tab ID, and CSRF.
+- **Clear all unused** (`POST /api/console/v1/artifacts/clear-all-unused`) —
+  removes all unused entries regardless of expiry. Pinned entries are
+  preserved. Requires session cookie, tab ID, and CSRF.
+
+### Raw download
+
+A **raw download** (`GET /api/console/v1/artifacts/{traceId}/raw`) streams a
+finalized trace artifact directly from the upstream application without
+consulting or mutating the local cache. It requires a valid `SameSite=Strict`
+session cookie and exact Host match but no CSRF token. Cross-site and
+same-site fetch metadata is rejected. Query parameters, `Range`, and
+conditional request headers are rejected. When Fetch Metadata is present, the
+request must use navigation mode; ordinary same-origin `fetch()` calls are
+rejected. The response is
+`application/x-ndjson` with a safe `Content-Disposition: attachment`
+filename and `no-store` cache control. Raw download is separate from
+analysis acquisition: it never installs, handles, pins, or charges bytes,
+and it performs a fresh authenticated upstream stream each time.
+
+### Trace enrichment
+
+Trace list and detail responses are enriched with `localAvailable` (whether
+an installed copy exists), `artifactHandle` (the opaque handle when
+installed), and `applicationAvailability` (the last observed upstream
+availability at acquisition time). These facts are distinct from the
+observability service's current application-side metadata. The Trace Storage
+view in the browser shows the full cache snapshot with per-entry removal
+actions and bulk clear operations.

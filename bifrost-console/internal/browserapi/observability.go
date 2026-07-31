@@ -3,7 +3,9 @@ package browserapi
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 )
@@ -163,9 +165,16 @@ func (router *Router) tracesList(response http.ResponseWriter, request *http.Req
 		PageSize: body.PageSize,
 	})
 	if domain != nil {
+		if allowsCachedTraceFallback(domain) {
+			if cached, ok := router.cachedTracePage(scope.ID); ok {
+				router.writeScopedJSON(response, scope.ID, cached)
+				return
+			}
+		}
 		writeDomainError(response, domain)
 		return
 	}
+	page = router.enrichTracePage(scope.ID, page)
 	router.writeScopedJSON(response, scope.ID, page)
 }
 
@@ -188,10 +197,88 @@ func (router *Router) traceDetail(response http.ResponseWriter, request *http.Re
 	}
 	trace, domain := router.options.Observability.GetTrace(request.Context(), scope, body.TraceID)
 	if domain != nil {
+		if allowsCachedTraceFallback(domain) {
+			if cached, ok := router.cachedTrace(scope.ID, body.TraceID); ok {
+				router.writeScopedJSON(response, scope.ID, cached)
+				return
+			}
+		}
 		writeDomainError(response, domain)
 		return
 	}
+	trace = router.enrichTrace(scope.ID, trace)
 	router.writeScopedJSON(response, scope.ID, trace)
+}
+
+func allowsCachedTraceFallback(domain *consolecore.Error) bool {
+	if domain == nil {
+		return false
+	}
+	switch domain.Code {
+	case consolecore.CodeTargetAuthentication,
+		consolecore.CodeTargetAccessBlocked,
+		consolecore.CodeTargetUnavailable,
+		consolecore.CodeNotFound,
+		consolecore.CodeConsoleError:
+		return true
+	default:
+		return false
+	}
+}
+
+// cachedTrace returns acquisition-time trace facts for a valid installed
+// artifact without claiming that the application is currently reachable or
+// authorized.
+func (router *Router) cachedTrace(scope target.ScopeID, traceID string) (observability.Trace, bool) {
+	if router.options.Artifacts == nil {
+		return observability.Trace{}, false
+	}
+	lookup, domain := router.options.Artifacts.Lookup(scope, traceID)
+	if domain != nil || !lookup.LocalAvailable {
+		return observability.Trace{}, false
+	}
+	return observability.Trace{
+		TargetScopeID:             string(scope),
+		TraceID:                   lookup.Metadata.TraceID,
+		SessionID:                 lookup.Metadata.SessionID,
+		Outcome:                   lookup.Metadata.Outcome,
+		FinalizedAt:               lookup.Metadata.FinalizedAt,
+		SizeBytes:                 lookup.Metadata.SizeBytes,
+		PersistencePolicy:         lookup.Metadata.PersistencePolicy,
+		ApplicationTraceExpiresAt: lookup.Metadata.ApplicationTraceExpiresAt,
+		LocalAvailable:            true,
+		ArtifactHandle:            string(lookup.Handle),
+		ApplicationAvailability:   string(lookup.ApplicationAvailability),
+	}, true
+}
+
+func (router *Router) cachedTracePage(scope target.ScopeID) (observability.Page[observability.Trace], bool) {
+	if router.options.Artifacts == nil {
+		return observability.Page[observability.Trace]{}, false
+	}
+	snapshot, domain := router.options.Artifacts.StorageSnapshot(scope)
+	if domain != nil || len(snapshot.Entries) == 0 {
+		return observability.Page[observability.Trace]{}, false
+	}
+	items := make([]observability.Trace, 0, len(snapshot.Entries))
+	observedAt := snapshot.Entries[0].AcquiredAt
+	for _, entry := range snapshot.Entries {
+		if entry.AcquiredAt.After(observedAt) {
+			observedAt = entry.AcquiredAt
+		}
+		if trace, ok := router.cachedTrace(scope, entry.TraceID); ok {
+			items = append(items, trace)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].TraceID < items[j].TraceID })
+	if len(items) == 0 {
+		return observability.Page[observability.Trace]{}, false
+	}
+	return observability.Page[observability.Trace]{
+		TargetScopeID: string(scope),
+		Items:         items,
+		ObservedAt:    observedAt,
+	}, true
 }
 
 func (router *Router) writeScopedJSON(response http.ResponseWriter, scope target.ScopeID, value any) {

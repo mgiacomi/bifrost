@@ -37,6 +37,9 @@ func (client *fakeClient) Get(context.Context, string, int64, applicationclient.
 func (client *fakeClient) OpenActivity(context.Context, string, string, applicationclient.Credential) (*applicationclient.ActivityStream, error) {
 	return nil, nil
 }
+func (client *fakeClient) OpenArtifact(context.Context, string, string, applicationclient.Credential) (*applicationclient.ArtifactStream, error) {
+	return nil, nil
+}
 func (*fakeClient) Close() {}
 
 func fixedInstance(id string) applicationclient.Instance {

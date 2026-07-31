@@ -67,3 +67,38 @@ func (policy Policy) ValidateOrigin(request *http.Request) bool {
 	}
 	return policy.allowed[request.Host] == values[0]
 }
+
+// ValidateDownloadRequest validates a GET download navigation request. Unlike
+// ValidateOrigin, it accepts same-origin browser navigations that do not send
+// an Origin header (e.g. clicking an <a download> link). It rejects cross-site
+// and same-site fetch metadata and requires navigation mode when Fetch Metadata
+// is present. The SameSite=Strict session cookie provides the primary
+// cross-site boundary; this check prevents the no-CSRF attachment route from
+// becoming a script-readable fetch endpoint.
+func (policy Policy) ValidateDownloadRequest(request *http.Request) bool {
+	site := request.Header.Get("Sec-Fetch-Site")
+	switch site {
+	case "cross-site", "same-site":
+		return false
+	case "same-origin", "none":
+		if request.Header.Get("Sec-Fetch-Mode") != "navigate" {
+			return false
+		}
+		dest := request.Header.Get("Sec-Fetch-Dest")
+		if dest != "" && dest != "document" && dest != "empty" {
+			return false
+		}
+		user := request.Header.Get("Sec-Fetch-User")
+		return user == "" || user == "?1"
+	}
+	// Sec-Fetch-Site absent (older browsers): only the legacy navigation shape
+	// without Origin is accepted. If partial Fetch Metadata is present it must
+	// still describe a navigation.
+	if mode := request.Header.Get("Sec-Fetch-Mode"); mode != "" && mode != "navigate" {
+		return false
+	}
+	if dest := request.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "document" && dest != "empty" {
+		return false
+	}
+	return len(request.Header.Values("Origin")) == 0
+}

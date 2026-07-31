@@ -8,6 +8,7 @@ import { ActiveExecutions } from "../observability/ActiveExecutions";
 import { ActiveExecutionDetailView } from "../observability/ActiveExecutionDetail";
 import { Traces } from "../observability/Traces";
 import { TraceDetailView } from "../observability/TraceDetail";
+import { TraceStorage } from "../observability/TraceStorage";
 import { buildMetadata, type BuildMetadata } from "./metadata";
 
 function definitions(metadata: BuildMetadata) {
@@ -24,6 +25,7 @@ function definitions(metadata: BuildMetadata) {
         { path: "active-executions/:sessionId", element: <ActiveExecutionDetailView /> },
         { path: "traces", element: <Traces /> },
         { path: "traces/:traceId", element: <TraceDetailView /> },
+        { path: "trace-storage", element: <TraceStorage /> },
         { path: "*", element: <NotFound /> },
       ],
     },

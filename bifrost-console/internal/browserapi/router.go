@@ -1,17 +1,29 @@
 package browserapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/live"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 )
 
 const csrfHeader = "X-Bifrost-Console-CSRF"
+
+type ArtifactService interface {
+	Acquire(ctx context.Context, scope target.Scope, traceID string) (artifact.AcquiredArtifact, *consolecore.Error)
+	Lookup(scopeID target.ScopeID, traceID string) (artifact.LookupResult, *consolecore.Error)
+	StorageSnapshot(scopeID target.ScopeID) (artifact.StorageSnapshot, *consolecore.Error)
+	Remove(scopeID target.ScopeID, traceID string) *consolecore.Error
+	ClearExpired(scopeID target.ScopeID) *consolecore.Error
+	ClearAllUnused(scopeID target.ScopeID) *consolecore.Error
+}
 
 type Options struct {
 	Policy        Policy
@@ -24,6 +36,7 @@ type Options struct {
 	Target        *target.Context
 	Observability *observability.Service
 	Live          *live.Service
+	Artifacts     ArtifactService
 }
 
 type Router struct {
@@ -42,6 +55,14 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	response.Header().Set("Cache-Control", "no-store")
 	if !router.options.Policy.ValidateHost(request) {
 		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "Browser request rejected.")
+		return
+	}
+	if strings.HasPrefix(request.URL.Path, "/api/console/v1/artifacts/") && strings.HasSuffix(request.URL.Path, "/raw") {
+		if !router.options.Policy.ValidateDownloadRequest(request) {
+			writeError(response, http.StatusForbidden, "BROWSER_SECURITY_REJECTED", "Browser request rejected.")
+			return
+		}
+		router.withSessionDownload(response, request, router.artifactRawDownload)
 		return
 	}
 	if !router.options.Policy.ValidateOrigin(request) {
@@ -88,6 +109,16 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		router.withSession(response, request, false, router.tracesList)
 	case "/api/console/v1/traces/detail":
 		router.withSession(response, request, false, router.traceDetail)
+	case "/api/console/v1/artifacts/acquire":
+		router.withSession(response, request, true, router.artifactAcquire)
+	case "/api/console/v1/artifacts/storage":
+		router.withSession(response, request, false, router.artifactStorage)
+	case "/api/console/v1/artifacts/remove":
+		router.withSession(response, request, true, router.artifactRemove)
+	case "/api/console/v1/artifacts/clear-expired":
+		router.withSession(response, request, true, router.artifactClearExpired)
+	case "/api/console/v1/artifacts/clear-all-unused":
+		router.withSession(response, request, true, router.artifactClearAllUnused)
 	case "/api/console/v1/activity/stream":
 		router.withSessionSSE(response, request, router.activityStream)
 	case "/api/console/v1/activity/recent":

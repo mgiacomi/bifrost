@@ -201,3 +201,96 @@ func apiRequest(handler http.Handler, path, body string, cookie *http.Cookie) *h
 	handler.ServeHTTP(response, request)
 	return response
 }
+
+func TestRawDownloadRequiresSameSitePairedNavigation(t *testing.T) {
+	entropy := bytes.Repeat([]byte{40}, 32*16)
+	pairing := browserauth.NewPairing(nil, bytes.NewReader(entropy))
+	registry := browserauth.NewRegistry(nil, bytes.NewReader(entropy))
+	sessionID, _ := registry.CreateSession()
+	policy, _ := NewPolicy("127.0.0.1:7943", "http://127.0.0.1:7943", "")
+	router, _ := New(Options{
+		Policy: policy, Pairing: pairing, Sessions: registry,
+		PairingURL: func(value string) string { return value },
+	})
+	cookie := browserauth.SessionCookie(sessionID)
+
+	tests := []struct {
+		name        string
+		origin      string
+		fetchSite   string
+		cookie      *http.Cookie
+		host        string
+		wantStatus  int
+		wantBlocked bool
+	}{
+		{
+			name:       "same-origin navigation without Origin header passes security",
+			cookie:     cookie,
+			host:       "127.0.0.1:7943",
+			wantStatus: http.StatusInternalServerError, // no target context, but security passes
+		},
+		{
+			name:       "same-origin with Sec-Fetch-Site passes security",
+			fetchSite:  "same-origin",
+			cookie:     cookie,
+			host:       "127.0.0.1:7943",
+			wantStatus: http.StatusInternalServerError, // no target context, but security passes
+		},
+		{
+			name:        "cross-site fetch metadata rejected",
+			fetchSite:   "cross-site",
+			cookie:      cookie,
+			host:        "127.0.0.1:7943",
+			wantStatus:  http.StatusForbidden,
+			wantBlocked: true,
+		},
+		{
+			name:        "same-site fetch metadata rejected",
+			fetchSite:   "same-site",
+			cookie:      cookie,
+			host:        "127.0.0.1:7943",
+			wantStatus:  http.StatusForbidden,
+			wantBlocked: true,
+		},
+		{
+			name:        "missing session cookie rejected",
+			host:        "127.0.0.1:7943",
+			wantStatus:  http.StatusUnauthorized,
+			wantBlocked: true,
+		},
+		{
+			name:        "wrong host rejected",
+			cookie:      cookie,
+			host:        "evil.test",
+			wantStatus:  http.StatusBadRequest,
+			wantBlocked: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7943/api/console/v1/artifacts/trace-1/raw", nil)
+			request.Host = test.host
+			if test.origin != "" {
+				request.Header.Set("Origin", test.origin)
+			}
+			if test.fetchSite != "" {
+				request.Header.Set("Sec-Fetch-Site", test.fetchSite)
+				request.Header.Set("Sec-Fetch-Mode", "navigate")
+			}
+			if test.cookie != nil {
+				request.AddCookie(test.cookie)
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status=%d expected %d, body=%s", response.Code, test.wantStatus, response.Body.String())
+			}
+			if test.wantBlocked {
+				body := response.Body.String()
+				if strings.Contains(body, "trace-1") && strings.Contains(body, "ndjson") {
+					t.Fatalf("blocked request leaked artifact content: %s", body)
+				}
+			}
+		})
+	}
+}

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { BrowserAPIError, getActiveExecutionDetail } from "../api/client";
-import type { ActiveExecution } from "../api/contracts";
+import {
+  BrowserAPIError,
+  acquireArtifact,
+  getActiveExecutionDetail,
+} from "../api/client";
+import type { ActiveExecution, AcquiredArtifact } from "../api/contracts";
 import { useTarget } from "../target/TargetProvider";
 import {
   recoverObservabilityError,
@@ -14,6 +18,7 @@ import { ActivePath } from "../activity/ActivePath";
 import { CurrentExecutionSummary } from "../activity/CurrentExecutionSummary";
 import { scopeBoundPath } from "./scope";
 import { useOptionalObservability } from "./ObservabilityProvider";
+import { useBrowserSession } from "../security/BrowserSessionProvider";
 
 export function ActiveExecutionDetailView() {
   const { sessionId } = useParams();
@@ -30,9 +35,13 @@ export function ActiveExecutionDetailView() {
   const [error, setError] = useState<BrowserAPIError | null>(null);
   const [loading, setLoading] = useState(true);
   const [observationEnded, setObservationEnded] = useState(false);
+  const [acquiring, setAcquiring] = useState(false);
+  const [acquireError, setAcquireError] = useState<BrowserAPIError | null>(null);
+  const [acquired, setAcquired] = useState<AcquiredArtifact | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const refreshTarget = useRef(refresh);
   refreshTarget.current = refresh;
+  const session = useBrowserSession();
   const routeIsCurrent = useScopeBoundRoute();
   const activity = useOptionalActivity();
   const selectedActivity = (activity?.activities ?? []).filter((item) => item.sessionId === sessionId);
@@ -43,10 +52,10 @@ export function ActiveExecutionDetailView() {
   terminalActivityRef.current = terminalActivity;
   const artifactAvailable =
     terminalActivity?.kind === "TRACE_COMPLETED" &&
-    terminalActivity.details?.artifactAvailability === "AVAILABLE";
+    terminalActivity.details?.applicationTraceAvailability === "AVAILABLE";
   const finalizationFailed =
     terminalActivity?.kind === "EXECUTION_OBSERVATION_ENDED" &&
-    terminalActivity.details?.artifactAvailability === "CORE_FINALIZATION_FAILED";
+    terminalActivity.details?.applicationTraceAvailability === "CORE_FINALIZATION_FAILED";
   const traceID = selectedExecution?.traceId ?? terminalActivity?.traceId;
   const traceScopeID =
     selectedExecution?.targetScopeId ?? target.status.targetScopeId;
@@ -98,6 +107,27 @@ export function ActiveExecutionDetailView() {
     return () => { cancelled = true; };
   }, [routeIsCurrent, sessionId, scopeGeneration, target.status.targetScopeId, activity?.baselineObservedAt]);
 
+  const handleAcquire = async () => {
+    if (!traceID) return;
+    const security = session.getSecurity();
+    if (!security) {
+      setAcquireError(new BrowserAPIError("SESSION_REQUIRED", "Pairing is required.", 401));
+      return;
+    }
+    setAcquiring(true);
+    setAcquireError(null);
+    setAcquired(null);
+    try {
+      const result = await acquireArtifact(traceID, security);
+      setAcquired(result);
+    } catch (err) {
+      const recovered = await recoverObservabilityError(err, refreshTarget.current);
+      setAcquireError(recovered);
+    } finally {
+      setAcquiring(false);
+    }
+  };
+
   return (
     <section aria-labelledby="active-execution-detail-title" className="overview-card">
       <p className="eyebrow">Operational views</p>
@@ -144,6 +174,31 @@ export function ActiveExecutionDetailView() {
                   Inspect trace
                 </Link>
               </p>
+            )}
+            {artifactAvailable && traceID && (
+              <div className="trace-acquire-section">
+                <button
+                  type="button"
+                  onClick={() => void handleAcquire()}
+                  disabled={acquiring}
+                >
+                  {acquiring ? "Acquiring…" : "Acquire for analysis"}
+                </button>
+                {acquireError && (
+                  <div className="target-error" role="alert">
+                    <strong>{acquireError.message}</strong>
+                  </div>
+                )}
+                {acquired && (
+                  <div role="status">
+                    <p>Artifact acquired successfully.</p>
+                    <dl className="status-grid">
+                      <div><dt>Handle</dt><dd>{acquired.artifactHandle}</dd></div>
+                      <div><dt>Local bytes</dt><dd>{String(acquired.localBytes)}</dd></div>
+                    </dl>
+                  </div>
+                )}
+              </div>
             )}
             <CurrentExecutionSummary
               execution={selectedExecution}

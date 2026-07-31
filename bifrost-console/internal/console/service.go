@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/applicationclient"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserapi"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/browserauth"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/config"
@@ -146,6 +147,42 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 	}
 	defer liveService.Close()
 
+	artifactService, err := artifact.New(artifact.Config{
+		MaxBytes:    ownedProfile.Resolved.MaxBytes,
+		Unlimited:   ownedProfile.Resolved.Unlimited,
+		IdleTTL:     ownedProfile.Resolved.IdleTTL,
+		NeverExpire: ownedProfile.Resolved.NeverExpire,
+	}, artifact.Dependencies{
+		Lifetime:  coordinator.Context(),
+		Workspace: ownedWorkspace,
+		TraceLoader: func(ctx context.Context, scope target.Scope, traceID string) (artifact.TraceMetadata, *consolecore.Error) {
+			trace, domain := observabilityService.GetTrace(ctx, scope, traceID)
+			if domain != nil {
+				return artifact.TraceMetadata{}, domain
+			}
+			return artifact.TraceMetadata{
+				TraceID:                   trace.TraceID,
+				SessionID:                 trace.SessionID,
+				Outcome:                   trace.Outcome,
+				FinalizedAt:               trace.FinalizedAt,
+				SizeBytes:                 trace.SizeBytes,
+				PersistencePolicy:         trace.PersistencePolicy,
+				ApplicationTraceExpiresAt: trace.ApplicationTraceExpiresAt,
+			}, nil
+		},
+		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
+			return scope.OpenArtifact(ctx, traceID)
+		},
+		Fatal: coordinator.Fatal,
+	})
+	if err != nil {
+		return err
+	}
+	if err := targetContext.RegisterOwner("artifacts", artifactService); err != nil {
+		return err
+	}
+	defer artifactService.Close()
+
 	address := ownedProfile.Resolved.ListenerAddress
 	if options.ListenOverride != "" {
 		address = options.ListenOverride
@@ -187,6 +224,7 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 				Target:        targetContext,
 				Observability: observabilityService,
 				Live:          liveService,
+				Artifacts:     artifactService,
 			})
 			if err != nil {
 				return nil, err

@@ -147,3 +147,6 @@ func (address Address) TracesEndpoint() string { return address.observabilityRoo
 func (address Address) TraceEndpoint(traceId string) string {
 	return address.observabilityRoot + "/traces/" + url.PathEscape(traceId)
 }
+func (address Address) ArtifactEndpoint(traceId string) string {
+	return address.observabilityRoot + "/traces/" + url.PathEscape(traceId) + "/artifact"
+}

@@ -18,6 +18,8 @@ import type {
   RecentActivityRequest,
   ConnectionFact,
   Continuity,
+  AcquiredArtifact,
+  StorageSnapshot,
 } from "./contracts";
 import { openActivityStream as openStream } from "./activityStream";
 
@@ -154,6 +156,40 @@ export function listTraces(
 
 export function getTraceDetail(traceId: string): Promise<Trace> {
   return post("/api/console/v1/traces/detail", { traceId });
+}
+
+export function acquireArtifact(
+  traceId: string,
+  security: SecurityState,
+): Promise<AcquiredArtifact> {
+  return post("/api/console/v1/artifacts/acquire", { traceId }, security);
+}
+
+export function getStorageSnapshot(security: SecurityState): Promise<StorageSnapshot> {
+  return post("/api/console/v1/artifacts/storage", {}, security);
+}
+
+export function removeArtifact(
+  traceId: string,
+  security: SecurityState,
+): Promise<{ removed: boolean }> {
+  return post("/api/console/v1/artifacts/remove", { traceId }, security);
+}
+
+export function clearExpiredArtifacts(
+  security: SecurityState,
+): Promise<{ cleared: boolean }> {
+  return post("/api/console/v1/artifacts/clear-expired", {}, security);
+}
+
+export function clearAllUnusedArtifacts(
+  security: SecurityState,
+): Promise<{ cleared: boolean }> {
+  return post("/api/console/v1/artifacts/clear-all-unused", {}, security);
+}
+
+export function rawArtifactDownloadURL(traceId: string): string {
+  return `/api/console/v1/artifacts/${encodeURIComponent(traceId)}/raw`;
 }
 
 export function fetchRecentActivities(

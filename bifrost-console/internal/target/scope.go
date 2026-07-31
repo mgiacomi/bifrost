@@ -52,6 +52,9 @@ func (scope Scope) Upstream(parent context.Context, endpoint string, maxBytes in
 	body, instanceID, err := scope.client.Get(operation, endpoint, maxBytes, scope.credential)
 	if instanceID != "" && scope.InstanceID != "" && scope.InstanceID != instanceID {
 		slog.Error("upstream instance ID mismatch", "scopeId", scope.ID, "expected", scope.InstanceID, "actual", instanceID)
+		if scope.Context.Err() != nil {
+			return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, nil)
+		}
 		if scope.authority != nil {
 			scope.authority.revalidateAfterMismatch(parent, scope.ID)
 			if domain := scope.authority.RequireCurrent(scope.ID); domain != nil {
@@ -105,6 +108,9 @@ func (scope Scope) OpenActivity(parent context.Context, afterCursor string) (*ap
 		cancel()
 		var mismatch *applicationclient.InstanceMismatch
 		if errors.As(err, &mismatch) && scope.authority != nil {
+			if scope.Context.Err() != nil {
+				return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, nil)
+			}
 			scope.authority.revalidateAfterMismatch(parent, scope.ID)
 			if domain := scope.authority.RequireCurrent(scope.ID); domain != nil {
 				return nil, domain
@@ -129,6 +135,10 @@ func (scope Scope) OpenActivity(parent context.Context, afterCursor string) (*ap
 	context.AfterFunc(operation, func() {
 		_ = stream.Close()
 	})
+	stream.AddCloseHook(func() {
+		stopScopeCancellation()
+		cancel()
+	})
 	return stream, nil
 }
 
@@ -138,6 +148,68 @@ func (scope Scope) RevalidateInstance(parent context.Context) *consolecore.Error
 	}
 	scope.authority.revalidateAfterMismatch(parent, scope.ID)
 	return scope.authority.RequireCurrent(scope.ID)
+}
+
+// OpenArtifact opens a streaming GET to the authenticated Java finalized-trace
+// artifact endpoint for traceId within the current target scope. It combines
+// caller and scope cancellation the same way OpenActivity does: scope rotation
+// cancels the upstream stream and returns TARGET_CHANGED, while caller
+// cancellation is request-scoped. A late or mismatched instance identity
+// triggers revalidation and cannot publish a stream.
+//
+// The returned stream is owned by the caller and is closed automatically when
+// the operation context is cancelled. Callers must still close it to release
+// the upstream connection when finished.
+func (scope Scope) OpenArtifact(parent context.Context, traceId string) (*applicationclient.ArtifactStream, *consolecore.Error) {
+	if scope.credential == nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetAuthentication, "An application key is required.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	if scope.client == nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The selected target has no application access.", string(scope.ID), consolecore.Details{}, nil)
+	}
+	if err := parent.Err(); err != nil {
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The operation was canceled.", string(scope.ID), consolecore.Details{}, err)
+	}
+	operation, cancel := context.WithCancel(parent)
+	stopScopeCancellation := context.AfterFunc(scope.Context, cancel)
+	stream, err := scope.client.OpenArtifact(operation, traceId, scope.InstanceID, scope.credential)
+	if err != nil {
+		stopScopeCancellation()
+		cancel()
+		var mismatch *applicationclient.InstanceMismatch
+		if errors.As(err, &mismatch) && scope.authority != nil {
+			if scope.Context.Err() != nil {
+				return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, nil)
+			}
+			scope.authority.revalidateAfterMismatch(parent, scope.ID)
+			if domain := scope.authority.RequireCurrent(scope.ID); domain != nil {
+				return nil, domain
+			}
+		}
+		if errors.Is(err, context.Canceled) {
+			if parent.Err() != nil {
+				slog.Error("artifact stream canceled by caller", "scopeId", scope.ID)
+				return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The operation was canceled.", string(scope.ID), consolecore.Details{}, err)
+			}
+			slog.Error("artifact stream canceled by scope rotation", "scopeId", scope.ID)
+			return nil, consolecore.NewError(consolecore.CodeTargetChanged, "The selected target changed. Start this operation again.", string(scope.ID), consolecore.Details{}, err)
+		}
+		var failure *applicationclient.Failure
+		if errors.As(err, &failure) {
+			slog.Error("artifact stream upstream failure", "scopeId", scope.ID, "failureKind", failure.Kind)
+			return nil, failure.ConsoleError(string(scope.ID))
+		}
+		slog.Error("artifact stream transport error", "scopeId", scope.ID)
+		return nil, consolecore.NewError(consolecore.CodeTargetUnavailable, "The selected target is unavailable.", string(scope.ID), consolecore.Details{}, err)
+	}
+	context.AfterFunc(operation, func() {
+		_ = stream.Close()
+	})
+	stream.AddCloseHook(func() {
+		stopScopeCancellation()
+		cancel()
+	})
+	return stream, nil
 }
 
 func (scope Scope) GoString() string {

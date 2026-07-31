@@ -15,6 +15,7 @@ const (
 	CodeStaleCursor               Code = "STALE_CURSOR"
 	CodeNotFound                  Code = "NOT_FOUND"
 	CodeArtifactExpired           Code = "ARTIFACT_EXPIRED"
+	CodeArtifactInUse             Code = "ARTIFACT_IN_USE"
 	CodeInvalidArtifact           Code = "INVALID_ARTIFACT"
 	CodeLiveMonitoringUnavailable Code = "LIVE_MONITORING_UNAVAILABLE"
 	CodeLimitExceeded             Code = "LIMIT_EXCEEDED"

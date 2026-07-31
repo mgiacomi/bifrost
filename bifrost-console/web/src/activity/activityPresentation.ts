@@ -41,7 +41,7 @@ export function presentActivity(activity: Activity): ActivityPresentation {
 
   const artifactAvailable =
     kind === "TRACE_COMPLETED" &&
-    details?.artifactAvailability === "AVAILABLE";
+    details?.applicationTraceAvailability === "AVAILABLE";
 
   return { label, isTerminal, isError, isFrameBoundary, outcome, artifactAvailable };
 }

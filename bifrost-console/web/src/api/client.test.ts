@@ -16,6 +16,12 @@ import {
   recheckTarget,
   supplyTargetCredential,
   targetStatus,
+  acquireArtifact,
+  getStorageSnapshot,
+  removeArtifact,
+  clearExpiredArtifacts,
+  clearAllUnusedArtifacts,
+  rawArtifactDownloadURL,
 } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -251,4 +257,148 @@ test("active execution and trace detail functions preserve identifiers", async (
   expect(fetch.mock.calls[1]?.[0]).toBe("/api/console/v1/traces/detail");
   expect(JSON.parse((fetch.mock.calls[1]?.[1] as RequestInit).body as string))
     .toEqual({ traceId: "trace-1" });
+});
+
+test("acquireArtifact posts traceId with security headers", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ artifactHandle: "h", traceId: "trace-1" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await acquireArtifact("trace-1", { tabId: "tab", csrfToken: "csrf" });
+  expect(fetch.mock.calls[0]?.[0]).toBe("/api/console/v1/artifacts/acquire");
+  const options = fetch.mock.calls[0]?.[1] as RequestInit;
+  expect(options.method).toBe("POST");
+  expect(JSON.parse(options.body as string)).toEqual({ traceId: "trace-1" });
+  expect(options.headers).toMatchObject({
+    "X-Bifrost-Console-Tab": "tab",
+    "X-Bifrost-Console-CSRF": "csrf",
+  });
+});
+
+test("getStorageSnapshot posts with security headers and empty body", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ targetScopeId: "s", entries: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await getStorageSnapshot({ tabId: "tab", csrfToken: "csrf" });
+  expect(fetch.mock.calls[0]?.[0]).toBe("/api/console/v1/artifacts/storage");
+  const options = fetch.mock.calls[0]?.[1] as RequestInit;
+  expect(JSON.parse(options.body as string)).toEqual({});
+  expect(options.headers).toMatchObject({
+    "X-Bifrost-Console-Tab": "tab",
+    "X-Bifrost-Console-CSRF": "csrf",
+  });
+});
+
+test("removeArtifact posts traceId with security headers", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ removed: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await removeArtifact("trace-1", { tabId: "tab", csrfToken: "csrf" });
+  expect(fetch.mock.calls[0]?.[0]).toBe("/api/console/v1/artifacts/remove");
+  const options = fetch.mock.calls[0]?.[1] as RequestInit;
+  expect(JSON.parse(options.body as string)).toEqual({ traceId: "trace-1" });
+  expect(options.headers).toMatchObject({
+    "X-Bifrost-Console-Tab": "tab",
+    "X-Bifrost-Console-CSRF": "csrf",
+  });
+});
+
+test("clearExpiredArtifacts posts with security headers", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ cleared: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await clearExpiredArtifacts({ tabId: "tab", csrfToken: "csrf" });
+  expect(fetch.mock.calls[0]?.[0]).toBe("/api/console/v1/artifacts/clear-expired");
+  const options = fetch.mock.calls[0]?.[1] as RequestInit;
+  expect(JSON.parse(options.body as string)).toEqual({});
+  expect(options.headers).toMatchObject({
+    "X-Bifrost-Console-Tab": "tab",
+    "X-Bifrost-Console-CSRF": "csrf",
+  });
+});
+
+test("clearAllUnusedArtifacts posts with security headers", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ cleared: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await clearAllUnusedArtifacts({ tabId: "tab", csrfToken: "csrf" });
+  expect(fetch.mock.calls[0]?.[0]).toBe("/api/console/v1/artifacts/clear-all-unused");
+  const options = fetch.mock.calls[0]?.[1] as RequestInit;
+  expect(JSON.parse(options.body as string)).toEqual({});
+  expect(options.headers).toMatchObject({
+    "X-Bifrost-Console-Tab": "tab",
+    "X-Bifrost-Console-CSRF": "csrf",
+  });
+});
+
+test("rawArtifactDownloadURL encodes the trace ID", () => {
+  expect(rawArtifactDownloadURL("trace-1")).toBe("/api/console/v1/artifacts/trace-1/raw");
+  expect(rawArtifactDownloadURL("a/b c")).toBe("/api/console/v1/artifacts/a%2Fb%20c/raw");
+});
+
+test("acquireArtifact maps ARTIFACT_IN_USE error code", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "ARTIFACT_IN_USE", message: "Artifact in use" } }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  const error = await acquireArtifact("trace-1", { tabId: "tab", csrfToken: "csrf" })
+    .catch((value: unknown) => value);
+  expect(error).toBeInstanceOf(BrowserAPIError);
+  expect(error).toMatchObject({ code: "ARTIFACT_IN_USE", status: 409 });
+});
+
+test("acquireArtifact maps INVALID_ARTIFACT error code", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "INVALID_ARTIFACT", message: "Invalid artifact" } }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  const error = await acquireArtifact("trace-1", { tabId: "tab", csrfToken: "csrf" })
+    .catch((value: unknown) => value);
+  expect(error).toBeInstanceOf(BrowserAPIError);
+  expect(error).toMatchObject({ code: "INVALID_ARTIFACT", status: 422 });
+});
+
+test("getStorageSnapshot maps LOCAL_STORAGE_UNAVAILABLE error code", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "LOCAL_STORAGE_UNAVAILABLE", message: "Storage unavailable" } }),
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  const error = await getStorageSnapshot({ tabId: "tab", csrfToken: "csrf" })
+    .catch((value: unknown) => value);
+  expect(error).toBeInstanceOf(BrowserAPIError);
+  expect(error).toMatchObject({ code: "LOCAL_STORAGE_UNAVAILABLE", status: 503 });
 });

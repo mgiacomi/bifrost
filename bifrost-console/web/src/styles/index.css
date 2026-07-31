@@ -223,7 +223,11 @@ h1 {
   .foundation-card,
   .theme-button,
   .theme-popover,
-  .theme-option {
+  .theme-option,
+  .storage-table th,
+  .storage-table td,
+  .storage-actions button,
+  .trace-acquire-section button {
     border-color: CanvasText;
     box-shadow: none;
   }
@@ -353,6 +357,92 @@ h1 {
 
 .observability-table a:hover {
   text-decoration: underline;
+}
+
+.storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.storage-actions button {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--bf-border);
+  border-radius: 0.45rem;
+  background: var(--bf-surface);
+  color: var(--bf-text);
+  cursor: pointer;
+}
+
+.storage-actions button:hover {
+  background: color-mix(in srgb, var(--bf-accent) 12%, var(--bf-surface));
+}
+
+.storage-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.storage-table th,
+.storage-table td {
+  padding: 0.6rem;
+  border: 1px solid var(--bf-border);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.storage-table th {
+  color: var(--bf-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.storage-table a {
+  color: var(--bf-accent);
+  text-decoration: none;
+}
+
+.storage-table a:hover {
+  text-decoration: underline;
+}
+
+.trace-actions {
+  margin: 1.5rem 0;
+}
+
+.trace-actions h3 {
+  font-size: 1.2rem;
+}
+
+.trace-actions p {
+  margin: 0.5rem 0;
+}
+
+.trace-actions-note {
+  color: var(--bf-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.trace-acquire-section {
+  margin: 1rem 0;
+}
+
+.trace-acquire-section button {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--bf-border);
+  border-radius: 0.45rem;
+  background: var(--bf-surface);
+  color: var(--bf-text);
+  cursor: pointer;
+}
+
+.trace-acquire-section button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .source-path {
