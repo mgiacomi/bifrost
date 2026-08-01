@@ -162,6 +162,8 @@ type frameResult struct {
 	ChildFrameIDs           []string `json:"childFrameIds,omitempty"`
 	FrameType               string   `json:"frameType"`
 	Route                   string   `json:"route,omitempty"`
+	OpenedTimestampMillis   int64    `json:"openedTimestampMillis"`
+	ClosedTimestampMillis   *int64   `json:"closedTimestampMillis"`
 	InclusiveDurationMillis *int64   `json:"inclusiveDurationMillis"`
 	SelfDurationMillis      *int64   `json:"selfDurationMillis"`
 	DirectUsage             Usage    `json:"directUsage"`

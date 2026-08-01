@@ -131,6 +131,31 @@ func TestBrowserArtifactFixtureCorpusMatchesCommittedInventoryByteForByte(t *tes
 	assertFixtureCorpus(t, root, expected)
 }
 
+func TestBrowserTraceAnalysisFixtureCorpusMatchesCommittedInventoryByteForByte(t *testing.T) {
+	scope := "11111111-1111-4111-8111-111111111111"
+	duration := int64(12)
+	opened := int64(100)
+	closed := int64(112)
+	next := "opaque-continuation"
+	expected := map[string]any{
+		"summary.json":                   summaryDTO{TargetScopeID: scope, TraceID: "trace-1", SessionID: "session-1", Outcome: "FAILED", RecordCount: 4, FrameCount: 1, RootFrameIDs: []string{}, UsageComplete: false},
+		"frames.json":                    pageDTO[frameDTO]{TargetScopeID: scope, Items: []frameDTO{{FrameID: "frame-1", ChildFrameIDs: []string{}, FrameType: "SKILL", Route: "hello", OpenedTimestampMillis: opened, ClosedTimestampMillis: &closed, InclusiveDurationMillis: &duration, DirectUsage: usageValueDTO{PromptUnits: 10, CompletionUnits: 2, TotalUnits: 12}, DirectUsageComplete: true, InclusiveUsage: usageValueDTO{PromptUnits: 10, CompletionUnits: 2, TotalUnits: 12}, InclusiveUsageComplete: true}}, HasMore: true, NextCursor: &next},
+		"records.json":                   pageDTO[recordDTO]{TargetScopeID: scope, Items: []recordDTO{{Sequence: 3, Type: "MODEL_RESPONSE_RECEIVED", FrameID: "frame-1", FrameType: "SKILL", Route: "hello", ThreadName: "worker-1", TimestampMillis: 112, Representation: "logical", IsEnvelope: true, PayloadID: "payload-1"}}, HasMore: false},
+		"usage.json":                     usageDTO{TargetScopeID: scope, Attributed: usageValueDTO{PromptUnits: 10, CompletionUnits: 2, TotalUnits: 12}},
+		"attempts.json":                  pageDTO[attemptDTO]{TargetScopeID: scope, Items: []attemptDTO{}, HasMore: false},
+		"retries.json":                   pageDTO[retryDTO]{TargetScopeID: scope, Items: []retryDTO{{RetrySequenceID: "retry-1", Usage: usageValueDTO{TotalUnits: 12}, UsageComplete: false}}, HasMore: true, NextCursor: &next},
+		"validation-links.json":          pageDTO[validationDTO]{TargetScopeID: scope, Items: []validationDTO{{Status: "VALID", RetrySequenceID: "retry-1", AttemptID: "attempt-1", AttemptNumber: 2}}, HasMore: false},
+		"failures.json":                  pageDTO[failureDTO]{TargetScopeID: scope, Items: []failureDTO{{FailureID: "failure-1", Terminal: true}}, HasMore: false},
+		"payloads.json":                  pageDTO[payloadDTO]{TargetScopeID: scope, Items: []payloadDTO{}, HasMore: false},
+		"gaps.json":                      pageDTO[gapDTO]{TargetScopeID: scope, Items: []gapDTO{{Kind: "MISSING_TIMESTAMP", FrameID: "frame-1"}}, HasMore: false},
+		"uncertainties.json":             pageDTO[uncertaintyDTO]{TargetScopeID: scope, Items: []uncertaintyDTO{{Kind: "INCOMPLETE_DURATION", FrameID: "frame-1"}}, HasMore: false},
+		"search.json":                    pageDTO[searchDTO]{TargetScopeID: scope, Items: []searchDTO{{Sequence: 3, RecordType: "MODEL_RESPONSE_RECEIVED", FrameID: "frame-1", MatchOffset: 2, MatchLength: 4, SearchedField: "payload"}}, HasMore: true, NextCursor: &next},
+		"range.json":                     map[string]any{"targetScopeId": scope, "actualStart": int64(0), "actualEnd": int64(4), "totalLength": int64(4), "contentType": "text/plain", "encoding": "TEXT", "content": "<a>", "hasMore": false, "nextCursor": nil},
+		"base64-range-continuation.json": map[string]any{"targetScopeId": scope, "actualStart": int64(4), "actualEnd": int64(8), "totalLength": int64(12), "contentType": "application/octet-stream", "encoding": "BASE64", "content": "AQIDBA==", "hasMore": true, "nextCursor": next},
+	}
+	assertFixtureCorpus(t, filepath.Join("..", "..", "browser-fixtures", "trace-analysis"), expected)
+}
+
 // assertFixtureCorpus verifies that every file in root matches a Go value in
 // expected, marshaled to JSON with a trailing newline. It checks that the
 // directory contains exactly the expected files (no more, no fewer) and that

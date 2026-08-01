@@ -159,7 +159,6 @@ func (service *Service) QueryFrames(ctx context.Context, scopeID target.ScopeID,
 	if err != nil {
 		return Page[FrameSummary]{}, storageError(string(scopeID), err)
 	}
-
 	var nextCursor string
 	if hasMore {
 		nextCursor, err = encodePositionCursor(cursorOpFrames, string(scopeID), query.Handle, fingerprint, nextPosition)
@@ -236,6 +235,8 @@ func frameResultToSummary(f frameResult, ctx TraceContext) FrameSummary {
 		ChildFrameIDs:           append([]string(nil), f.ChildFrameIDs...),
 		FrameType:               f.FrameType,
 		Route:                   f.Route,
+		OpenedTimestampMillis:   f.OpenedTimestampMillis,
+		ClosedTimestampMillis:   f.ClosedTimestampMillis,
 		InclusiveDurationMillis: f.InclusiveDurationMillis,
 		SelfDurationMillis:      f.SelfDurationMillis,
 		DirectUsage:             f.DirectUsage,

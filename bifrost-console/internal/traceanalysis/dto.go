@@ -53,9 +53,14 @@ type FrameSummary struct {
 	ParentFrameID *string
 	// ChildFrameIDs contains the immediate children in canonical frame-open
 	// order so adapters can traverse the hierarchy without recalculating it.
-	ChildFrameIDs           []string
-	FrameType               string
-	Route                   string
+	ChildFrameIDs []string
+	FrameType     string
+	Route         string
+	// OpenedTimestampMillis and ClosedTimestampMillis are the authoritative
+	// record timestamps for the frame boundaries. ClosedTimestampMillis is nil
+	// for an incomplete frame; adapters must not infer it from duration.
+	OpenedTimestampMillis   int64
+	ClosedTimestampMillis   *int64
 	InclusiveDurationMillis *int64
 	SelfDurationMillis      *int64
 	DirectUsage             Usage

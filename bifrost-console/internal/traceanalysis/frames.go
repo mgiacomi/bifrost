@@ -258,9 +258,12 @@ func (g *frameGraph) results() ([]frameResult, []gapResult, []uncertaintyResult,
 		f := g.frames[id]
 		var inclusiveDuration *int64
 		var selfDuration *int64
+		var closedTimestamp *int64
 		if f.closed {
 			d := f.closedMillis - f.openedMillis
 			inclusiveDuration = &d
+			closed := f.closedMillis
+			closedTimestamp = &closed
 			selfDuration = computeSelfDuration(f, g, &uncertainties)
 		}
 		desc := descendant[id]
@@ -281,6 +284,8 @@ func (g *frameGraph) results() ([]frameResult, []gapResult, []uncertaintyResult,
 			ChildFrameIDs:           append([]string(nil), f.children...),
 			FrameType:               string(f.frameType),
 			Route:                   f.route,
+			OpenedTimestampMillis:   f.openedMillis,
+			ClosedTimestampMillis:   closedTimestamp,
 			InclusiveDurationMillis: inclusiveDuration,
 			SelfDurationMillis:      selfDuration,
 			DirectUsage:             direct,

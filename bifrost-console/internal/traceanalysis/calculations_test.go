@@ -842,6 +842,12 @@ func TestUsageCalculatesDirectDescendantInclusiveAttemptAndRetryWithoutDoubleCou
 	frameByID := map[string]frameResult{}
 	for _, f := range frames {
 		frameByID[f.FrameID] = f
+		if f.OpenedTimestampMillis == 0 || f.ClosedTimestampMillis == nil {
+			t.Fatalf("frame boundary timestamps were not persisted in the frame index: %+v", f)
+		}
+		if f.InclusiveDurationMillis == nil || *f.ClosedTimestampMillis-f.OpenedTimestampMillis != *f.InclusiveDurationMillis {
+			t.Fatalf("persisted frame boundaries do not match the authoritative duration: %+v", f)
+		}
 	}
 	// tool: direct=(1,1,2), descendant=(0,0,0), inclusive=(1,1,2)
 	tool := frameByID["tool"]

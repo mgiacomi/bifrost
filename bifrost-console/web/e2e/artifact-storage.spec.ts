@@ -29,11 +29,51 @@ function makeTraceMetadata(traceId: string, sessionId: string, outcome: string, 
     traceId,
     sessionId,
     outcome,
-    finalizedAt: "2026-07-25T12:00:00Z",
+    // Both Java-produced fixture artifacts complete at this instant. The
+    // console's processor deliberately checks this metadata against the
+    // terminal NDJSON record, so the paired target must report it exactly.
+    finalizedAt: "2026-07-24T12:00:00Z",
     sizeBytes,
-    persistencePolicy: "PERSISTENT",
+    persistencePolicy: "ALWAYS",
     applicationTraceExpiresAt: "2026-08-01T12:00:00Z",
   });
+}
+
+function metadataFromArtifact(body: Buffer): string {
+  const records = body.toString("utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as { traceId: string; sessionId: string; timestamp: number; recordType: string; metadata?: { outcome?: string } });
+  const first = records[0];
+  const completion = records.findLast((record) => record.recordType === "TRACE_COMPLETED");
+  return JSON.stringify({
+    targetScopeId: "scope-1", traceId: first.traceId, sessionId: first.sessionId,
+    outcome: completion?.metadata?.outcome ?? "SUCCEEDED",
+    finalizedAt: new Date((completion?.timestamp ?? first.timestamp) * 1000).toISOString(),
+    sizeBytes: body.length, persistencePolicy: "ALWAYS", applicationTraceExpiresAt: "2026-08-01T12:00:00Z",
+  });
+}
+
+function makeLargeChunkedPayloadArtifact(): Buffer {
+  const traceId = "trace-large-chunked-payload";
+  const sessionId = "session-large-chunked-payload";
+  const timestamp = 1784894400;
+  const common = { traceId, sessionId, timestamp, frameId: null, parentFrameId: null, frameType: null, route: null, threadName: "fixture-thread" };
+  const chunkCount = 36;
+  const chunkBytes = 64 * 1024;
+  const records: Array<Record<string, unknown>> = [
+    { ...common, sequence: 1, recordType: "TRACE_STARTED", metadata: { tracePath: "generated/large-chunked-payload.ndjson" }, data: { sessionId } },
+    { ...common, sequence: 2, recordType: "TRACE_CAPTURE_POLICY_RECORDED", metadata: { persistencePolicy: "ALWAYS" }, data: null },
+    { ...common, sequence: 3, recordType: "MODEL_REQUEST_PREPARED", metadata: { retrySequenceId: "retry-1", attemptId: "attempt-1", attemptNumber: 1 }, data: { messages: ["user"] } },
+    { ...common, sequence: 4, recordType: "MODEL_REQUEST_SENT", metadata: { retrySequenceId: "retry-1", attemptId: "attempt-1", attemptNumber: 1, payloadId: "payload-large", chunkCount, payloadChunked: true, contentType: "application/json" }, data: null },
+  ];
+  for (let index = 0; index < chunkCount; index++) {
+    const prefix = index === 0 ? '{"content":"' : "";
+    const suffix = index === chunkCount - 1 ? '"}' : "";
+    records.push({ ...common, sequence: 5 + index, recordType: "PAYLOAD_CHUNK_APPENDED", metadata: { payloadId: "payload-large", chunkIndex: index, chunkCount, contentType: "application/json" }, data: prefix + "x".repeat(chunkBytes) + suffix });
+  }
+  records.push(
+    { ...common, sequence: 5 + chunkCount, recordType: "MODEL_RESPONSE_RECEIVED", metadata: { retrySequenceId: "retry-1", attemptId: "attempt-1", attemptNumber: 1, usage: { promptUnits: 2, completionUnits: 1, totalUnits: 3, precision: "EXACT" } }, data: { content: "done" } },
+    { ...common, sequence: 6 + chunkCount, recordType: "TRACE_COMPLETED", metadata: { outcome: "SUCCEEDED", sessionUsageSnapshot: { promptUnits: 2, completionUnits: 1, totalUnits: 3 }, errored: false, persistencePolicy: "ALWAYS" }, data: null },
+  );
+  return Buffer.from(records.map((record) => JSON.stringify(record)).join("\n") + "\n");
 }
 
 function makeTargetServer(initial: TargetState) {
@@ -81,10 +121,7 @@ function makeTargetServer(initial: TargetState) {
       response.writeHead(200, headers);
       response.end(
         JSON.stringify({
-          items: [
-            JSON.parse(state.traceMetadata),
-            JSON.parse(makeTraceMetadata("trace-terminal-failure", "session-terminal-failure", "FAILED", readFixture("terminal-failure.ndjson").length)),
-          ],
+          items: Object.values(state.artifactBodies).map((body) => JSON.parse(metadataFromArtifact(body))),
           hasMore: false,
           nextCursor: null,
           observedAt: "2026-07-27T00:00:00Z",
@@ -102,9 +139,9 @@ function makeTargetServer(initial: TargetState) {
         response.end(state.traceMetadata);
         return;
       }
-      if (traceId === "trace-terminal-failure") {
+      if (state.artifactBodies[traceId]) {
         response.writeHead(200, headers);
-        response.end(makeTraceMetadata("trace-terminal-failure", "session-terminal-failure", "FAILED", readFixture("terminal-failure.ndjson").length));
+        response.end(metadataFromArtifact(state.artifactBodies[traceId]));
         return;
       }
     }
@@ -179,6 +216,12 @@ const test = consoleTest.extend<{
       artifactBodies: {
         "trace-single-attempt-success": artifactBody,
         "trace-terminal-failure": failureBody,
+        "trace-nested-frame-usage": readFixture("nested-frame-usage.ndjson"),
+        "trace-repeated-skill-invocations": readFixture("repeated-skill-invocations.ndjson"),
+        "trace-chunked-json-payload": readFixture("chunked-json-payload.ndjson"),
+        "trace-incomplete-frame-duration": readFixture("incomplete-frame-duration.ndjson"),
+        "trace-large-chunked-payload": makeLargeChunkedPayloadArtifact(),
+        "trace-nested-retry-sequences": readFixture("nested-retry-sequences.ndjson"),
       },
     });
     const handle = await server.listen();
@@ -210,6 +253,12 @@ async function navigateToTraceDetail(page: import("@playwright/test").Page, cons
   await expect(page.getByRole("heading", { name: "Trace Catalog" })).toBeVisible();
   await page.getByRole("link", { name: traceId }).click();
   await expect(page.getByRole("heading", { name: "Trace Detail" })).toBeVisible({ timeout: 10_000 });
+}
+
+async function acquireAndOpenExplorer(page: import("@playwright/test").Page, consoleProcess: { origin: string }, traceId: string) {
+  await navigateToTraceDetail(page, consoleProcess, traceId);
+  await page.getByRole("button", { name: "Acquire for analysis" }).click();
+  await expect(page.getByRole("heading", { name: "Trace explorer" })).toBeVisible({ timeout: 15_000 });
 }
 
 // navigateToTraceStorage extracts the current target scope ID from the page URL
@@ -264,11 +313,13 @@ test("WF-AS-01 completed trace acquisition installs a local copy and raw downloa
   await expect(page.locator("table.storage-table")).toContainText("SUCCEEDED");
   await expect(page.locator("table.storage-table")).toContainText("AVAILABLE");
 
-  // The raw download link must stream the exact Java-produced fixture bytes.
-  // Navigate back to the trace detail to access the raw download link.
+  // Raw attachment download requires a deliberate confirmation and streams
+  // the exact Java-produced fixture bytes without changing local storage.
   await navigateToTraceDetail(page, consoleProcess, "trace-single-attempt-success");
+  await page.getByRole("button", { name: "Download raw attachment" }).click();
+  await expect(page.getByRole("dialog", { name: "Download raw attachment?" })).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: "Raw artifact download" }).click();
+  await page.getByRole("link", { name: "Confirm raw attachment download" }).click();
   const download = await downloadPromise;
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
@@ -277,6 +328,105 @@ test("WF-AS-01 completed trace acquisition installs a local copy and raw downloa
   }
   const downloaded = Buffer.concat(chunks);
   expect(downloaded.equals(readFixture("single-attempt-success.ndjson"))).toBe(true);
+});
+
+test("WF-AS-01E acquired trace opens bounded explorer evidence without exposing an artifact handle", async ({
+  page,
+  consoleProcess,
+  targetApp,
+}) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await navigateToTraceDetail(page, consoleProcess, "trace-single-attempt-success");
+  await page.getByRole("button", { name: "Acquire for analysis" }).click();
+  await expect(page.getByText("Artifact acquired successfully.")).toBeVisible({ timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Trace explorer" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("handle-abc")).toHaveCount(0);
+  await page.getByRole("tab", { name: "Records" }).click();
+  await expect(page.getByRole("heading", { name: "Records" })).toBeVisible();
+  await page.getByRole("button", { name: "Read raw record" }).first().click();
+  const evidence = page.getByRole("region", { name: "Evidence content" });
+  await expect(evidence).toBeVisible();
+  await expect(evidence.getByRole("link")).toHaveCount(0);
+});
+
+test("WF-EXPENSIVE-EXECUTION explores returned hierarchy timeline and frame usage", async ({ page, consoleProcess, targetApp }) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await acquireAndOpenExplorer(page, consoleProcess, "trace-nested-frame-usage");
+  const child = page.getByRole("button", { name: "SKILL_EXECUTION: root.skill" });
+  await child.click();
+  await expect(page).toHaveURL(/frameId=skill/);
+  await page.getByRole("tab", { name: "Timeline" }).click();
+  await expect(page.getByRole("img").first()).toBeVisible();
+  await expect(page).toHaveURL(/frameId=skill/);
+  await page.getByRole("tab", { name: "Usage" }).click();
+  await expect(page.getByRole("table", { name: "Usage facts" })).toContainText("Selected frame direct");
+  await expect(page.getByRole("table", { name: "Usage facts" })).toContainText("6");
+  await page.setViewportSize({ width: 640, height: 720 });
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await page.evaluate(() => { document.documentElement.style.zoom = "200%"; });
+  await page.getByRole("tab", { name: "Hierarchy" }).focus();
+  await expect(page.getByRole("tab", { name: "Hierarchy" })).toBeFocused();
+});
+
+test("WF-UNFAMILIAR-SKILL-PATH retains repeated invocation selection across views and reload", async ({ page, consoleProcess, targetApp }) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await acquireAndOpenExplorer(page, consoleProcess, "trace-repeated-skill-invocations");
+  const repeated = page.getByRole("button", { name: "SKILL_EXECUTION: root.skill" });
+  await expect(repeated).toHaveCount(2);
+  await repeated.nth(1).click();
+  await expect(page).toHaveURL(/frameId=skill-2/);
+  await page.getByRole("tab", { name: "Timeline" }).click();
+  await expect(page.locator('.trace-timeline-row[aria-current="true"]')).toContainText("root.skill");
+  await page.reload();
+  await expect(page.locator('.trace-timeline-row[aria-current="true"]')).toContainText("root.skill", { timeout: 15_000 });
+});
+
+test("WF-FAILED-EXECUTION explores failure and inert supporting records", async ({ page, consoleProcess, targetApp }) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await acquireAndOpenExplorer(page, consoleProcess, "trace-terminal-failure");
+  await page.getByRole("tab", { name: "Records" }).click();
+  const failure = page.getByRole("button", { name: "failure-terminal (terminal)" });
+  await failure.click();
+  await expect(page).toHaveURL(/failureId=failure-terminal/);
+  await page.getByRole("button", { name: "Read raw record" }).last().click();
+  const evidence = page.getByRole("region", { name: "Evidence content" });
+  await expect(evidence).toContainText("Text bytes");
+  await expect(evidence.getByRole("link")).toHaveCount(0);
+});
+
+test("chunked payload inspection is deliberate and incomplete timing stays explicit", async ({ page, consoleProcess, targetApp }) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await acquireAndOpenExplorer(page, consoleProcess, "trace-chunked-json-payload");
+  await page.getByRole("tab", { name: "Records" }).click();
+  await page.getByRole("button", { name: "Read payload" }).click();
+  await expect(page.getByRole("region", { name: "Evidence content" })).toContainText("application/json");
+  await navigateToTraceDetail(page, consoleProcess, "trace-incomplete-frame-duration");
+  await page.getByRole("button", { name: "Acquire for analysis" }).click();
+  await page.getByRole("tab", { name: "Timeline" }).click();
+  await expect(page.getByText("Timing unavailable or incomplete")).toBeVisible();
+});
+
+test("multi-megabyte payload remains bounded and continuable", async ({ page, consoleProcess, targetApp }) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await acquireAndOpenExplorer(page, consoleProcess, "trace-large-chunked-payload");
+  await page.getByRole("tab", { name: "Records" }).click();
+  await page.getByRole("button", { name: "Read payload" }).click();
+  const evidence = page.getByRole("region", { name: "Evidence content" });
+  await expect(evidence).toContainText("Text bytes 0–65536");
+  await evidence.getByRole("button", { name: "Read next range" }).click();
+  await expect(evidence).toContainText("Text bytes 65536–131072");
+  await expect(evidence.locator("pre")).toHaveText("x".repeat(65536));
+});
+
+test("nested retry attempts remain separate returned facts", async ({ page, consoleProcess, targetApp }) => {
+  await connectToTarget(page, consoleProcess, targetApp.origin);
+  await acquireAndOpenExplorer(page, consoleProcess, "trace-nested-retry-sequences");
+  await page.getByRole("tab", { name: "Records" }).click();
+  await expect(page.getByRole("button", { name: "Retry retry-outer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry retry-inner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "attempt-inner-1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "attempt-inner-2" })).toBeVisible();
 });
 
 // WF-AS-02: A failed (FAILED outcome) trace can also be acquired for analysis
@@ -361,20 +511,23 @@ test("WF-AS-04 installed evidence remains after auth rejection while raw downloa
   await expect(page.locator("table.storage-table")).toContainText("trace-single-attempt-success");
   await expect(page.locator("table.storage-table")).toContainText("SUCCEEDED");
 
-  // The trace detail page must show the auth rejection error (the upstream
-  // refuses to serve trace metadata). The acquire button is not available
-  // because the trace cannot be loaded.
+  // The cached trace detail and local explorer remain usable. Acquisition is
+  // deliberately separate from current application authorization.
   await page.goto(`${consoleProcess.origin}/traces/trace-single-attempt-success?targetScopeId=${encodeURIComponent(scopeId)}`);
   await expect(page.getByRole("heading", { name: "Trace Detail" })).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator(".target-error", { hasText: /rejected|authentication/i })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Available", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Trace explorer" })).toBeVisible({ timeout: 15_000 });
 
-  // Restore the credential. The trace detail page must load again and a new
-  // acquisition must succeed.
+  // Restore the credential. The local copy remains installed (so acquisition
+  // is not offered again) and the independent application download works.
   targetApp.setState({ authRejected: false });
   await page.reload();
-  await expect(page.getByRole("button", { name: "Acquire for analysis" })).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Acquire for analysis" }).click();
-  await expect(page.getByText("Artifact acquired successfully.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Open explorer" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Acquire for analysis" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Download raw attachment" }).click();
+  const restoredDownload = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Confirm raw attachment download" }).click();
+  await restoredDownload;
 });
 
 // WF-AS-05: Target rotation clears the local artifact cache. The old scope's

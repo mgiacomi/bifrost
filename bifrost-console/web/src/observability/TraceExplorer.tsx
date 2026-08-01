@@ -1,0 +1,331 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useSearchParams } from "react-router";
+import {
+  BrowserAPIError,
+  getPayloadRange,
+  getRawRecordRange,
+  getTraceAnalysisSummary,
+  getTraceAttempts,
+  getTraceFailures,
+  getTraceFrames,
+  getTraceGaps,
+  getTracePayloads,
+  getTraceRecords,
+  getTraceRetries,
+  getTraceUncertainties,
+  getTraceUsage,
+  getTraceValidationLinks,
+  searchTraceEvidence,
+  type TraceFrameFilter,
+} from "../api/client";
+import type {
+  TraceAnalysisPage,
+  TraceAnalysisSummary,
+  TraceAttempt,
+  TraceFailure,
+  TraceFrame,
+  TraceGap,
+  TracePayload,
+  TraceRange,
+  TraceRecord,
+  TraceRetry,
+  TraceSearchResult,
+  TraceUncertainty,
+  TraceUsage as Usage,
+  TraceValidation,
+} from "../api/contracts";
+import { useTarget } from "../target/TargetProvider";
+import { TraceEvidenceDetail } from "./TraceEvidenceDetail";
+import { TraceHierarchy } from "./TraceHierarchy";
+import { TraceRecords } from "./TraceRecords";
+import { TraceTimeline } from "./TraceTimeline";
+import { TraceUsage } from "./TraceUsage";
+import { requireCurrentTargetScope } from "./scope";
+import { readTraceExplorerState, setTraceExplorerSelection, type TraceExplorerView } from "./traceExplorerState";
+
+const views: TraceExplorerView[] = ["hierarchy", "timeline", "usage", "records"];
+
+function appendPage<T>(current: TraceAnalysisPage<T>, next: TraceAnalysisPage<T>) {
+  return { ...next, items: [...current.items, ...next.items] };
+}
+
+function mergeFrames(current: TraceAnalysisPage<TraceFrame> | undefined, added: TraceFrame[]) {
+  if (!current) return undefined;
+  const known = new Set(current.items.map((frame) => frame.frameId));
+  return { ...current, items: [...current.items, ...added.filter((frame) => !known.has(frame.frameId))] };
+}
+
+export function TraceExplorer({ traceId, onArtifactUnavailable }: { traceId: string; onArtifactUnavailable?: (error: BrowserAPIError) => void }) {
+  const { target, scopeGeneration, refresh } = useTarget();
+  const [params, setParams] = useSearchParams();
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
+  const state = readTraceExplorerState(params);
+  const [summary, setSummary] = useState<TraceAnalysisSummary>();
+  const [frames, setFrames] = useState<TraceAnalysisPage<TraceFrame>>();
+  const [records, setRecords] = useState<TraceAnalysisPage<TraceRecord>>();
+  const [attempts, setAttempts] = useState<TraceAnalysisPage<TraceAttempt>>();
+  const [retries, setRetries] = useState<TraceAnalysisPage<TraceRetry>>();
+  const [failures, setFailures] = useState<TraceAnalysisPage<TraceFailure>>();
+  const [validations, setValidations] = useState<TraceAnalysisPage<TraceValidation>>();
+  const [gaps, setGaps] = useState<TraceAnalysisPage<TraceGap>>();
+  const [uncertainties, setUncertainties] = useState<TraceAnalysisPage<TraceUncertainty>>();
+  const [payloads, setPayloads] = useState<TraceAnalysisPage<TracePayload>>();
+  const [searchText, setSearchText] = useState("");
+  const [searchResults, setSearchResults] = useState<TraceAnalysisPage<TraceSearchResult>>();
+  const [usage, setUsage] = useState<Usage>();
+  const [range, setRange] = useState<TraceRange>();
+  const [rangeRequest, setRangeRequest] = useState<{ payloadId?: string; recordSequence?: number }>();
+  const [error, setError] = useState<string>();
+  const [scopeMismatch, setScopeMismatch] = useState(false);
+  const [pending, setPending] = useState<Set<string>>(() => new Set());
+  const currentScopeID = target.status.targetScopeId;
+  const select = useCallback((values: Record<string, string | number | undefined>) => {
+    setParamsRef.current((current) => setTraceExplorerSelection(current, values), { replace: true });
+  }, []);
+  const verifyScope = useCallback(async <T extends { targetScopeId: string }>(response: T) => {
+    if (!response.targetScopeId || response.targetScopeId !== currentScopeID) {
+      setScopeMismatch(true);
+      select({ frameId: undefined, recordSequence: undefined, failureId: undefined });
+    }
+    await requireCurrentTargetScope(response.targetScopeId, currentScopeID, refresh);
+    return response;
+  }, [currentScopeID, refresh, select]);
+  const reportError = useCallback((value: unknown, artifactLookup = false) => {
+    const normalized = value instanceof Error ? value : new Error("The trace evidence could not be loaded.");
+    const browserError = normalized instanceof BrowserAPIError || "code" in normalized ? normalized as BrowserAPIError : undefined;
+    if (browserError?.code === "TARGET_CHANGED") {
+      select({ frameId: undefined, recordSequence: undefined, failureId: undefined });
+    }
+    if (browserError && (browserError.code === "ARTIFACT_EXPIRED" || (artifactLookup && browserError.code === "NOT_FOUND"))) {
+      select({ view: undefined, frameId: undefined, recordSequence: undefined, failureId: undefined });
+      setSummary(undefined);
+      setFrames(undefined);
+      setRecords(undefined);
+      setRange(undefined);
+      onArtifactUnavailable?.(browserError);
+    }
+    setError(normalized.message);
+  }, [onArtifactUnavailable, select]);
+  const begin = (key: string) => setPending((value) => new Set(value).add(key));
+  const end = (key: string) => setPending((value) => { const next = new Set(value); next.delete(key); return next; });
+
+  useEffect(() => {
+    if (!state.valid) select({ view: undefined, frameId: undefined, recordSequence: undefined, failureId: undefined });
+  }, [select, state.valid]);
+  useEffect(() => {
+    if (!state.valid || !currentScopeID) return;
+    let stopped = false;
+    setSummary(undefined);
+    setFrames(undefined);
+    setRecords(undefined);
+    setAttempts(undefined);
+    setRetries(undefined);
+    setFailures(undefined);
+    setValidations(undefined);
+    setGaps(undefined);
+    setUncertainties(undefined);
+    setPayloads(undefined);
+    setSearchResults(undefined);
+    setUsage(undefined);
+    setRange(undefined);
+    setRangeRequest(undefined);
+    setError(undefined);
+    setScopeMismatch(false);
+    Promise.all([getTraceAnalysisSummary(traceId).then(verifyScope), getTraceFrames(traceId).then(verifyScope)])
+      .then(([summaryResult, framePage]) => { if (!stopped) { setSummary(summaryResult); setFrames(framePage); } })
+      .catch((value) => { if (!stopped) reportError(value, true); });
+    return () => { stopped = true; };
+  }, [currentScopeID, reportError, scopeGeneration, state.valid, traceId, verifyScope]);
+
+  const loadRecords = useCallback(() => {
+    if (scopeMismatch || records || pending.has("record-facts")) return;
+    begin("record-facts");
+    Promise.all([
+      getTraceRecords(traceId).then(verifyScope),
+      getTraceAttempts(traceId).then(verifyScope),
+      getTraceRetries(traceId).then(verifyScope),
+      getTraceFailures(traceId).then(verifyScope),
+      getTraceValidationLinks(traceId).then(verifyScope),
+      getTraceGaps(traceId).then(verifyScope),
+      getTraceUncertainties(traceId).then(verifyScope),
+      getTracePayloads(traceId).then(verifyScope),
+    ]).then(([recordPage, attemptPage, retryPage, failurePage, validationPage, gapPage, uncertaintyPage, payloadPage]) => {
+      setRecords(recordPage);
+      setAttempts(attemptPage);
+      setRetries(retryPage);
+      setFailures(failurePage);
+      setValidations(validationPage);
+      setGaps(gapPage);
+      setUncertainties(uncertaintyPage);
+      setPayloads(payloadPage);
+    }).catch((value) => reportError(value, true)).finally(() => end("record-facts"));
+  }, [pending, records, reportError, scopeMismatch, traceId, verifyScope]);
+  const loadUsage = useCallback(() => {
+    if (!scopeMismatch && !usage && !pending.has("usage")) {
+      begin("usage");
+      void getTraceUsage(traceId).then(verifyScope).then(setUsage).catch((value) => reportError(value, true)).finally(() => end("usage"));
+    }
+  }, [pending, reportError, scopeMismatch, traceId, usage, verifyScope]);
+  useEffect(() => {
+    if (!summary) return;
+    if (state.view === "records") loadRecords();
+    if (state.view === "usage") loadUsage();
+  }, [loadRecords, loadUsage, state.view, summary]);
+
+  const selectedFrame = frames?.items.find((frame) => frame.frameId === state.frameId);
+  const loadAncestry = useCallback(async (startingFrame: TraceFrame) => {
+    const known = new Map((frames?.items ?? []).map((frame) => [frame.frameId, frame]));
+    known.set(startingFrame.frameId, startingFrame);
+    const added = [startingFrame];
+    const visited = new Set<string>();
+    let current: TraceFrame | undefined = startingFrame;
+    while (current?.parentFrameId && !visited.has(current.parentFrameId)) {
+      const parentFrameId: string = current.parentFrameId;
+      visited.add(parentFrameId);
+      let parent = known.get(parentFrameId);
+      if (!parent) {
+        const page: TraceAnalysisPage<TraceFrame> = await getTraceFrames(traceId, undefined, { frameIds: [parentFrameId] }).then(verifyScope);
+        parent = page.items[0];
+        if (!parent) break;
+        known.set(parent.frameId, parent);
+        added.push(parent);
+      }
+      current = parent;
+    }
+    setFrames((value) => mergeFrames(value, added));
+    return startingFrame;
+  }, [frames, traceId, verifyScope]);
+  useEffect(() => {
+    if (scopeMismatch || !frames || !state.frameId || selectedFrame || pending.has("deep-frame")) return;
+    begin("deep-frame");
+    void getTraceFrames(traceId, undefined, { frameIds: [state.frameId] }).then(verifyScope).then((page) => {
+      const frame = page.items[0];
+      if (frame) return loadAncestry(frame);
+      select({ frameId: undefined });
+      return undefined;
+    }).catch((value) => reportError(value, true)).finally(() => end("deep-frame"));
+  }, [frames, loadAncestry, pending, reportError, scopeMismatch, select, selectedFrame, state.frameId, traceId, verifyScope]);
+  useEffect(() => {
+    if (scopeMismatch || !records || !state.recordSequence || records.items.some((record) => record.sequence === state.recordSequence) || pending.has("deep-record")) return;
+    begin("deep-record");
+    void getTraceRecords(traceId, undefined, { minSequence: state.recordSequence, maxSequence: state.recordSequence }).then(verifyScope).then((page) => {
+      const record = page.items[0];
+      if (record) setRecords((current) => current ? { ...current, items: [...current.items, record] } : page);
+      else select({ recordSequence: undefined });
+    }).catch((value) => reportError(value, true)).finally(() => end("deep-record"));
+  }, [pending, records, reportError, scopeMismatch, select, state.recordSequence, traceId, verifyScope]);
+  useEffect(() => {
+    if (!scopeMismatch && failures && state.failureId && !failures.items.some((failure) => failure.failureId === state.failureId) && !failures.hasMore) {
+      select({ failureId: undefined });
+    }
+  }, [failures, scopeMismatch, select, state.failureId]);
+  const breadcrumbs = useMemo(() => {
+    if (!selectedFrame || !frames) return [];
+    const byID = new Map(frames.items.map((frame) => [frame.frameId, frame]));
+    const result: TraceFrame[] = [];
+    const visited = new Set<string>();
+    let current: TraceFrame | undefined = selectedFrame;
+    while (current && !visited.has(current.frameId)) {
+      visited.add(current.frameId);
+      result.unshift(current);
+      current = current.parentFrameId ? byID.get(current.parentFrameId) : undefined;
+    }
+    return result;
+  }, [frames, selectedFrame]);
+  const selectRelatedFrame = (filter: TraceFrameFilter) => {
+    if (pending.has("related-frame")) return;
+    begin("related-frame");
+    void getTraceFrames(traceId, undefined, filter).then(verifyScope).then((page) => {
+      const frame = page.items[0];
+      if (!frame) {
+        setError("No frame is mechanically related to that evidence.");
+        return;
+      }
+      return loadAncestry(frame).then(() => select({ frameId: frame.frameId }));
+    }).catch((value) => reportError(value, true)).finally(() => end("related-frame"));
+  };
+  const readRaw = (record: TraceRecord, cursor?: string) => {
+    if (pending.has("range")) return;
+    begin("range");
+    void getRawRecordRange(traceId, record.sequence, cursor).then(verifyScope).then((result) => {
+      setRangeRequest({ recordSequence: record.sequence });
+      setRange(result);
+    }).catch((value) => reportError(value, false)).finally(() => end("range"));
+  };
+  const readPayload = (payloadId: string, cursor?: string) => {
+    if (pending.has("range")) return;
+    begin("range");
+    void getPayloadRange(traceId, payloadId, cursor).then(verifyScope).then((result) => {
+      setRangeRequest({ payloadId });
+      setRange(result);
+    }).catch((value) => reportError(value, false)).finally(() => end("range"));
+  };
+  const nextRange = () => {
+    if (!range?.hasMore || !range.nextCursor) return;
+    if (rangeRequest?.payloadId) readPayload(rangeRequest.payloadId, range.nextCursor);
+    else if (rangeRequest?.recordSequence) readRaw({ sequence: rangeRequest.recordSequence } as TraceRecord, range.nextCursor);
+  };
+  const search = () => {
+    if (!searchText || pending.has("search")) return;
+    begin("search");
+    void searchTraceEvidence(traceId, searchText).then(verifyScope).then(setSearchResults).catch((value) => reportError(value, true)).finally(() => end("search"));
+  };
+  const loadMore = <T,>(key: string, current: TraceAnalysisPage<T> | undefined, request: (cursor: string) => Promise<TraceAnalysisPage<T>>, setter: (value: TraceAnalysisPage<T>) => void) => {
+    if (!current?.hasMore || !current.nextCursor || pending.has(key)) return;
+    begin(key);
+    void request(current.nextCursor).then(verifyScope).then((next) => setter(appendPage(current, next))).catch((value) => reportError(value, true)).finally(() => end(key));
+  };
+  useEffect(() => {
+    if (!failures || !state.failureId || failures.items.some((failure) => failure.failureId === state.failureId) || !failures.hasMore || !failures.nextCursor || pending.has("deep-failure")) return;
+    begin("deep-failure");
+    void getTraceFailures(traceId, failures.nextCursor).then(verifyScope).then((next) => setFailures(appendPage(failures, next))).catch((value) => reportError(value, true)).finally(() => end("deep-failure"));
+  }, [failures, pending, reportError, state.failureId, traceId, verifyScope]);
+  const factContinuation = <T,>(label: string, key: string, page: TraceAnalysisPage<T> | undefined, request: (cursor: string) => Promise<TraceAnalysisPage<T>>, setter: (value: TraceAnalysisPage<T>) => void) => page?.hasMore && page.nextCursor ? (
+    <button type="button" disabled={pending.has(key)} onClick={() => loadMore(key, page, request, setter)}>{pending.has(key) ? "Loading…" : `Load more ${label}`}</button>
+  ) : null;
+  const handleTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % views.length;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + views.length) % views.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = views.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextView = views[nextIndex];
+    select({ view: nextView });
+    const tabs = event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    tabs?.[nextIndex]?.focus();
+  };
+
+  return <section className="trace-explorer" aria-labelledby="trace-explorer-title">
+    <h3 id="trace-explorer-title">Trace explorer</h3>
+    <div aria-live="polite" aria-atomic="true">{error && <p className="target-error" role="alert">{error}</p>}</div>
+    {!summary ? <p role="status">Loading trace evidence…</p> : <>
+      <p>{summary.outcome} · {summary.frameCount} frames · {summary.recordCount} records{!summary.usageComplete && " · usage incomplete"}</p>
+      {breadcrumbs.length > 0 && <nav aria-label="Selected frame breadcrumbs">{breadcrumbs.map((frame, index) => <span key={frame.frameId}>{index > 0 && " / "}<button type="button" onClick={() => select({ frameId: frame.frameId })}>{frame.route || frame.frameId}</button></span>)}</nav>}
+      <div role="tablist" aria-label="Trace evidence views">{views.map((view, index) => <button id={`trace-tab-${view}`} aria-controls={`trace-panel-${view}`} key={view} type="button" role="tab" tabIndex={state.view === view ? 0 : -1} aria-selected={state.view === view} onKeyDown={(event) => handleTabKey(event, index)} onClick={() => select({ view })}>{view[0].toUpperCase() + view.slice(1)}</button>)}</div>
+      <div id={`trace-panel-${state.view}`} role="tabpanel" aria-labelledby={`trace-tab-${state.view}`} tabIndex={0}>
+        {state.view === "hierarchy" && <><TraceHierarchy frames={frames?.items ?? []} selectedFrameId={state.frameId} onSelect={(frameId) => select({ frameId })} />{frames?.hasMore && <button type="button" disabled={pending.has("frames")} onClick={() => loadMore("frames", frames, (cursor) => getTraceFrames(traceId, cursor), setFrames)}>Load more frames</button>}</>}
+        {state.view === "timeline" && <TraceTimeline frames={frames?.items ?? []} selectedFrameId={state.frameId} onSelect={(frameId) => select({ frameId })} />}
+        {state.view === "usage" && <TraceUsage usage={usage} frame={selectedFrame} />}
+        {state.view === "records" && <>
+          <form onSubmit={(event) => { event.preventDefault(); search(); }}><label>Literal search <input value={searchText} onChange={(event) => setSearchText(event.target.value)} /></label><button type="submit" disabled={!searchText || pending.has("search")}>Search</button></form>
+          {searchResults && <section aria-label="Literal search results"><p role="status">{searchResults.items.length} literal matches</p><ol>{searchResults.items.map((match) => <li key={`${match.sequence}-${match.searchedField}-${match.matchOffset}`}><button type="button" onClick={() => select({ view: "records", recordSequence: match.sequence, frameId: match.frameId || undefined })}>{match.recordType} record {match.sequence}</button> · {match.searchedField} bytes {match.matchOffset}–{match.matchOffset + match.matchLength}</li>)}</ol>{searchResults.hasMore && <button type="button" disabled={pending.has("search-page")} onClick={() => loadMore("search-page", searchResults, (cursor) => searchTraceEvidence(traceId, searchText, cursor), setSearchResults)}>Load more matches</button>}</section>}
+          <TraceRecords records={records?.items ?? []} attempts={attempts?.items ?? []} retries={retries?.items ?? []} failures={failures?.items ?? []} validations={validations?.items ?? []} gaps={gaps?.items ?? []} uncertainties={uncertainties?.items ?? []} payloads={payloads?.items ?? []} selectedRecordSequence={state.recordSequence} selectedFailureId={state.failureId} onSelectRecord={(record) => select({ recordSequence: record.sequence, frameId: record.frameId || undefined })} onSelectFailure={(failureId) => select({ failureId })} onRelatedFrame={selectRelatedFrame} onRaw={readRaw} onPayload={readPayload} />
+          <div className="trace-continuations" aria-label="Additional evidence pages">
+            {records?.hasMore && <button type="button" disabled={pending.has("records")} onClick={() => loadMore("records", records, (cursor) => getTraceRecords(traceId, cursor), setRecords)}>Load more records</button>}
+            {factContinuation("attempts", "attempts", attempts, (cursor) => getTraceAttempts(traceId, cursor), setAttempts)}
+            {factContinuation("retries", "retries", retries, (cursor) => getTraceRetries(traceId, cursor), setRetries)}
+            {factContinuation("failures", "failures", failures, (cursor) => getTraceFailures(traceId, cursor), setFailures)}
+            {factContinuation("validation links", "validations", validations, (cursor) => getTraceValidationLinks(traceId, cursor), setValidations)}
+            {factContinuation("gaps", "gaps", gaps, (cursor) => getTraceGaps(traceId, cursor), setGaps)}
+            {factContinuation("uncertainties", "uncertainties", uncertainties, (cursor) => getTraceUncertainties(traceId, cursor), setUncertainties)}
+            {factContinuation("payloads", "payloads", payloads, (cursor) => getTracePayloads(traceId, cursor), setPayloads)}
+          </div>
+        </>}
+      </div>
+      <TraceEvidenceDetail range={range} pending={pending.has("range")} onNext={nextRange} onClear={() => { setRange(undefined); setRangeRequest(undefined); }} />
+    </>}
+  </section>;
+}

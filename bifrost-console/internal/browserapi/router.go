@@ -12,6 +12,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/live"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/observability"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/traceanalysis"
 )
 
 const csrfHeader = "X-Bifrost-Console-CSRF"
@@ -23,6 +24,26 @@ type ArtifactService interface {
 	Remove(scopeID target.ScopeID, traceID string) *consolecore.Error
 	ClearExpired(scopeID target.ScopeID) *consolecore.Error
 	ClearAllUnused(scopeID target.ScopeID) *consolecore.Error
+}
+
+// TraceAnalysisService is the internal, adapter-facing query surface.  Browser
+// callers identify an installed artifact by trace ID; the adapter resolves the
+// opaque handle and never exposes it in analysis responses.
+type TraceAnalysisService interface {
+	GetSummary(context.Context, target.ScopeID, traceanalysis.SummaryRequest) (traceanalysis.TraceSummary, *consolecore.Error)
+	QueryFrames(context.Context, target.ScopeID, traceanalysis.FrameQuery) (traceanalysis.Page[traceanalysis.FrameSummary], *consolecore.Error)
+	QueryRecords(context.Context, target.ScopeID, traceanalysis.RecordQuery) (traceanalysis.Page[traceanalysis.RecordSummary], *consolecore.Error)
+	QueryAttempts(context.Context, target.ScopeID, traceanalysis.AttemptQuery) (traceanalysis.Page[traceanalysis.AttemptSummary], *consolecore.Error)
+	QueryRetries(context.Context, target.ScopeID, traceanalysis.RetryQuery) (traceanalysis.Page[traceanalysis.RetrySummary], *consolecore.Error)
+	QueryValidationLinks(context.Context, target.ScopeID, traceanalysis.ValidationQuery) (traceanalysis.Page[traceanalysis.ValidationSummary], *consolecore.Error)
+	QueryFailures(context.Context, target.ScopeID, traceanalysis.FailureQuery) (traceanalysis.Page[traceanalysis.FailureSummary], *consolecore.Error)
+	QueryPayloads(context.Context, target.ScopeID, traceanalysis.PayloadQuery) (traceanalysis.Page[traceanalysis.PayloadDescriptor], *consolecore.Error)
+	QueryGaps(context.Context, target.ScopeID, traceanalysis.GapQuery) (traceanalysis.Page[traceanalysis.Gap], *consolecore.Error)
+	QueryUncertainties(context.Context, target.ScopeID, traceanalysis.UncertaintyQuery) (traceanalysis.Page[traceanalysis.Uncertainty], *consolecore.Error)
+	GetUsageBreakdown(context.Context, target.ScopeID, artifact.Handle) (traceanalysis.UsageBreakdown, *consolecore.Error)
+	Search(context.Context, target.ScopeID, traceanalysis.SearchQuery) (traceanalysis.Page[traceanalysis.SearchResult], *consolecore.Error)
+	ReadPayloadRange(context.Context, target.ScopeID, traceanalysis.RangeRequest) (traceanalysis.ByteRangeResult, *consolecore.Error)
+	ReadRawRecordRange(context.Context, target.ScopeID, traceanalysis.RangeRequest) (traceanalysis.ByteRangeResult, *consolecore.Error)
 }
 
 type Options struct {
@@ -37,6 +58,7 @@ type Options struct {
 	Observability *observability.Service
 	Live          *live.Service
 	Artifacts     ArtifactService
+	TraceAnalysis TraceAnalysisService
 }
 
 type Router struct {
@@ -109,6 +131,34 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		router.withSession(response, request, false, router.tracesList)
 	case "/api/console/v1/traces/detail":
 		router.withSession(response, request, false, router.traceDetail)
+	case "/api/console/v1/traces/analysis/summary":
+		router.withSession(response, request, false, router.traceAnalysisSummary)
+	case "/api/console/v1/traces/analysis/frames":
+		router.withSession(response, request, false, router.traceAnalysisFrames)
+	case "/api/console/v1/traces/analysis/records":
+		router.withSession(response, request, false, router.traceAnalysisRecords)
+	case "/api/console/v1/traces/analysis/usage":
+		router.withSession(response, request, false, router.traceAnalysisUsage)
+	case "/api/console/v1/traces/analysis/attempts":
+		router.withSession(response, request, false, router.traceAnalysisAttempts)
+	case "/api/console/v1/traces/analysis/retries":
+		router.withSession(response, request, false, router.traceAnalysisRetries)
+	case "/api/console/v1/traces/analysis/validation-links":
+		router.withSession(response, request, false, router.traceAnalysisValidationLinks)
+	case "/api/console/v1/traces/analysis/failures":
+		router.withSession(response, request, false, router.traceAnalysisFailures)
+	case "/api/console/v1/traces/analysis/payloads":
+		router.withSession(response, request, false, router.traceAnalysisPayloads)
+	case "/api/console/v1/traces/analysis/gaps":
+		router.withSession(response, request, false, router.traceAnalysisGaps)
+	case "/api/console/v1/traces/analysis/uncertainties":
+		router.withSession(response, request, false, router.traceAnalysisUncertainties)
+	case "/api/console/v1/traces/analysis/search":
+		router.withSession(response, request, false, router.traceAnalysisSearch)
+	case "/api/console/v1/traces/analysis/payload-range":
+		router.withSession(response, request, false, router.traceAnalysisPayloadRange)
+	case "/api/console/v1/traces/analysis/raw-record-range":
+		router.withSession(response, request, false, router.traceAnalysisRawRecordRange)
 	case "/api/console/v1/artifacts/acquire":
 		router.withSession(response, request, true, router.artifactAcquire)
 	case "/api/console/v1/artifacts/storage":

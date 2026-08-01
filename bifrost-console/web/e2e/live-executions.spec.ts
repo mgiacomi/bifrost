@@ -1,5 +1,12 @@
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test as consoleTest, expect } from "./fixtures/consoleProcess";
+
+const fixtureRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../bifrost-console-fixtures/traces");
+const completedTraceArtifact = fs.readFileSync(path.join(fixtureRoot, "single-attempt-success.ndjson"), "utf8").replaceAll("trace-single-attempt-success", "trace-1").replaceAll("session-single-attempt-success", "session-1");
+const completedTraceMetadata = JSON.stringify({ targetScopeId: "scope-1", traceId: "trace-1", sessionId: "session-1", outcome: "SUCCEEDED", finalizedAt: "2026-07-24T12:00:00Z", sizeBytes: new TextEncoder().encode(completedTraceArtifact).byteLength, persistencePolicy: "ALWAYS", applicationTraceExpiresAt: "2026-08-03T00:00:00Z" });
 
 type TargetState = {
   instanceId: string;
@@ -127,9 +134,7 @@ function makeTargetServer(initialState: TargetState) {
     // execution can be inspected and acquired after TRACE_COMPLETED.
     if (path === "/_bifrost/observability/v1/traces/trace-1") {
       response.writeHead(200, headers);
-      response.end(
-        '{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"SUCCEEDED","finalizedAt":"2026-07-27T00:00:10Z","sizeBytes":128,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-08-03T00:00:00Z"}',
-      );
+      response.end(completedTraceMetadata);
       return;
     }
 
@@ -137,15 +142,14 @@ function makeTargetServer(initialState: TargetState) {
     // acquisition flow can install a local copy after completion. The body
     // must be exactly 128 bytes to match the sizeBytes in the trace metadata.
     if (path === "/_bifrost/observability/v1/traces/trace-1/artifact") {
-      const artifactBody = '{"kind":"TRACE_STARTED","summary":"completed execution"}\n' + " ".repeat(128 - 57);
       response.writeHead(200, {
         "Content-Type": "application/x-ndjson",
         "X-Bifrost-Instance-Id": state.instanceId,
-        "Content-Length": String(artifactBody.length),
+        "Content-Length": String(new TextEncoder().encode(completedTraceArtifact).byteLength),
         "Content-Disposition": 'attachment; filename="bifrost-trace-trace-1.ndjson"',
         "Cache-Control": "no-store",
       });
-      response.end(artifactBody);
+      response.end(completedTraceArtifact);
       return;
     }
 

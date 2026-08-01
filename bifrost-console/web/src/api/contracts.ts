@@ -218,6 +218,43 @@ export type Page<T> = {
   observedAt: string;
 };
 
+export type TraceAnalysisSummary = {
+  targetScopeId: string; traceId: string; sessionId: string; outcome: string;
+  terminalFailureId: string | null; recordCount: number; frameCount: number;
+  attemptCount: number; retryCount: number; validationCount: number;
+  failureCount: number; payloadCount: number; gapCount: number;
+  uncertaintyCount: number; rootFrameIds: string[];
+  attributedUsage: TraceUsageValue; terminalUsage: TraceUsageValue;
+  unattributedUsage: TraceUsageValue; unframedAttributedUsage: TraceUsageValue;
+  usageComplete: boolean;
+};
+export type TraceFrame = {
+  frameId: string; parentFrameId: string | null; childFrameIds: string[];
+  frameType: string; route: string; openedTimestampMillis: number;
+  closedTimestampMillis: number | null; inclusiveDurationMillis: number | null;
+  selfDurationMillis: number | null; directUsage: TraceUsageValue;
+  directUsageComplete: boolean; descendantUsage: TraceUsageValue;
+  descendantUsageComplete: boolean; inclusiveUsage: TraceUsageValue;
+  inclusiveUsageComplete: boolean;
+};
+export type TraceRecord = {
+  sequence: number; type: string; frameId: string; parentFrameId: string;
+  frameType: string; route: string; threadName: string; timestampMillis: number;
+  representation: string; isChunk: boolean; isEnvelope: boolean; payloadId: string;
+};
+export type TraceAnalysisPage<T> = { targetScopeId: string; items: T[]; hasMore: boolean; nextCursor: string | null };
+export type TraceRange = { targetScopeId: string; actualStart: number; actualEnd: number; totalLength: number; contentType: string; encoding: "TEXT" | "BASE64"; content: string; hasMore: boolean; nextCursor: string | null };
+export type TraceUsage = { targetScopeId: string; attributed: TraceUsageValue; unattributed: TraceUsageValue; unframedAttributed: TraceUsageValue; terminal: TraceUsageValue };
+export type TraceUsageValue = { promptUnits: number; completionUnits: number; totalUnits: number };
+export type TraceAttempt = { retrySequenceId: string; attemptId: string; attemptNumber: number; usage: TraceUsageValue; usageComplete: boolean };
+export type TraceRetry = { retrySequenceId: string; usage: TraceUsageValue; usageComplete: boolean };
+export type TraceFailure = { failureId: string; terminal: boolean };
+export type TraceValidation = { status: string; retrySequenceId: string; attemptId: string; attemptNumber: number };
+export type TraceGap = { kind: string; frameId: string; attemptId: string };
+export type TraceUncertainty = { kind: string; frameId: string };
+export type TracePayload = { payloadId: string; sequence: number; contentType: string; chunkCount: number; storeLength: number };
+export type TraceSearchResult = { sequence: number; recordType: string; frameId: string; matchOffset: number; matchLength: number; searchedField: string };
+
 export type ActivePage = Page<ActiveExecution> & {
   resumeCursor: string | null;
 };

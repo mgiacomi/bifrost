@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 import {
   BrowserAPIError,
   acquireArtifact,
@@ -14,9 +14,11 @@ import {
   requireCurrentTargetScope,
 } from "./scope";
 import { useScopeBoundRoute } from "./useScopeBoundRoute";
+import { TraceExplorer } from "./TraceExplorer";
 
 export function TraceDetailView() {
   const { traceId } = useParams();
+  const navigate = useNavigate();
   const { target, scopeGeneration, refresh } = useTarget();
   const session = useBrowserSession();
   const [trace, setTrace] = useState<Trace | null>(null);
@@ -25,7 +27,11 @@ export function TraceDetailView() {
   const [acquiring, setAcquiring] = useState(false);
   const [acquireError, setAcquireError] = useState<BrowserAPIError | null>(null);
   const [acquired, setAcquired] = useState<AcquiredArtifact | null>(null);
+  const [confirmDownload, setConfirmDownload] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const cancelDownload = useRef<HTMLButtonElement>(null);
+  const downloadTrigger = useRef<HTMLButtonElement>(null);
+  const downloadDialog = useRef<HTMLDivElement>(null);
   const refreshTarget = useRef(refresh);
   refreshTarget.current = refresh;
   const routeIsCurrent = useScopeBoundRoute();
@@ -33,6 +39,43 @@ export function TraceDetailView() {
   useEffect(() => {
     heading.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (confirmDownload) cancelDownload.current?.focus();
+  }, [confirmDownload]);
+
+  const closeDownload = () => {
+    setConfirmDownload(false);
+    requestAnimationFrame(() => downloadTrigger.current?.focus());
+  };
+
+  const handleDialogKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDownload();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = [...(downloadDialog.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? [])];
+    if (controls.length === 0) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const handleArtifactUnavailable = useCallback((artifactError: BrowserAPIError) => {
+    setTrace((current) => current ? { ...current, localAvailable: false } : current);
+    setAcquired(null);
+    setAcquireError(artifactError);
+    const targetScopeID = target.status.targetScopeId;
+    navigate(`/traces/${encodeURIComponent(traceId ?? "")}${targetScopeID ? `?targetScopeId=${encodeURIComponent(targetScopeID)}` : ""}`, { replace: true });
+  }, [navigate, target.status.targetScopeId, traceId]);
 
   useEffect(() => {
     if (!traceId || !routeIsCurrent) return;
@@ -67,6 +110,8 @@ export function TraceDetailView() {
     try {
       const result = await acquireArtifact(traceId, security);
       setAcquired(result);
+      setTrace((current) => current ? { ...current, localAvailable: true } : current);
+      navigate(`/traces/${encodeURIComponent(traceId)}?targetScopeId=${encodeURIComponent(target.status.targetScopeId ?? "")}`);
     } catch (err) {
       const recovered = await recoverObservabilityError(err, refreshTarget.current);
       setAcquireError(recovered);
@@ -108,7 +153,7 @@ export function TraceDetailView() {
 
           <div className="trace-actions">
             <h3>Artifact actions</h3>
-            <p>
+            {!trace.localAvailable && <p>
               <button
                 type="button"
                 onClick={() => void handleAcquire()}
@@ -116,20 +161,14 @@ export function TraceDetailView() {
               >
                 {acquiring ? "Acquiring…" : "Acquire for analysis"}
               </button>
-            </p>
+            </p>}
             <p>
-              <a
-                href={rawArtifactDownloadURL(trace.traceId)}
-                download
-              >
-                Raw artifact download
-              </a>
+              <button ref={downloadTrigger} type="button" onClick={() => setConfirmDownload(true)}>Download raw attachment</button>
             </p>
             <p className="trace-actions-note">
               Acquire installs a local analysis copy. Raw download streams the
               artifact directly from the application without installing or
-              extending a local copy. Semantic explorer views arrive in a future
-              update.
+              extending a local copy.
             </p>
 
             {acquireError && (
@@ -142,14 +181,16 @@ export function TraceDetailView() {
               <div role="status">
                 <p>Artifact acquired successfully.</p>
                 <dl className="status-grid">
-                  <div><dt>Handle</dt><dd>{acquired.artifactHandle}</dd></div>
                   <div><dt>Local bytes</dt><dd>{String(acquired.localBytes)}</dd></div>
                   <div><dt>Acquired at</dt><dd>{acquired.acquiredAt}</dd></div>
                   <div><dt>Expires at</dt><dd>{acquired.hasIdleExpiry ? acquired.expiresAt : "Never"}</dd></div>
                 </dl>
               </div>
             )}
+            {trace.localAvailable && <p><button type="button" onClick={() => navigate(`/traces/${encodeURIComponent(trace.traceId)}?targetScopeId=${encodeURIComponent(target.status.targetScopeId ?? "")}`)}>Open explorer</button></p>}
           </div>
+          {trace.localAvailable && <TraceExplorer traceId={trace.traceId} onArtifactUnavailable={handleArtifactUnavailable} />}
+          {confirmDownload && <div ref={downloadDialog} role="dialog" aria-modal="true" aria-labelledby="download-title" className="target-error" onKeyDown={handleDialogKey}><h3 id="download-title">Download raw attachment?</h3><p>This makes a fresh application download and may be unavailable even while the local analysis copy remains available. It does not install, refresh, or retain an analysis copy.</p><p><a href={rawArtifactDownloadURL(trace.traceId)} download onClick={closeDownload}>Confirm raw attachment download</a> <button ref={cancelDownload} type="button" onClick={closeDownload}>Cancel</button></p></div>}
         </>
       )}
     </section>

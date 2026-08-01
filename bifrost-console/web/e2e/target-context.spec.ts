@@ -1,4 +1,7 @@
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test as consoleTest, expect } from "./fixtures/consoleProcess";
 
 type TargetState = {
@@ -14,8 +17,11 @@ const test = consoleTest.extend<{
   };
 }>({
   targetApplication: async ({}, use) => {
-    // The artifact body must match the sizeBytes in the trace metadata (4096).
-    const artifactBody = '{"kind":"TRACE_STARTED","summary":"target-context"}\n' + " ".repeat(4096 - 52);
+    const traceId = "trace-with-a-long-identifier-1234567890";
+    const sessionId = "session-with-a-long-identifier-1234567890";
+    const fixtureRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../bifrost-console-fixtures/traces");
+    const artifactBody = fs.readFileSync(path.join(fixtureRoot, "single-attempt-success.ndjson"), "utf8").replaceAll("trace-single-attempt-success", traceId).replaceAll("session-single-attempt-success", sessionId);
+    const traceMetadata = JSON.stringify({ traceId, sessionId, outcome: "SUCCEEDED", finalizedAt: "2026-07-24T12:00:00Z", sizeBytes: new TextEncoder().encode(artifactBody).byteLength, persistencePolicy: "ALWAYS", applicationTraceExpiresAt: "2026-08-03T00:00:00Z" });
     let state: TargetState = {
       instanceId: "11111111-1111-4111-8111-111111111111",
       artifactBody,
@@ -55,21 +61,17 @@ const test = consoleTest.extend<{
       }
       if (path === "/_bifrost/observability/v1/traces") {
         response.writeHead(200, headers);
-        response.end(
-          '{"items":[{"traceId":"trace-with-a-long-identifier-1234567890","sessionId":"session-with-a-long-identifier-1234567890","outcome":"SUCCEEDED","finalizedAt":"2026-07-27T00:00:00Z","sizeBytes":4096,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-08-03T00:00:00Z"}],"hasMore":false,"nextCursor":null,"observedAt":"2026-07-27T00:00:00Z"}',
-        );
+        response.end(JSON.stringify({ items: [JSON.parse(traceMetadata)], hasMore: false, nextCursor: null, observedAt: "2026-07-27T00:00:00Z" }));
         return;
       }
       // Trace detail endpoint for the cataloged trace.
-      if (path === "/_bifrost/observability/v1/traces/trace-with-a-long-identifier-1234567890") {
+      if (path === `/_bifrost/observability/v1/traces/${traceId}`) {
         response.writeHead(200, headers);
-        response.end(
-          '{"targetScopeId":"scope-1","traceId":"trace-with-a-long-identifier-1234567890","sessionId":"session-with-a-long-identifier-1234567890","outcome":"SUCCEEDED","finalizedAt":"2026-07-27T00:00:00Z","sizeBytes":4096,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-08-03T00:00:00Z"}',
-        );
+        response.end(traceMetadata);
         return;
       }
       // Artifact endpoint for the cataloged trace.
-      if (path === "/_bifrost/observability/v1/traces/trace-with-a-long-identifier-1234567890/artifact") {
+      if (path === `/_bifrost/observability/v1/traces/${traceId}/artifact`) {
         response.writeHead(200, {
           "Content-Type": "application/x-ndjson",
           "X-Bifrost-Instance-Id": state.instanceId,

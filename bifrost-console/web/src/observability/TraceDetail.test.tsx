@@ -11,6 +11,11 @@ const route = vi.hoisted(() => ({
 vi.mock("../api/client", () => ({
   getTraceDetail: vi.fn(),
   acquireArtifact: vi.fn(),
+  getTraceAnalysisSummary: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", traceId: "trace-1", sessionId: "session-1", outcome: "SUCCEEDED", terminalFailureId: null, recordCount: 0, frameCount: 0, rootFrameIds: [], usageComplete: true }),
+  getTraceFrames: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
+  getTraceRecords: vi.fn(), getTraceUsage: vi.fn(), getPayloadRange: vi.fn(), getRawRecordRange: vi.fn(),
+  getTraceAttempts: vi.fn(), getTraceFailures: vi.fn(), getTraceValidationLinks: vi.fn(), getTraceGaps: vi.fn(), getTraceUncertainties: vi.fn(), getTracePayloads: vi.fn(),
+  searchTraceEvidence: vi.fn(),
   rawArtifactDownloadURL: (traceId: string) => `/api/console/v1/artifacts/${encodeURIComponent(traceId)}/raw`,
   BrowserAPIError: class BrowserAPIError extends Error {
     code: string;
@@ -29,7 +34,7 @@ vi.mock("react-router", () => ({
   ),
   useParams: () => ({ traceId: "trace-1" }),
   useNavigate: () => route.navigate,
-  useSearchParams: () => [new URLSearchParams({ targetScopeId: route.scope })],
+  useSearchParams: () => [new URLSearchParams({ targetScopeId: route.scope }), vi.fn()],
 }));
 
 vi.mock("../target/TargetProvider", () => ({
@@ -46,7 +51,7 @@ vi.mock("../security/BrowserSessionProvider", () => ({
   }),
 }));
 
-import { getTraceDetail, acquireArtifact } from "../api/client";
+import { getTraceDetail, acquireArtifact, getTraceAnalysisSummary } from "../api/client";
 import { TraceDetailView } from "./TraceDetail";
 
 const trace: Trace = {
@@ -116,17 +121,32 @@ const acquiredArtifact: AcquiredArtifact = {
   hasIdleExpiry: true,
 };
 
-test("trace detail renders acquire button and raw download link", async () => {
+test("trace detail requires confirmation before raw download", async () => {
   vi.mocked(getTraceDetail).mockResolvedValue(trace);
   render(<TraceDetailView />);
   await vi.waitFor(() => {
     expect(screen.getByText("trace-1")).toBeInTheDocument();
   });
   expect(screen.getByRole("button", { name: "Acquire for analysis" })).toBeInTheDocument();
-  const link = screen.getByRole("link", { name: "Raw artifact download" });
-  expect(link).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Download raw attachment" }));
+  const link = screen.getByRole("link", { name: "Confirm raw attachment download" });
   expect(link).toHaveAttribute("download");
   expect(link.getAttribute("href")).toContain(encodeURIComponent("trace-1"));
+});
+
+test("raw download cancellation does not navigate", async () => {
+  vi.mocked(getTraceDetail).mockResolvedValue(trace);
+  render(<TraceDetailView />);
+  await screen.findByText("trace-1");
+  fireEvent.click(screen.getByRole("button", { name: "Download raw attachment" }));
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  expect(cancel).toHaveFocus();
+  fireEvent.keyDown(cancel, { key: "Tab" });
+  expect(screen.getByRole("link", { name: "Confirm raw attachment download" })).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await vi.waitFor(() => expect(screen.getByRole("button", { name: "Download raw attachment" })).toHaveFocus());
+  expect(route.navigate).not.toHaveBeenCalled();
 });
 
 test("acquire button calls acquireArtifact and shows success state", async () => {
@@ -141,8 +161,19 @@ test("acquire button calls acquireArtifact and shows success state", async () =>
     expect(screen.getByText("Artifact acquired successfully.")).toBeInTheDocument();
   });
   expect(acquireArtifact).toHaveBeenCalledWith("trace-1", { tabId: "test-tab", csrfToken: "test-token" });
-  expect(screen.getByText("handle-abc")).toBeInTheDocument();
+  expect(screen.queryByText("handle-abc")).not.toBeInTheDocument();
   expect(screen.getAllByText("4096").length).toBeGreaterThan(0);
+});
+
+test("expired explorer artifact returns trace detail to reacquisition state", async () => {
+  const { BrowserAPIError } = await import("../api/client");
+  vi.mocked(getTraceDetail).mockResolvedValue({ ...trace, localAvailable: true });
+  vi.mocked(getTraceAnalysisSummary).mockRejectedValueOnce(new BrowserAPIError("ARTIFACT_EXPIRED", "The local artifact expired.", 409));
+  render(<TraceDetailView />);
+  await screen.findByText("The local artifact expired.");
+  expect(screen.getByRole("button", { name: "Acquire for analysis" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Trace explorer" })).toBeNull();
+  expect(route.navigate).toHaveBeenCalledWith("/traces/trace-1?targetScopeId=scope-1", { replace: true });
 });
 
 test("acquire button shows error on failure", async () => {

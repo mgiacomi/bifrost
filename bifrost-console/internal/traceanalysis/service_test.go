@@ -229,6 +229,14 @@ func TestServiceQueryFramesWithFrames(t *testing.T) {
 	if page.Items[1].FrameID != "skill" {
 		t.Fatalf("expected second frame ID 'skill', got %q", page.Items[1].FrameID)
 	}
+	for _, frame := range page.Items {
+		if frame.OpenedTimestampMillis == 0 || frame.ClosedTimestampMillis == nil {
+			t.Fatalf("frame boundary timestamps were not projected: %+v", frame)
+		}
+		if got := *frame.ClosedTimestampMillis - frame.OpenedTimestampMillis; frame.InclusiveDurationMillis == nil || got != *frame.InclusiveDurationMillis {
+			t.Fatalf("returned frame boundaries do not match processor duration: %+v", frame)
+		}
+	}
 }
 
 func TestFrameQueriesExposeUsageCompletenessAndRecordedCrossReferences(t *testing.T) {

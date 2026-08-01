@@ -235,6 +235,7 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 				Observability: observabilityService,
 				Live:          liveService,
 				Artifacts:     artifactService,
+				TraceAnalysis: traceAnalysisService,
 			})
 			if err != nil {
 				return nil, err
