@@ -135,14 +135,16 @@ func TestActivityStreamReturnsSSEContentType(t *testing.T) {
 		close(done)
 	}()
 	time.Sleep(100 * time.Millisecond)
-	if contentType := response.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
-		t.Fatalf("expected text/event-stream, got %q", contentType)
-	}
 	streamCancel()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("stream handler did not exit after context cancellation")
+	}
+	// Read headers after the handler goroutine has exited to avoid a data
+	// race on the ResponseRecorder's header map.
+	if contentType := response.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("expected text/event-stream, got %q", contentType)
 	}
 }
 
@@ -345,15 +347,16 @@ func TestActivityStreamSetsNoStoreAndNosniffHeaders(t *testing.T) {
 		close(done)
 	}()
 	time.Sleep(100 * time.Millisecond)
-
+	streamCancel()
+	<-done
+	// Read headers after the handler goroutine has exited to avoid a data
+	// race on the ResponseRecorder's header map.
 	if cc := response.Header().Get("Cache-Control"); cc != "no-store" {
 		t.Fatalf("expected Cache-Control no-store, got %q", cc)
 	}
 	if xcto := response.Header().Get("X-Content-Type-Options"); xcto != "nosniff" {
 		t.Fatalf("expected X-Content-Type-Options nosniff, got %q", xcto)
 	}
-	streamCancel()
-	<-done
 }
 
 func TestActivityStreamEmitsConsoleConnectionEvent(t *testing.T) {
@@ -387,7 +390,10 @@ func TestActivityStreamEmitsConsoleConnectionEvent(t *testing.T) {
 		close(done)
 	}()
 	time.Sleep(100 * time.Millisecond)
-
+	streamCancel()
+	<-done
+	// Read the body after the handler goroutine has exited to avoid a data
+	// race on the ResponseRecorder's buffer.
 	body := response.Body.String()
 	if !strings.Contains(body, "event: console.connection") {
 		t.Fatalf("expected console.connection event, got: %s", body)
@@ -395,7 +401,4 @@ func TestActivityStreamEmitsConsoleConnectionEvent(t *testing.T) {
 	if !strings.Contains(body, `"connected":false`) {
 		t.Fatalf("expected the inactive coordinator's factual connection state, got: %s", body)
 	}
-
-	streamCancel()
-	<-done
 }

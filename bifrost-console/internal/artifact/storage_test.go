@@ -53,14 +53,14 @@ func TestENOSPCRemovesPartialAndReturnsLocalStorageUnavailableWhenWorkspaceRecov
 		t.Fatalf("expected 0 charged bytes after ENOSPC, got %d", snapshot.ChargedBytes)
 	}
 
-	// Verify no partial files remain in the artifacts directory.
+	// Verify no staging or installed bundle directories remain.
 	entries, err := os.ReadDir(filepath.Join(svc.storage.dir))
 	if err != nil {
 		t.Fatalf("failed to read artifacts dir: %v", err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "partial-") {
-			t.Fatalf("partial file remains after ENOSPC cleanup: %s", entry.Name())
+		if strings.HasPrefix(entry.Name(), "staging-") || strings.HasPrefix(entry.Name(), "installed-") {
+			t.Fatalf("bundle directory remains after ENOSPC cleanup: %s", entry.Name())
 		}
 	}
 }
@@ -85,6 +85,7 @@ func TestENOSPCWithCleanupFailureTerminatesCoordinator(t *testing.T) {
 		Workspace:    ws,
 		TraceLoader:  loader.loader(),
 		StreamOpener: opener.opener(),
+		Processor:    newFakeProcessor(),
 		Clock:        clock.nowFunc(),
 		Entropy:      entropy.factory(),
 		TimerFactory: timers.factory(),
@@ -123,7 +124,7 @@ func TestInvalidArtifactWithPersistentPartialCleanupFailureIsFatal(t *testing.T)
 	loader := newFakeLoader(testTraceMetadata("trace-1", 100))
 	opener := newFakeOpener(data, -1)
 	fs := newFaultyFS()
-	fs.removeFail = errors.New("injected persistent remove failure")
+	fs.removeAllFail = errors.New("injected persistent bundle cleanup failure")
 	timers := &manualTimerFactory{}
 	clock := newManualClock(time.UnixMilli(1000000))
 	var fatalCalled atomic.Bool
@@ -134,6 +135,7 @@ func TestInvalidArtifactWithPersistentPartialCleanupFailureIsFatal(t *testing.T)
 		Workspace:    ws,
 		TraceLoader:  loader.loader(),
 		StreamOpener: opener.opener(),
+		Processor:    newFakeProcessor(),
 		Fatal:        func(error) { fatalCalled.Store(true) },
 		Clock:        clock.nowFunc(),
 		Entropy:      entropy.factory(),
@@ -144,7 +146,7 @@ func TestInvalidArtifactWithPersistentPartialCleanupFailureIsFatal(t *testing.T)
 		t.Fatal(err)
 	}
 	defer func() {
-		fs.removeFail = nil
+		fs.removeAllFail = nil
 		svc.Close()
 	}()
 	scope, cancelScope := testScope("scope-1")
@@ -200,9 +202,9 @@ func TestAuthenticationRejectionPreservesInstalledCurrentScopeArtifact(t *testin
 	if domain != nil {
 		t.Fatalf("Use failed for installed artifact after auth rejection: %v", domain)
 	}
-	reader, err := lease.Open()
+	reader, err := lease.OpenComponent(ComponentRawArtifact)
 	if err != nil {
-		t.Fatalf("Open failed after auth rejection: %v", err)
+		t.Fatalf("OpenComponent failed after auth rejection: %v", err)
 	}
 	got, err := readAll(reader)
 	if err != nil {
@@ -270,7 +272,7 @@ func TestScopeRotationCancelsEveryAcquisitionAndLeaseBeforeRemoval(t *testing.T)
 	// Acquire and lease the artifact.
 	acquireSync(t, svc, context.Background(), scope, "trace-1")
 	lease, _ := svc.Use(scope.ID, acquireHandle(t, svc, scope, "trace-1"))
-	reader, err := lease.Open()
+	reader, err := lease.OpenComponent(ComponentRawArtifact)
 	if err != nil {
 		t.Fatalf("open leased artifact: %v", err)
 	}
@@ -371,6 +373,7 @@ func TestConcurrentReservationsCannotOvercommitFiniteCapacity(t *testing.T) {
 		Workspace:    ws,
 		TraceLoader:  sharedLoader,
 		StreamOpener: sharedOpener,
+		Processor:    newFakeProcessor(),
 		Clock:        clock.nowFunc(),
 		Entropy:      entropy.factory(),
 		TimerFactory: timers.factory(),
@@ -466,6 +469,7 @@ func TestFatalStorageErrorLogsDoNotLeakPathsOrCredentials(t *testing.T) {
 		Workspace:    ws,
 		TraceLoader:  loader.loader(),
 		StreamOpener: opener.opener(),
+		Processor:    newFakeProcessor(),
 		Clock:        clock.nowFunc(),
 		Entropy:      entropy.factory(),
 		TimerFactory: timers.factory(),
@@ -499,11 +503,11 @@ func TestFatalStorageErrorLogsDoNotLeakPathsOrCredentials(t *testing.T) {
 	}
 
 	// The artifacts subdirectory name may appear in the workspace root path,
-	// but the partial- or installed-file path must not appear. Since we use
+	// but the staging- or installed-bundle path must not appear. Since we use
 	// a faulty FS, the synthetic error does not contain paths — but verify
 	// the service itself doesn't log them.
-	if strings.Contains(logOutput, "partial-") {
-		t.Fatalf("log output contains partial filename:\n%s", logOutput)
+	if strings.Contains(logOutput, "staging-") || strings.Contains(logOutput, "installed-") {
+		t.Fatalf("log output contains bundle directory name:\n%s", logOutput)
 	}
 
 	// No credential-like content should appear (the artifact service never

@@ -20,6 +20,17 @@
     "completionUnits" : 0,
     "totalUnits" : 0
   },
+  "usageComplete" : true,
   "attempts" : [ ],
-  "validationLinks" : [ ]
+  "retries" : [ ],
+  "validationLinks" : [ ],
+  "frames" : [ ],
+  "unframedAttributedUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "payloads" : [ ],
+  "gaps" : [ ],
+  "uncertainties" : [ ]
 }

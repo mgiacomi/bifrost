@@ -20,6 +20,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/profile"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/release"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/traceanalysis"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/webhost"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/workspace"
 )
@@ -147,6 +148,10 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 	}
 	defer liveService.Close()
 
+	// Create the trace-analysis service first so it can serve as the artifact
+	// processor. The artifact service dependency is wired after the artifact
+	// service exists, so query methods can acquire leases by handle.
+	traceAnalysisService := traceanalysis.NewService(nil)
 	artifactService, err := artifact.New(artifact.Config{
 		MaxBytes:    ownedProfile.Resolved.MaxBytes,
 		Unlimited:   ownedProfile.Resolved.Unlimited,
@@ -173,11 +178,16 @@ func Run(parent context.Context, options Options, dependencies Dependencies) (re
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return scope.OpenArtifact(ctx, traceID)
 		},
-		Fatal: coordinator.Fatal,
+		Processor: traceAnalysisService,
+		Fatal:     coordinator.Fatal,
 	})
 	if err != nil {
 		return err
 	}
+	// Wire the artifact service back into the trace-analysis service so
+	// adapter-facing query methods (PR 14 browser, PR 18 MCP) can acquire
+	// leases by handle.
+	traceAnalysisService.SetArtifactService(artifactService)
 	if err := targetContext.RegisterOwner("artifacts", artifactService); err != nil {
 		return err
 	}

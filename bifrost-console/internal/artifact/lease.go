@@ -8,10 +8,10 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
 )
 
-// Lease pins an installed artifact entry for downstream analysis (PR 13). It
-// increments the entry's pin count for its lifetime, preventing eviction and
-// explicit removal. Only a successful Close refreshes the entry's last-use
-// time. The lease provides read access to the installed file without ever
+// Lease pins an installed artifact entry for downstream analysis. It increments
+// the entry's pin count for its lifetime, preventing eviction and explicit
+// removal. Only a successful Close refreshes the entry's last-use time. The
+// lease provides bounded component readers and size lookup without ever
 // exposing the filesystem path through any DTO.
 type Lease struct {
 	service *Service
@@ -21,13 +21,14 @@ type Lease struct {
 	readers map[io.ReadCloser]struct{}
 }
 
-// Open returns a reader over the installed artifact file. The reader is valid
-// until Close is called on the lease or the reader is closed. If the entry has
-// been invalidated (scope rotation, removal), Open returns an error.
+// OpenComponent opens a named bundle component for seekable reading. The name
+// must be a known component of this bundle (ComponentRawArtifact or a derived
+// component recorded by the processor). The reader is valid until Close is
+// called on the lease or the reader. If the entry has been invalidated (scope
+// rotation, removal), OpenComponent returns an error.
 //
-// This seam is deliberately ready for PR 13's streaming/parser work; PR 12
-// does not parse NDJSON records or build trace views from it.
-func (lease *Lease) Open() (io.ReadCloser, error) {
+// Component names are closed logical identifiers, never caller-supplied paths.
+func (lease *Lease) OpenComponent(name ComponentName) (ComponentReader, error) {
 	lease.service.mu.Lock()
 	defer lease.service.mu.Unlock()
 	if lease.closed {
@@ -36,12 +37,57 @@ func (lease *Lease) Open() (io.ReadCloser, error) {
 	if lease.entry.state != stateInstalled {
 		return nil, errors.New("artifact is no longer installed")
 	}
-	reader, err := lease.service.storage.open(lease.entry.installedPath)
+	if domain := validateComponentName(name); domain != nil {
+		return nil, errors.New(domain.Message)
+	}
+	if !lease.componentExistsLocked(name) {
+		return nil, errors.New("artifact component is not available")
+	}
+	reader, err := lease.service.storage.openComponent(lease.entry.installedDir, name)
 	if err != nil {
 		return nil, err
 	}
 	lease.readers[reader] = struct{}{}
 	return &leaseReader{lease: lease, reader: reader}, nil
+}
+
+// ComponentSize returns the synced byte size of a named bundle component. The
+// name must be a known component of this bundle.
+func (lease *Lease) ComponentSize(name ComponentName) (int64, error) {
+	lease.service.mu.Lock()
+	defer lease.service.mu.Unlock()
+	if lease.closed {
+		return 0, errors.New("artifact lease is closed")
+	}
+	if lease.entry.state != stateInstalled {
+		return 0, errors.New("artifact is no longer installed")
+	}
+	if domain := validateComponentName(name); domain != nil {
+		return 0, errors.New(domain.Message)
+	}
+	if name == ComponentRawArtifact {
+		return lease.entry.rawBytes, nil
+	}
+	if lease.entry.componentSizes != nil {
+		if size, ok := lease.entry.componentSizes[name]; ok {
+			return size, nil
+		}
+	}
+	return 0, errors.New("artifact component is not available")
+}
+
+// componentExistsLocked reports whether a component name is part of this bundle.
+// The caller must hold the service mutex.
+func (lease *Lease) componentExistsLocked(name ComponentName) bool {
+	if name == ComponentRawArtifact {
+		return true
+	}
+	if lease.entry.componentSizes != nil {
+		if _, ok := lease.entry.componentSizes[name]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Close releases the pin. If success is true, the entry's last-use time is
@@ -130,6 +176,14 @@ type leaseReader struct {
 
 func (reader *leaseReader) Read(buffer []byte) (int, error) {
 	return reader.reader.Read(buffer)
+}
+
+func (reader *leaseReader) Seek(offset int64, whence int) (int64, error) {
+	seeker, ok := reader.reader.(io.Seeker)
+	if !ok {
+		return 0, errors.New("artifact component reader is not seekable")
+	}
+	return seeker.Seek(offset, whence)
 }
 
 func (reader *leaseReader) Close() error {

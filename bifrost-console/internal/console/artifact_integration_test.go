@@ -23,6 +23,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/traceanalysis"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/workspace"
 )
 
@@ -65,7 +66,7 @@ func newArtifactTestServer(t *testing.T, artifactBody []byte) *artifactTestServe
 		artifactBody = fixture
 	}
 	traceMetadata := fmt.Sprintf(
-		`{"targetScopeId":"scope-1","traceId":"single-attempt-success","sessionId":"session-1","outcome":"SUCCEEDED","finalizedAt":"2026-07-25T12:00:00Z","sizeBytes":%d,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-08-01T12:00:00Z"}`,
+		`{"targetScopeId":"scope-1","traceId":"trace-single-attempt-success","sessionId":"session-single-attempt-success","outcome":"SUCCEEDED","finalizedAt":"2026-07-24T12:00:00Z","sizeBytes":%d,"persistencePolicy":"ALWAYS","applicationTraceExpiresAt":"2026-08-01T12:00:00Z"}`,
 		len(artifactBody),
 	)
 	srv := &artifactTestServer{
@@ -177,6 +178,7 @@ func buildArtifactService(t *testing.T, server *artifactTestServer) (*artifact.S
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return scope.OpenArtifact(ctx, traceID)
 		},
+		Processor: traceanalysis.New(),
 	})
 	if err != nil {
 		t.Fatalf("create artifact service: %v", err)
@@ -206,10 +208,10 @@ func readLeasedArtifact(t *testing.T, svc *artifact.Service, scopeID target.Scop
 	if domain != nil {
 		t.Fatalf("Use failed: %v", domain)
 	}
-	reader, err := lease.Open()
+	reader, err := lease.OpenComponent(artifact.ComponentRawArtifact)
 	if err != nil {
 		lease.Close(false)
-		t.Fatalf("lease Open failed: %v", err)
+		t.Fatalf("lease OpenComponent failed: %v", err)
 	}
 	body, readErr := io.ReadAll(reader)
 	reader.Close()
@@ -265,6 +267,12 @@ func TestArtifactAcquisitionInstallsOneCopyAndChargesOnce(t *testing.T) {
 		t.Fatalf("installed bytes checksum mismatch")
 	}
 
+	// The aggregate local bytes must exceed the raw artifact size, proving the
+	// real processor's manifest component is charged alongside the raw bytes.
+	if first.LocalBytes <= int64(len(body)) {
+		t.Fatalf("expected aggregate local bytes > raw %d, got %d (derived component not charged)", len(body), first.LocalBytes)
+	}
+
 	// Storage snapshot must report exactly one entry and one charge.
 	snapshot, domain := svc.StorageSnapshot(scope.ID)
 	if domain != nil {
@@ -276,11 +284,46 @@ func TestArtifactAcquisitionInstallsOneCopyAndChargesOnce(t *testing.T) {
 	if snapshot.ChargedBytes != first.LocalBytes {
 		t.Fatalf("expected charged bytes %d, got %d", first.LocalBytes, snapshot.ChargedBytes)
 	}
-	if len(snapshot.Entries) != 1 || snapshot.Entries[0].TraceID != "single-attempt-success" {
+	if len(snapshot.Entries) != 1 || snapshot.Entries[0].TraceID != "trace-single-attempt-success" {
 		t.Fatalf("unexpected storage entries: %+v", snapshot.Entries)
 	}
 	if snapshot.Entries[0].ApplicationAvailability != "AVAILABLE" {
 		t.Fatalf("expected application availability AVAILABLE, got %q", snapshot.Entries[0].ApplicationAvailability)
+	}
+}
+
+// TestArtifactAcquisitionRejectsMalformedNDJSONBeforePublishingHandle proves
+// that the real traceanalysis.Processor, wired through the production artifact
+// service, rejects byte-count-correct malformed NDJSON before any handle is
+// published, leaves no installed bundle, and charges no capacity (PR13-P2-R03,
+// PR13 bug-reproduction test). The malformed body has a correct byte count so
+// only semantic validation catches it.
+func TestArtifactAcquisitionRejectsMalformedNDJSONBeforePublishingHandle(t *testing.T) {
+	malformedBody := []byte("{\"traceId\":\"trace-single-attempt-success\",\"sessionId\":\"session-single-attempt-success\",\"outcome\":\"SUCCEEDED\"}\n" +
+		"{not-json\n")
+	server := newArtifactTestServer(t, malformedBody)
+	svc, _, scope := buildArtifactService(t, server)
+
+	_, domain := svc.Acquire(context.Background(), scope, "single-attempt-success")
+	if domain == nil || domain.Code != consolecore.CodeInvalidArtifact {
+		t.Fatalf("expected INVALID_ARTIFACT for malformed NDJSON, got %v", domain)
+	}
+
+	// No handle, no entry, no capacity charge, no installed bundle.
+	snapshot, snapDomain := svc.StorageSnapshot(scope.ID)
+	if snapDomain != nil {
+		t.Fatalf("StorageSnapshot failed: %v", snapDomain)
+	}
+	if snapshot.AcquiredCount != 0 {
+		t.Fatalf("expected 0 acquired entries after malformed rejection, got %d", snapshot.AcquiredCount)
+	}
+	if snapshot.ChargedBytes != 0 {
+		t.Fatalf("expected 0 charged bytes after malformed rejection, got %d", snapshot.ChargedBytes)
+	}
+
+	// The upstream artifact stream was consumed once; the processor rejected it.
+	if server.artifactRequestCount() != 1 {
+		t.Fatalf("expected 1 upstream artifact request, got %d", server.artifactRequestCount())
 	}
 }
 
@@ -514,8 +557,8 @@ func TestArtifactShutdownWaitsForStreamCleanup(t *testing.T) {
 		Workspace: ws,
 		TraceLoader: func(ctx context.Context, scope target.Scope, traceID string) (artifact.TraceMetadata, *consolecore.Error) {
 			return artifact.TraceMetadata{
-				TraceID:   traceID,
-				SessionID: "session-1",
+				TraceID:   "trace-single-attempt-success",
+				SessionID: "session-single-attempt-success",
 				Outcome:   "SUCCEEDED",
 				SizeBytes: int64(len(server.artifactBody)),
 			}, nil
@@ -523,6 +566,7 @@ func TestArtifactShutdownWaitsForStreamCleanup(t *testing.T) {
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return applicationclient.NewTestArtifactStream(blockingBody, scope.InstanceID, int64(len(blockingBody.data))), nil
 		},
+		Processor: traceanalysis.New(),
 	})
 	if err != nil {
 		t.Fatalf("create artifact service: %v", err)
@@ -640,6 +684,7 @@ func TestArtifactAcquisitionDoesNotLeakPathsOrCredentials(t *testing.T) {
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return scope.OpenArtifact(ctx, traceID)
 		},
+		Processor: traceanalysis.New(),
 	})
 	if err != nil {
 		t.Fatalf("create artifact service: %v", err)
@@ -678,7 +723,8 @@ func TestArtifactAcquisitionDoesNotLeakPathsOrCredentials(t *testing.T) {
 	if strings.Contains(rendered, "transient") || strings.Contains(rendered, filepath.Join(ws.Root, "transient")) {
 		t.Fatal("filesystem path leaked into artifact DTO or formatted output")
 	}
-	if strings.Contains(string(encoded), "installedPath") || strings.Contains(string(snapshotEncoded), "installedPath") {
+	if strings.Contains(string(encoded), "installedPath") || strings.Contains(string(snapshotEncoded), "installedPath") ||
+		strings.Contains(string(encoded), "installedDir") || strings.Contains(string(snapshotEncoded), "installedDir") {
 		t.Fatal("installed path field leaked into DTO")
 	}
 }
@@ -769,4 +815,202 @@ func fixtureSHA256(t *testing.T, override []byte) string {
 func sha256Sum(data []byte) []byte {
 	sum := sha256.Sum256(data)
 	return sum[:]
+}
+
+// buildArtifactServiceWithQueryService wires a real artifact.Service with the
+// shared traceanalysis.Service (processor + query service) against a real
+// workspace and target context. It returns the artifact service, the
+// trace-analysis query service, the target context, and the captured scope.
+// This mirrors the production composition in console/service.go where the
+// trace-analysis service is both the artifact processor and the adapter-facing
+// query service.
+func buildArtifactServiceWithQueryService(t *testing.T, server *artifactTestServer) (*artifact.Service, *traceanalysis.Service, *target.Context, target.Scope) {
+	t.Helper()
+	policy := applicationclient.NetworkPolicy{
+		ConnectTimeout: time.Second, ResponseHeaderTimeout: time.Second, RequestTimeout: 30 * time.Second,
+	}
+	targetContext, err := target.New(func(address applicationclient.Address) (target.ProbeClient, error) {
+		return applicationclient.New(address, policy, "0.1.0-SNAPSHOT")
+	}, nil, time.Now)
+	if err != nil {
+		t.Fatalf("create target context: %v", err)
+	}
+	t.Cleanup(targetContext.Close)
+	ws, err := workspace.Open(filepath.Join(t.TempDir(), "work"))
+	if err != nil {
+		t.Fatalf("open workspace: %v", err)
+	}
+	t.Cleanup(func() { _ = ws.Close() })
+	traceAnalysisService := traceanalysis.NewService(nil)
+	artifactSvc, err := artifact.New(artifact.Config{
+		MaxBytes:  1 << 20,
+		IdleTTL:   time.Hour,
+		Unlimited: false,
+	}, artifact.Dependencies{
+		Lifetime:  context.Background(),
+		Workspace: ws,
+		TraceLoader: func(ctx context.Context, scope target.Scope, traceID string) (artifact.TraceMetadata, *consolecore.Error) {
+			endpoint := scope.Target.TraceEndpoint(traceID)
+			body, domain := scope.Upstream(ctx, endpoint, 1<<20)
+			if domain != nil {
+				return artifact.TraceMetadata{}, domain
+			}
+			trace, perr := parseTraceJSON(body)
+			if perr != nil {
+				return artifact.TraceMetadata{}, consolecore.NewError(consolecore.CodeConsoleError, "Failed to parse trace metadata.", string(scope.ID), consolecore.Details{}, perr)
+			}
+			return artifact.TraceMetadata{
+				TraceID:                   trace.TraceID,
+				SessionID:                 trace.SessionID,
+				Outcome:                   trace.Outcome,
+				FinalizedAt:               trace.FinalizedAt,
+				SizeBytes:                 trace.SizeBytes,
+				PersistencePolicy:         trace.PersistencePolicy,
+				ApplicationTraceExpiresAt: trace.ApplicationTraceExpiresAt,
+			}, nil
+		},
+		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
+			return scope.OpenArtifact(ctx, traceID)
+		},
+		Processor: traceAnalysisService,
+	})
+	if err != nil {
+		t.Fatalf("create artifact service: %v", err)
+	}
+	t.Cleanup(artifactSvc.Close)
+	traceAnalysisService.SetArtifactService(artifactSvc)
+	if err := targetContext.RegisterOwner("artifacts", artifactSvc); err != nil {
+		t.Fatalf("register artifact owner: %v", err)
+	}
+	if err := targetContext.Select(server.URL()); err != nil {
+		t.Fatalf("select target: %v", err)
+	}
+	if _, domain := targetContext.SupplyCredential(context.Background(), []byte(strings.Repeat("k", 32))); domain != nil {
+		t.Fatalf("supply credential: %v", domain)
+	}
+	scope, domain := targetContext.Capture()
+	if domain != nil {
+		t.Fatalf("capture scope: %v", domain)
+	}
+	return artifactSvc, traceAnalysisService, targetContext, scope
+}
+
+// TestSharedQueryServiceGetSummaryThroughProductionComposition proves that the
+// shared traceanalysis.Service, wired as both processor and query service in
+// the production composition, serves GetSummary after acquisition.
+func TestSharedQueryServiceGetSummaryThroughProductionComposition(t *testing.T) {
+	server := newArtifactTestServer(t, nil)
+	svc, queryService, _, scope := buildArtifactServiceWithQueryService(t, server)
+
+	acquired, domain := svc.Acquire(context.Background(), scope, "single-attempt-success")
+	if domain != nil {
+		t.Fatalf("Acquire failed: %v", domain)
+	}
+
+	summary, domain := queryService.GetSummary(context.Background(), scope.ID, traceanalysis.SummaryRequest{Handle: acquired.Handle})
+	if domain != nil {
+		t.Fatalf("GetSummary failed: %v", domain)
+	}
+	if summary.Context.TraceID != "trace-single-attempt-success" {
+		t.Fatalf("expected trace ID 'trace-single-attempt-success', got %q", summary.Context.TraceID)
+	}
+	if summary.Outcome != "SUCCEEDED" {
+		t.Fatalf("expected outcome SUCCEEDED, got %q", summary.Outcome)
+	}
+	if summary.RecordCount == 0 {
+		t.Fatal("expected non-zero record count")
+	}
+	if summary.AttemptCount != 1 {
+		t.Fatalf("expected 1 attempt, got %d", summary.AttemptCount)
+	}
+}
+
+// TestSharedQueryServiceQueryRecordsThroughProductionComposition proves that
+// the shared query service serves QueryRecords through the production
+// composition with both physical and logical representations.
+func TestSharedQueryServiceQueryRecordsThroughProductionComposition(t *testing.T) {
+	server := newArtifactTestServer(t, nil)
+	svc, queryService, _, scope := buildArtifactServiceWithQueryService(t, server)
+
+	acquired, domain := svc.Acquire(context.Background(), scope, "single-attempt-success")
+	if domain != nil {
+		t.Fatalf("Acquire failed: %v", domain)
+	}
+
+	physicalPage, domain := queryService.QueryRecords(context.Background(), scope.ID, traceanalysis.RecordQuery{
+		Handle:         acquired.Handle,
+		Representation: traceanalysis.RecordRepresentationPhysical,
+		PageSize:       100,
+	})
+	if domain != nil {
+		t.Fatalf("QueryRecords physical failed: %v", domain)
+	}
+	if len(physicalPage.Items) == 0 {
+		t.Fatal("expected non-empty physical records")
+	}
+
+	logicalPage, domain := queryService.QueryRecords(context.Background(), scope.ID, traceanalysis.RecordQuery{
+		Handle:         acquired.Handle,
+		Representation: traceanalysis.RecordRepresentationLogical,
+		PageSize:       100,
+	})
+	if domain != nil {
+		t.Fatalf("QueryRecords logical failed: %v", domain)
+	}
+	if len(logicalPage.Items) == 0 {
+		t.Fatal("expected non-empty logical records")
+	}
+}
+
+// TestSharedQueryServiceSearchThroughProductionComposition proves that the
+// shared query service serves Search through the production composition.
+func TestSharedQueryServiceSearchThroughProductionComposition(t *testing.T) {
+	server := newArtifactTestServer(t, nil)
+	svc, queryService, _, scope := buildArtifactServiceWithQueryService(t, server)
+
+	acquired, domain := svc.Acquire(context.Background(), scope, "single-attempt-success")
+	if domain != nil {
+		t.Fatalf("Acquire failed: %v", domain)
+	}
+
+	page, domain := queryService.Search(context.Background(), scope.ID, traceanalysis.SearchQuery{
+		Handle:   acquired.Handle,
+		Text:     "traceId",
+		PageSize: 10,
+	})
+	if domain != nil {
+		t.Fatalf("Search failed: %v", domain)
+	}
+	if len(page.Items) == 0 {
+		t.Fatal("expected at least one search match for 'traceId'")
+	}
+}
+
+// TestSharedQueryServiceReadRawArtifactRangeThroughProductionComposition proves
+// that the shared query service serves ReadRawArtifactRange through the
+// production composition.
+func TestSharedQueryServiceReadRawArtifactRangeThroughProductionComposition(t *testing.T) {
+	server := newArtifactTestServer(t, nil)
+	svc, queryService, _, scope := buildArtifactServiceWithQueryService(t, server)
+
+	acquired, domain := svc.Acquire(context.Background(), scope, "single-attempt-success")
+	if domain != nil {
+		t.Fatalf("Acquire failed: %v", domain)
+	}
+
+	result, domain := queryService.ReadRawArtifactRange(context.Background(), scope.ID, traceanalysis.RangeRequest{
+		Handle:   acquired.Handle,
+		Source:   traceanalysis.RangeSourceRawArtifact,
+		Start:    0,
+		MaxBytes: 100,
+	})
+	if domain != nil {
+		t.Fatalf("ReadRawArtifactRange failed: %v", domain)
+	}
+	if result.TotalLength <= 0 {
+		t.Fatalf("expected positive total length, got %d", result.TotalLength)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected non-empty content")
+	}
 }

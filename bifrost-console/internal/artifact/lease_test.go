@@ -29,9 +29,9 @@ func TestLeaseOpenReturnsReaderWithoutPath(t *testing.T) {
 	}
 	defer lease.Close(true)
 
-	reader, err := lease.Open()
+	reader, err := lease.OpenComponent(ComponentRawArtifact)
 	if err != nil {
-		t.Fatalf("Open failed: %v", err)
+		t.Fatalf("OpenComponent failed: %v", err)
 	}
 	defer reader.Close()
 
@@ -84,7 +84,7 @@ func TestLeaseOpenFailsAfterClose(t *testing.T) {
 	lease, _ := svc.Use(scope.ID, acquireHandle(t, svc, scope, "trace-1"))
 	_ = lease.Close(true)
 
-	_, err := lease.Open()
+	_, err := lease.OpenComponent(ComponentRawArtifact)
 	if err == nil {
 		t.Fatal("expected error opening after close")
 	}
@@ -108,14 +108,14 @@ func TestMultipleLeasesForSameArtifact(t *testing.T) {
 	lease2, _ := svc.Use(scope.ID, handle)
 
 	// Both leases should be able to read the data.
-	reader1, _ := lease1.Open()
+	reader1, _ := lease1.OpenComponent(ComponentRawArtifact)
 	got1, _ := io.ReadAll(reader1)
 	reader1.Close()
 	if !bytes.Equal(got1, data) {
 		t.Fatalf("lease1 got wrong data")
 	}
 
-	reader2, _ := lease2.Open()
+	reader2, _ := lease2.OpenComponent(ComponentRawArtifact)
 	got2, _ := io.ReadAll(reader2)
 	reader2.Close()
 	if !bytes.Equal(got2, data) {
@@ -168,9 +168,9 @@ func TestLeaseStillUsableAfterFailedRemove(t *testing.T) {
 	}
 
 	// The lease should still be able to open and read the artifact.
-	reader, err := lease.Open()
+	reader, err := lease.OpenComponent(ComponentRawArtifact)
 	if err != nil {
-		t.Fatalf("Open failed after failed Remove: %v", err)
+		t.Fatalf("OpenComponent failed after failed Remove: %v", err)
 	}
 	defer reader.Close()
 	got, err := io.ReadAll(reader)

@@ -81,8 +81,8 @@ func TestAcquireJoinsConcurrentWaitersIntoOneInstalledArtifact(t *testing.T) {
 	if snapshot.AcquiredCount != 1 {
 		t.Fatalf("expected 1 installed entry, got %d", snapshot.AcquiredCount)
 	}
-	if snapshot.ChargedBytes != int64(len(data)) {
-		t.Fatalf("expected charged bytes %d, got %d", len(data), snapshot.ChargedBytes)
+	if snapshot.ChargedBytes != int64(len(data))+fakeDerivedSize() {
+		t.Fatalf("expected charged bytes %d, got %d", int64(len(data))+fakeDerivedSize(), snapshot.ChargedBytes)
 	}
 }
 
@@ -559,12 +559,12 @@ func TestAcquireUnknownLengthStreamChargesIncrementally(t *testing.T) {
 	svc.ActivateActivity(scope)
 
 	artifact := acquireSync(t, svc, context.Background(), scope, "trace-1")
-	if artifact.LocalBytes != int64(len(data)) {
-		t.Fatalf("expected local bytes %d, got %d", len(data), artifact.LocalBytes)
+	if artifact.LocalBytes != int64(len(data))+fakeDerivedSize() {
+		t.Fatalf("expected local bytes %d, got %d", int64(len(data))+fakeDerivedSize(), artifact.LocalBytes)
 	}
 	snapshot, _ := svc.StorageSnapshot(scope.ID)
-	if snapshot.ChargedBytes != int64(len(data)) {
-		t.Fatalf("expected charged bytes %d, got %d", len(data), snapshot.ChargedBytes)
+	if snapshot.ChargedBytes != int64(len(data))+fakeDerivedSize() {
+		t.Fatalf("expected charged bytes %d, got %d", int64(len(data))+fakeDerivedSize(), snapshot.ChargedBytes)
 	}
 }
 
@@ -612,8 +612,8 @@ func TestAcquireZeroByteArtifactInstallsWhenTransportAgrees(t *testing.T) {
 	svc.ActivateActivity(scope)
 
 	artifact := acquireSync(t, svc, context.Background(), scope, "trace-1")
-	if artifact.LocalBytes != 0 {
-		t.Fatalf("expected 0 local bytes, got %d", artifact.LocalBytes)
+	if artifact.LocalBytes != fakeDerivedSize() {
+		t.Fatalf("expected %d local bytes (derived only), got %d", fakeDerivedSize(), artifact.LocalBytes)
 	}
 	snapshot, _ := svc.StorageSnapshot(scope.ID)
 	if snapshot.AcquiredCount != 1 {
@@ -820,14 +820,14 @@ func TestAcquireGuardedReaderBackpressureCompletesSuccessfully(t *testing.T) {
 	svc.streamOpener = customOpener
 
 	artifact := acquireSync(t, svc, context.Background(), scope, "trace-1")
-	if artifact.LocalBytes != int64(len(data)) {
-		t.Fatalf("expected local bytes %d, got %d", len(data), artifact.LocalBytes)
+	if artifact.LocalBytes != int64(len(data))+fakeDerivedSize() {
+		t.Fatalf("expected local bytes %d, got %d", int64(len(data))+fakeDerivedSize(), artifact.LocalBytes)
 	}
 	snapshot, _ := svc.StorageSnapshot(scope.ID)
 	if snapshot.AcquiredCount != 1 {
 		t.Fatalf("expected 1 entry, got %d", snapshot.AcquiredCount)
 	}
-	if snapshot.ChargedBytes != int64(len(data)) {
-		t.Fatalf("expected charged bytes %d, got %d", len(data), snapshot.ChargedBytes)
+	if snapshot.ChargedBytes != int64(len(data))+fakeDerivedSize() {
+		t.Fatalf("expected charged bytes %d, got %d", int64(len(data))+fakeDerivedSize(), snapshot.ChargedBytes)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/target"
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/traceanalysis"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/workspace"
 )
 
@@ -154,7 +155,7 @@ func TestTargetContextNotifiesScopeOwnersOnActivationAndRotation(t *testing.T) {
 // artifact service can acquire and use an artifact through a real target scope
 // with a real workspace.
 func TestArtifactServiceAcquiresAndUsesThroughTargetScope(t *testing.T) {
-	data := []byte("integration-test-artifact-data")
+	data := validNDJSONArtifact()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set(applicationclient.InstanceIDHeader, "11111111-1111-4111-8111-111111111111")
 		if strings.HasSuffix(request.URL.Path, "/instance") {
@@ -163,7 +164,7 @@ func TestArtifactServiceAcquiresAndUsesThroughTargetScope(t *testing.T) {
 		}
 		if strings.HasSuffix(request.URL.Path, "/traces/trace-1") {
 			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"COMPLETED","finalizedAt":"2026-07-25T12:00:00Z","sizeBytes":` + fmt.Sprintf("%d", len(data)) + `,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-07-26T12:00:00Z"}`))
+			_, _ = response.Write([]byte(`{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"SUCCEEDED","finalizedAt":"2026-07-24T12:00:00Z","sizeBytes":` + fmt.Sprintf("%d", len(data)) + `,"persistencePolicy":"ALWAYS","applicationTraceExpiresAt":"2026-07-26T12:00:00Z"}`))
 			return
 		}
 		if strings.HasSuffix(request.URL.Path, "/traces/trace-1/artifact") {
@@ -224,6 +225,7 @@ func TestArtifactServiceAcquiresAndUsesThroughTargetScope(t *testing.T) {
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return scope.OpenArtifact(ctx, traceID)
 		},
+		Processor: traceanalysis.New(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -258,9 +260,9 @@ func TestArtifactServiceAcquiresAndUsesThroughTargetScope(t *testing.T) {
 	if domain != nil {
 		t.Fatalf("Use failed: %v", domain)
 	}
-	reader, err := lease.Open()
+	reader, err := lease.OpenComponent(artifact.ComponentRawArtifact)
 	if err != nil {
-		t.Fatalf("Open failed: %v", err)
+		t.Fatalf("OpenComponent failed: %v", err)
 	}
 	got := make([]byte, len(data))
 	if _, err := io.ReadFull(reader, got); err != nil {
@@ -293,11 +295,21 @@ func parseTraceJSON(data []byte) (traceJSON, error) {
 	return trace, nil
 }
 
+// validNDJSONArtifact returns a minimal valid NDJSON artifact body that the real
+// traceanalysis.Processor accepts: a TRACE_STARTED record followed by a
+// TRACE_COMPLETED record with matching identity and a zero terminal usage
+// snapshot. Used by target-scope integration tests that wire the production
+// processor.
+func validNDJSONArtifact() []byte {
+	return []byte(`{"traceId":"trace-1","sessionId":"session-1","sequence":1,"timestamp":1784894400.000000000,"recordType":"TRACE_STARTED","frameId":null,"parentFrameId":null,"frameType":null,"route":null,"threadName":"th","metadata":{},"data":null}` + "\n" +
+		`{"traceId":"trace-1","sessionId":"session-1","sequence":2,"timestamp":1784894400.000000000,"recordType":"TRACE_COMPLETED","frameId":null,"parentFrameId":null,"frameType":null,"route":null,"threadName":"th","metadata":{"outcome":"SUCCEEDED","sessionUsageSnapshot":{"promptUnits":0,"completionUnits":0,"totalUnits":0},"errored":false,"persistencePolicy":"ALWAYS"},"data":null}` + "\n")
+}
+
 // TestArtifactScopeRotationDuringMetadataFetchReturnsTargetChanged proves
 // that scope rotation during the trace metadata load surfaces TARGET_CHANGED
 // rather than installing a stale-scope artifact (PR12-R03, PR12-R09).
 func TestArtifactScopeRotationDuringMetadataFetchReturnsTargetChanged(t *testing.T) {
-	data := []byte("rotation-during-metadata-fetch")
+	data := validNDJSONArtifact()
 	metadataReleased := make(chan struct{})
 	traceLoaded := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -311,7 +323,7 @@ func TestArtifactScopeRotationDuringMetadataFetchReturnsTargetChanged(t *testing
 			close(traceLoaded)
 			<-metadataReleased
 			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"COMPLETED","finalizedAt":"2026-07-25T12:00:00Z","sizeBytes":` + fmt.Sprintf("%d", len(data)) + `,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-07-26T12:00:00Z"}`))
+			_, _ = response.Write([]byte(`{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"SUCCEEDED","finalizedAt":"2026-07-24T12:00:00Z","sizeBytes":` + fmt.Sprintf("%d", len(data)) + `,"persistencePolicy":"ALWAYS","applicationTraceExpiresAt":"2026-07-26T12:00:00Z"}`))
 			return
 		}
 		response.WriteHeader(http.StatusNotFound)
@@ -361,6 +373,7 @@ func TestArtifactScopeRotationDuringMetadataFetchReturnsTargetChanged(t *testing
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return scope.OpenArtifact(ctx, traceID)
 		},
+		Processor: traceanalysis.New(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -429,7 +442,7 @@ func TestArtifactScopeRotationDuringMetadataFetchReturnsTargetChanged(t *testing
 // lease issued against a scope becomes invalid after scope rotation: Use on the
 // stale scope returns TARGET_CHANGED (PR12-R09).
 func TestArtifactScopeRotationDuringLeaseUseReturnsTargetChanged(t *testing.T) {
-	data := []byte("rotation-during-lease-use")
+	data := validNDJSONArtifact()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set(applicationclient.InstanceIDHeader, "11111111-1111-4111-8111-111111111111")
 		if strings.HasSuffix(request.URL.Path, "/instance") {
@@ -438,7 +451,7 @@ func TestArtifactScopeRotationDuringLeaseUseReturnsTargetChanged(t *testing.T) {
 		}
 		if strings.HasSuffix(request.URL.Path, "/traces/trace-1") && !strings.HasSuffix(request.URL.Path, "/artifact") {
 			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"COMPLETED","finalizedAt":"2026-07-25T12:00:00Z","sizeBytes":` + fmt.Sprintf("%d", len(data)) + `,"persistencePolicy":"PERSISTENT","applicationTraceExpiresAt":"2026-07-26T12:00:00Z"}`))
+			_, _ = response.Write([]byte(`{"targetScopeId":"scope-1","traceId":"trace-1","sessionId":"session-1","outcome":"SUCCEEDED","finalizedAt":"2026-07-24T12:00:00Z","sizeBytes":` + fmt.Sprintf("%d", len(data)) + `,"persistencePolicy":"ALWAYS","applicationTraceExpiresAt":"2026-07-26T12:00:00Z"}`))
 			return
 		}
 		if strings.HasSuffix(request.URL.Path, "/traces/trace-1/artifact") {
@@ -494,6 +507,7 @@ func TestArtifactScopeRotationDuringLeaseUseReturnsTargetChanged(t *testing.T) {
 		StreamOpener: func(ctx context.Context, scope target.Scope, traceID string) (*applicationclient.ArtifactStream, *consolecore.Error) {
 			return scope.OpenArtifact(ctx, traceID)
 		},
+		Processor: traceanalysis.New(),
 	})
 	if err != nil {
 		t.Fatal(err)

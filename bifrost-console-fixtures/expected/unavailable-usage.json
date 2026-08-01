@@ -20,10 +20,35 @@
     "completionUnits" : 0,
     "totalUnits" : 0
   },
+  "usageComplete" : false,
   "attempts" : [ {
     "retrySequenceId" : "retry-1",
     "attemptId" : "attempt-1",
-    "attemptNumber" : 1
+    "attemptNumber" : 1,
+    "usage" : {
+      "promptUnits" : 0,
+      "completionUnits" : 0,
+      "totalUnits" : 0
+    },
+    "usageComplete" : false
   } ],
-  "validationLinks" : [ ]
+  "retries" : [ {
+    "retrySequenceId" : "retry-1",
+    "usage" : {
+      "promptUnits" : 0,
+      "completionUnits" : 0,
+      "totalUnits" : 0
+    },
+    "usageComplete" : false
+  } ],
+  "validationLinks" : [ ],
+  "frames" : [ ],
+  "unframedAttributedUsage" : {
+    "promptUnits" : 0,
+    "completionUnits" : 0,
+    "totalUnits" : 0
+  },
+  "payloads" : [ ],
+  "gaps" : [ ],
+  "uncertainties" : [ ]
 }

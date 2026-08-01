@@ -328,13 +328,15 @@ func (f *faultyFile) Close() error {
 
 // faultyFS wraps the real filesystem and injects failures at specific points.
 type faultyFS struct {
-	real       realFileSystem
-	syncFail   error
-	closeFail  error
-	renameFail error
-	removeFail error
-	createFail error
-	shortAt    int64
+	real          realFileSystem
+	syncFail      error
+	closeFail     error
+	renameFail    error
+	removeFail    error
+	removeAllFail error
+	createFail    error
+	statFail      error
+	shortAt       int64
 }
 
 type blockingRenameFS struct {
@@ -354,8 +356,8 @@ func (fs *blockingRenameFS) mkdirAll(path string, perm os.FileMode) error {
 	return fs.real.mkdirAll(path, perm)
 }
 
-func (fs *blockingRenameFS) createTemp(dir, pattern string) (writableFile, string, error) {
-	return fs.real.createTemp(dir, pattern)
+func (fs *blockingRenameFS) create(path string) (writableFile, error) {
+	return fs.real.create(path)
 }
 
 func (fs *blockingRenameFS) rename(oldpath, newpath string) error {
@@ -368,12 +370,24 @@ func (fs *blockingRenameFS) remove(path string) error {
 	return fs.real.remove(path)
 }
 
+func (fs *blockingRenameFS) removeAll(path string) error {
+	return fs.real.removeAll(path)
+}
+
 func (fs *blockingRenameFS) open(path string) (io.ReadCloser, error) {
 	return fs.real.open(path)
 }
 
+func (fs *blockingRenameFS) openSeekable(path string) (io.ReadSeekCloser, error) {
+	return fs.real.openSeekable(path)
+}
+
 func (fs *blockingRenameFS) readDir(dir string) ([]os.DirEntry, error) {
 	return fs.real.readDir(dir)
+}
+
+func (fs *blockingRenameFS) stat(path string) (os.FileInfo, error) {
+	return fs.real.stat(path)
 }
 
 func newFaultyFS() *faultyFS {
@@ -384,15 +398,15 @@ func (fs *faultyFS) mkdirAll(path string, perm os.FileMode) error {
 	return fs.real.mkdirAll(path, perm)
 }
 
-func (fs *faultyFS) createTemp(dir, pattern string) (writableFile, string, error) {
+func (fs *faultyFS) create(path string) (writableFile, error) {
 	if fs.createFail != nil {
-		return nil, "", fs.createFail
+		return nil, fs.createFail
 	}
-	file, path, err := fs.real.createTemp(dir, pattern)
+	file, err := fs.real.create(path)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return &faultyFile{real: file, fs: fs, shortAt: fs.shortAt}, path, nil
+	return &faultyFile{real: file, fs: fs, shortAt: fs.shortAt}, nil
 }
 
 func (fs *faultyFS) rename(oldpath, newpath string) error {
@@ -409,22 +423,52 @@ func (fs *faultyFS) remove(path string) error {
 	return fs.real.remove(path)
 }
 
+func (fs *faultyFS) removeAll(path string) error {
+	if fs.removeAllFail != nil {
+		return fs.removeAllFail
+	}
+	return fs.real.removeAll(path)
+}
+
 func (fs *faultyFS) open(path string) (io.ReadCloser, error) {
 	return fs.real.open(path)
+}
+
+func (fs *faultyFS) openSeekable(path string) (io.ReadSeekCloser, error) {
+	return fs.real.openSeekable(path)
 }
 
 func (fs *faultyFS) readDir(dir string) ([]os.DirEntry, error) {
 	return fs.real.readDir(dir)
 }
 
+func (fs *faultyFS) stat(path string) (os.FileInfo, error) {
+	if fs.statFail != nil {
+		return nil, fs.statFail
+	}
+	return fs.real.stat(path)
+}
+
 // newTestService creates a fully wired artifact service with injectable
-// dependencies for deterministic testing.
+// dependencies for deterministic testing. It uses a fakeProcessor that accepts
+// any raw artifact and writes one small derived component, so artifact-only
+// lifecycle tests do not need valid NDJSON. Production-composition tests should
+// use newTestServiceWithProcessor with the real traceanalysis.Processor and
+// valid Java fixture bytes.
 func newTestService(t *testing.T, config Config, loader *fakeLoader, opener *fakeOpener) *Service {
 	t.Helper()
 	return newTestServiceWithDeps(t, config, loader, opener, &manualTimerFactory{}, newManualClock(time.UnixMilli(1000000)), nil)
 }
 
 func newTestServiceWithDeps(t *testing.T, config Config, loader *fakeLoader, opener *fakeOpener, timers *manualTimerFactory, clock *manualClock, fs fileSystem) *Service {
+	t.Helper()
+	return newTestServiceWithProcessor(t, config, loader, opener, timers, clock, fs, newFakeProcessor())
+}
+
+// newTestServiceWithProcessor wires a fully configured artifact service with an
+// explicit processor. Production-composition tests pass the real
+// traceanalysis.Processor; artifact-only lifecycle tests pass a fake.
+func newTestServiceWithProcessor(t *testing.T, config Config, loader *fakeLoader, opener *fakeOpener, timers *manualTimerFactory, clock *manualClock, fs fileSystem, processor Processor) *Service {
 	t.Helper()
 	ws := testWorkspace(t)
 	entropy := &deterministicEntropy{}
@@ -433,6 +477,7 @@ func newTestServiceWithDeps(t *testing.T, config Config, loader *fakeLoader, ope
 		Workspace:    ws,
 		TraceLoader:  loader.loader(),
 		StreamOpener: opener.opener(),
+		Processor:    processor,
 		Clock:        clock.nowFunc(),
 		Entropy:      entropy.factory(),
 		TimerFactory: timers.factory(),
@@ -473,4 +518,145 @@ func waitForWaiters(t *testing.T, svc *Service, traceID string, minWaiters int, 
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %d waiters on trace %q", minWaiters, traceID)
+}
+
+// fakeProcessor is a test Processor that accepts any raw artifact and writes one
+// small derived component named by ComponentDerived. It records calls, can
+// inject failures and barriers, and lets artifact-only lifecycle tests avoid
+// valid NDJSON. It never validates content.
+const fakeProcessorComponent ComponentName = "fake-derived.bin"
+
+type fakeProcessor struct {
+	mu            sync.Mutex
+	calls         int
+	err           *consolecore.Error
+	derivedBytes  []byte
+	barrier       chan struct{}
+	release       chan struct{}
+	barrierClosed bool
+	derivedName   ComponentName
+	cancelAfter   int // if > 0, fail the nth Create call with the ctx error
+	createCount   int
+}
+
+func newFakeProcessor() *fakeProcessor {
+	return &fakeProcessor{
+		derivedBytes: []byte("derived"),
+		derivedName:  fakeProcessorComponent,
+	}
+}
+
+// fakeDerivedSize returns the byte count the default fake processor charges for
+// its derived component. Tests that assert aggregate local/charged bytes add
+// this to the raw transfer length.
+func fakeDerivedSize() int64 { return int64(len("derived")) }
+
+func (p *fakeProcessor) Process(req ProcessRequest) (ProcessResult, *consolecore.Error) {
+	p.mu.Lock()
+	p.calls++
+	barrier := p.barrier
+	release := p.release
+	barrierClosed := p.barrierClosed
+	p.barrierClosed = true
+	p.mu.Unlock()
+	if barrier != nil && !barrierClosed {
+		close(barrier)
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-req.Context.Done():
+			return ProcessResult{}, consolecore.NewError(consolecore.CodeTargetUnavailable,
+				"The operation was canceled.", "", consolecore.Details{}, req.Context.Err())
+		}
+	}
+	if p.err != nil {
+		return ProcessResult{}, p.err
+	}
+	name := p.derivedName
+	if name == "" {
+		name = fakeProcessorComponent
+	}
+	writer, domain := req.Sink.Create(req.Context, name)
+	if domain != nil {
+		return ProcessResult{}, domain
+	}
+	if _, err := writer.Write(p.derivedBytes); err != nil {
+		_ = writer.Close()
+		return ProcessResult{}, consolecore.NewError(consolecore.CodeLocalStorageUnavailable,
+			"Local artifact storage is unavailable.", "", consolecore.Details{}, err)
+	}
+	if err := writer.Sync(); err != nil {
+		_ = writer.Close()
+		return ProcessResult{}, consolecore.NewError(consolecore.CodeLocalStorageUnavailable,
+			"Local artifact storage is unavailable.", "", consolecore.Details{}, err)
+	}
+	if err := writer.Close(); err != nil {
+		return ProcessResult{}, consolecore.NewError(consolecore.CodeLocalStorageUnavailable,
+			"Local artifact storage is unavailable.", "", consolecore.Details{}, err)
+	}
+	return ProcessResult{
+		ComponentSizes: map[ComponentName]int64{
+			name: int64(len(p.derivedBytes)),
+		},
+	}, nil
+}
+
+func (p *fakeProcessor) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
+// readLeasedComponent reads all bytes from a leased component and closes the
+// reader, returning the bytes.
+func readLeasedComponent(t *testing.T, lease *Lease, name ComponentName) []byte {
+	t.Helper()
+	reader, err := lease.OpenComponent(name)
+	if err != nil {
+		t.Fatalf("OpenComponent(%s) failed: %v", name, err)
+	}
+	body, readErr := io.ReadAll(reader)
+	reader.Close()
+	if readErr != nil {
+		t.Fatalf("read component %s: %v", name, readErr)
+	}
+	return body
+}
+
+// bundleFileCount counts files (not directories) beneath the artifacts directory
+// for assertions that no partial or installed bundle remains.
+func bundleFileCount(t *testing.T, svc *Service) int {
+	t.Helper()
+	count := 0
+	err := filepath.WalkDir(svc.storage.dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			count++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk artifacts dir: %v", err)
+	}
+	return count
+}
+
+// bundleDirCount counts installed/staging bundle directories beneath the
+// artifacts directory.
+func bundleDirCount(t *testing.T, svc *Service) int {
+	t.Helper()
+	entries, err := os.ReadDir(svc.storage.dir)
+	if err != nil {
+		t.Fatalf("read artifacts dir: %v", err)
+	}
+	count := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			count++
+		}
+	}
+	return count
 }

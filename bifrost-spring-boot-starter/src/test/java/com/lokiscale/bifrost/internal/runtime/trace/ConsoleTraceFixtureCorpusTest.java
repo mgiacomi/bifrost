@@ -3,11 +3,15 @@ package com.lokiscale.bifrost.internal.runtime.trace;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
+import com.lokiscale.bifrost.internal.core.ExecutionFrame;
+import com.lokiscale.bifrost.internal.core.OperationType;
 import com.lokiscale.bifrost.internal.core.TraceCompletion;
+import com.lokiscale.bifrost.internal.core.TraceFrameType;
 import com.lokiscale.bifrost.internal.core.TraceOutcome;
+import com.lokiscale.bifrost.internal.core.TracePersistencePolicy;
 import com.lokiscale.bifrost.internal.core.TraceRecordType;
 import com.lokiscale.bifrost.internal.runtime.usage.SessionUsageSnapshot;
+import com.lokiscale.bifrost.internal.runtime.usage.UsagePrecision;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -32,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ConsoleTraceFixtureCorpusTest
@@ -46,18 +51,36 @@ class ConsoleTraceFixtureCorpusTest
             "nested-retry-sequences",
             "validation-exhaustion",
             "unavailable-usage",
+            "missing-response-usage",
             "unattributed-usage",
             "nonterminal-error-then-success",
-            "chunked-payload");
-    private static final Map<String, String> INVALID = Map.of(
-            "malformed-json", "MALFORMED_JSON",
-            "inconsistent-identities", "INCONSISTENT_IDENTITY",
-            "duplicate-sequence", "NON_MONOTONIC_SEQUENCE",
-            "incomplete-chunks", "INCOMPLETE_CHUNKS",
-            "missing-completion", "MISSING_COMPLETION",
-            "non-final-completion", "NON_FINAL_COMPLETION",
-            "unsupported-enum", "UNSUPPORTED_VALUE",
-            "contradictory-usage-reconciliation", "CONTRADICTORY_USAGE");
+            "chunked-payload",
+            "chunked-json-payload",
+            "nested-frame-usage",
+            "repeated-skill-invocations",
+            "incomplete-frame-duration",
+            "overlapping-frame-duration");
+    private static final Map<String, String> INVALID = Map.ofEntries(
+            Map.entry("malformed-json", "MALFORMED_JSON"),
+            Map.entry("inconsistent-identities", "INCONSISTENT_IDENTITY"),
+            Map.entry("duplicate-sequence", "NON_MONOTONIC_SEQUENCE"),
+            Map.entry("incomplete-chunks", "INCOMPLETE_CHUNKS"),
+            Map.entry("missing-completion", "MISSING_COMPLETION"),
+            Map.entry("non-final-completion", "NON_FINAL_COMPLETION"),
+            Map.entry("unsupported-enum", "UNSUPPORTED_VALUE"),
+            Map.entry("contradictory-usage-reconciliation", "CONTRADICTORY_USAGE"),
+            Map.entry("duplicate-chunks", "INVALID_CHUNKS"),
+            Map.entry("mismatched-chunks", "INVALID_CHUNKS"),
+            Map.entry("out-of-order-chunks", "INVALID_CHUNKS"),
+            Map.entry("invalid-frame-relationship", "INVALID_FRAME_RELATIONSHIP"),
+            Map.entry("cyclic-frame-relationship", "INVALID_FRAME_RELATIONSHIP"),
+            Map.entry("invalid-terminal-failure-link", "INVALID_TERMINAL_FAILURE"),
+            Map.entry("inconsistent-attempt-identity", "INVALID_ATTEMPT"),
+            Map.entry("negative-usage", "INVALID_USAGE"),
+            Map.entry("overflowing-usage", "INVALID_USAGE"),
+            Map.entry("oversized-physical-record", "LINE_TOO_LARGE"),
+            Map.entry("excessive-json-nesting", "EXCESSIVE_JSON_DEPTH"),
+            Map.entry("truncated-final-input", "TRUNCATED_INPUT"));
 
     @TempDir
     Path temporaryDirectory;
@@ -69,10 +92,14 @@ class ConsoleTraceFixtureCorpusTest
         Path generated = temporaryDirectory.resolve("generated");
         generate(generated);
         Path committed = fixtureRoot();
+        Map<String, String> transportFixturesBefore = transportFixtures(committed);
 
         if (Boolean.getBoolean("bifrost.console.fixtures.regenerate"))
         {
             copyCorpus(generated, committed);
+            assertThat(transportFixtures(committed))
+                    .as("regeneration must not alter transport fixtures outside traces/ and expected/")
+                    .isEqualTo(transportFixturesBefore);
         }
 
         assertThat(fileNames(committed)).containsExactlyElementsOf(fileNames(generated));
@@ -99,7 +126,7 @@ class ConsoleTraceFixtureCorpusTest
 
     @Test
     @Order(3)
-    void validFixturesSatisfyAttemptTerminalAndUsageInvariants() throws Exception
+    void validFixturesSatisfyCurrentTraceAnalysisInvariants() throws Exception
     {
         for (String name : VALID)
         {
@@ -111,63 +138,265 @@ class ConsoleTraceFixtureCorpusTest
             assertThat(records.getLast().path("recordType").asText()).isEqualTo("TRACE_COMPLETED");
             assertThat(records).allSatisfy(node -> assertThat(node.has("schemaVersion")).isFalse());
 
+            JsonNode expected = JSON.readTree(fixtureRoot().resolve("expected").resolve(name + ".json").toFile());
             Map<String, List<Integer>> sequenceAttempts = new LinkedHashMap<>();
             Map<String, List<String>> attemptLifecycle = new LinkedHashMap<>();
             List<Map<String, Object>> actualAttempts = new ArrayList<>();
-            records.stream()
-                    .filter(node -> node.path("recordType").asText().startsWith("MODEL_"))
-                    .forEach(node ->
-                    {
-                        String attemptId = node.path("metadata").path("attemptId").asText();
-                        assertThat(attemptId).isNotBlank();
-                        attemptLifecycle.computeIfAbsent(attemptId, ignored -> new ArrayList<>())
-                                .add(node.path("recordType").asText());
-                        if ("MODEL_RESPONSE_RECEIVED".equals(node.path("recordType").asText()))
-                        {
-                            sequenceAttempts
-                                    .computeIfAbsent(
-                                            node.path("metadata").path("retrySequenceId").asText(),
-                                            ignored -> new ArrayList<>())
-                                    .add(node.path("metadata").path("attemptNumber").asInt());
-                            actualAttempts.add(expectedAttempt(
-                                    node.path("metadata").path("retrySequenceId").asText(),
-                                    attemptId,
-                                    node.path("metadata").path("attemptNumber").asInt()));
-                        }
-                    });
-            sequenceAttempts.values().forEach(numbers ->
-                    assertThat(numbers).containsExactlyElementsOf(
-                            Stream.iterate(1, number -> number + 1).limit(numbers.size()).toList()));
+            Usage attributedUsage = Usage.ZERO;
+            Usage unframedAttributedUsage = Usage.ZERO;
+            for (JsonNode node : records)
+            {
+                if (!node.path("recordType").asText().startsWith("MODEL_"))
+                {
+                    continue;
+                }
+                String attemptId = node.path("metadata").path("attemptId").asText();
+                assertThat(attemptId).isNotBlank();
+                attemptLifecycle.computeIfAbsent(attemptId, ignored -> new ArrayList<>())
+                        .add(node.path("recordType").asText());
+                if (!"MODEL_RESPONSE_RECEIVED".equals(node.path("recordType").asText()))
+                {
+                    continue;
+                }
+                String retrySequenceId = node.path("metadata").path("retrySequenceId").asText();
+                sequenceAttempts.computeIfAbsent(retrySequenceId, ignored -> new ArrayList<>())
+                        .add(node.path("metadata").path("attemptNumber").asInt());
+                Usage responseUsage = usageFrom(node.at("/metadata/usage"));
+                boolean responseUsageComplete = node.at("/metadata/usage").isObject()
+                        && !"UNAVAILABLE".equals(node.at("/metadata/usage/precision").asText());
+                actualAttempts.add(attemptResult(
+                        retrySequenceId,
+                        attemptId,
+                        node.path("metadata").path("attemptNumber").asInt(),
+                        responseUsage,
+                        responseUsageComplete));
+                attributedUsage = attributedUsage.plus(responseUsage);
+                if (node.path("frameId").isNull())
+                {
+                    unframedAttributedUsage = unframedAttributedUsage.plus(responseUsage);
+                }
+            }
+            sequenceAttempts.values().forEach(numbers -> assertThat(numbers).containsExactlyElementsOf(
+                    Stream.iterate(1, number -> number + 1).limit(numbers.size()).toList()));
             attemptLifecycle.values().forEach(recordTypes -> assertThat(recordTypes).containsExactly(
                     TraceRecordType.MODEL_REQUEST_PREPARED.name(),
                     TraceRecordType.MODEL_REQUEST_SENT.name(),
                     TraceRecordType.MODEL_RESPONSE_RECEIVED.name()));
 
-            JsonNode expected = JSON.readTree(
-                    fixtureRoot().resolve("expected").resolve(name + ".json").toFile());
-            JsonNode actualAttemptsNode = JSON.valueToTree(actualAttempts);
-            assertThat(actualAttemptsNode).isEqualTo(expected.path("attempts"));
+            assertThat(JSON.<JsonNode>valueToTree(actualAttempts)).isEqualTo(expected.path("attempts"));
+            assertThat(JSON.<JsonNode>valueToTree(retryResults(actualAttempts))).isEqualTo(expected.path("retries"));
+            assertThat(JSON.<JsonNode>valueToTree(attributedUsage.asMap())).isEqualTo(expected.path("attributedUsage"));
+            assertThat(JSON.<JsonNode>valueToTree(unframedAttributedUsage.asMap())).isEqualTo(expected.path("unframedAttributedUsage"));
+            assertThat(actualAttempts.stream().allMatch(attempt -> (Boolean) attempt.get("usageComplete")))
+                    .isEqualTo(expected.path("usageComplete").asBoolean());
+            Usage terminalUsage = usageFrom(records.getLast().at("/metadata/sessionUsageSnapshot"));
+            assertThat(JSON.<JsonNode>valueToTree(terminalUsage.asMap())).isEqualTo(expected.path("terminalUsage"));
+            assertThat(JSON.<JsonNode>valueToTree(terminalUsage.minus(attributedUsage).asMap()))
+                    .isEqualTo(expected.path("unattributedUsage"));
             List<Map<String, Object>> actualValidationLinks = new ArrayList<>();
-            records.stream()
-                    .filter(node -> node.path("recordType").asText().startsWith("ADVISOR_"))
-                    .forEach(node ->
-                    {
-                        assertThat(node.at("/metadata/retrySequenceId").asText()).isNotBlank();
-                        assertThat(node.at("/metadata/attemptId").asText()).isNotBlank();
-                        assertThat(node.at("/metadata/attemptNumber").asInt()).isPositive();
-                        actualValidationLinks.add(expectedValidationLink(
-                                node.at("/metadata/status").asText(),
-                                node.at("/metadata/retrySequenceId").asText(),
-                                node.at("/metadata/attemptId").asText(),
-                                node.at("/metadata/attemptNumber").asInt()));
-                    });
-            JsonNode actualValidationLinksNode = JSON.valueToTree(actualValidationLinks);
+            records.stream().filter(node -> node.path("recordType").asText().startsWith("ADVISOR_"))
+                    .forEach(node -> actualValidationLinks.add(expectedValidationLink(
+                            node.at("/metadata/status").asText(),
+                            node.at("/metadata/retrySequenceId").asText(),
+                            node.at("/metadata/attemptId").asText(),
+                            node.at("/metadata/attemptNumber").asInt())));
+            JsonNode actualValidationLinksNode = JSON.<JsonNode>valueToTree(actualValidationLinks);
             assertThat(actualValidationLinksNode).isEqualTo(expected.path("validationLinks"));
+            assertFrameSemantics(records, expected);
+            assertPayloadSemantics(records, expected);
+            assertThat(expected.has("ui")).isFalse();
+            assertThat(expected.has("mcp")).isFalse();
         }
+    }
+
+    private static void assertFrameSemantics(List<JsonNode> records, JsonNode expected)
+    {
+        Map<String, JsonNode> opened = new LinkedHashMap<>();
+        Map<String, JsonNode> closed = new LinkedHashMap<>();
+        Map<String, String> parents = new LinkedHashMap<>();
+        Map<String, Usage> directUsage = new LinkedHashMap<>();
+        for (JsonNode record : records)
+        {
+            String type = record.path("recordType").asText();
+            if ("FRAME_OPENED".equals(type))
+            {
+                String frameId = record.path("frameId").asText();
+                assertThat(opened.put(frameId, record)).isNull();
+                assertThat(frameId).isNotBlank();
+                String parentFrameId = nullableText(record.path("parentFrameId"));
+                assertThat(parentFrameId).isNotEqualTo(frameId);
+                parents.put(frameId, parentFrameId);
+            }
+            if ("FRAME_CLOSED".equals(type))
+            {
+                String frameId = record.path("frameId").asText();
+                JsonNode open = opened.get(frameId);
+                assertThat(open).isNotNull();
+                assertThat(record.path("parentFrameId")).isEqualTo(open.path("parentFrameId"));
+                assertThat(record.path("frameType")).isEqualTo(open.path("frameType"));
+                assertThat(closed.put(frameId, record)).isNull();
+            }
+            if ("MODEL_RESPONSE_RECEIVED".equals(type) && !record.path("frameId").isNull())
+            {
+                String frameId = record.path("frameId").asText();
+                directUsage.merge(frameId, usageFrom(record.at("/metadata/usage")), Usage::plus);
+            }
+        }
+        List<Map<String, Object>> actualFrames = new ArrayList<>();
+        List<Map<String, Object>> gaps = new ArrayList<>();
+        List<Map<String, Object>> uncertainties = new ArrayList<>();
+        for (Map.Entry<String, JsonNode> entry : opened.entrySet())
+        {
+            String frameId = entry.getKey();
+            JsonNode open = entry.getValue();
+            JsonNode close = closed.get(frameId);
+            Integer inclusiveDurationMillis = close == null ? null : (int) (millis(close) - millis(open));
+            List<String> children = parents.entrySet().stream()
+                    .filter(parent -> frameId.equals(parent.getValue()))
+                    .map(Map.Entry::getKey)
+                    .toList();
+            Integer selfDurationMillis = null;
+            if (inclusiveDurationMillis != null)
+            {
+                List<FrameInterval> childIntervals = new ArrayList<>();
+                for (String child : children)
+                {
+                    JsonNode childClose = closed.get(child);
+                    if (childClose == null)
+                    {
+                        uncertainties.add(ordered("kind", "SELF_DURATION_UNAVAILABLE_INCOMPLETE_CHILD", "frameId", frameId));
+                        childIntervals.clear();
+                        break;
+                    }
+                    childIntervals.add(new FrameInterval(millis(opened.get(child)), millis(childClose)));
+                }
+                if (children.isEmpty())
+                {
+                    selfDurationMillis = inclusiveDurationMillis;
+                }
+                else if (!childIntervals.isEmpty())
+                {
+                    childIntervals.sort(Comparator.comparingLong(FrameInterval::startMillis));
+                    boolean overlaps = false;
+                    long childDurationMillis = 0;
+                    long latestEndMillis = Long.MIN_VALUE;
+                    for (FrameInterval interval : childIntervals)
+                    {
+                        overlaps |= interval.startMillis() < latestEndMillis;
+                        latestEndMillis = Math.max(latestEndMillis, interval.endMillis());
+                        childDurationMillis += interval.endMillis() - interval.startMillis();
+                    }
+                    if (overlaps)
+                    {
+                        uncertainties.add(ordered("kind", "SELF_DURATION_UNAVAILABLE_OVERLAPPING_CHILDREN", "frameId", frameId));
+                    }
+                    else
+                    {
+                        selfDurationMillis = (int) (inclusiveDurationMillis - childDurationMillis);
+                    }
+                }
+            }
+            if (close == null)
+            {
+                gaps.add(ordered("kind", "OPEN_FRAME_NOT_CLOSED", "frameId", frameId));
+            }
+            Usage descendantUsage = Usage.ZERO;
+            for (String candidateFrameId : opened.keySet())
+            {
+                if (isDescendant(candidateFrameId, frameId, parents))
+                {
+                    descendantUsage = descendantUsage.plus(directUsage.getOrDefault(candidateFrameId, Usage.ZERO));
+                }
+            }
+            Usage frameDirectUsage = directUsage.getOrDefault(frameId, Usage.ZERO);
+            Map<String, Object> frameEntry = ordered(
+                    "frameId", frameId,
+                    "parentFrameId", nullableText(open.path("parentFrameId")),
+                    "frameType", open.path("frameType").asText(),
+                    "inclusiveDurationMillis", inclusiveDurationMillis,
+                    "selfDurationMillis", selfDurationMillis,
+                    "directUsage", frameDirectUsage.asMap(),
+                    "descendantUsage", descendantUsage.asMap(),
+                    "inclusiveUsage", frameDirectUsage.plus(descendantUsage).asMap());
+            String route = open.path("route").asText("");
+            if (!route.isEmpty())
+            {
+                frameEntry.put("route", route);
+            }
+            actualFrames.add(frameEntry);
+        }
+        assertThat(JSON.<JsonNode>valueToTree(actualFrames)).isEqualTo(expected.path("frames"));
+        assertThat(JSON.<JsonNode>valueToTree(gaps)).isEqualTo(expected.path("gaps"));
+        assertThat(JSON.<JsonNode>valueToTree(uncertainties)).isEqualTo(expected.path("uncertainties"));
+    }
+
+    private static void assertPayloadSemantics(List<JsonNode> records, JsonNode expected)
+    {
+        List<Map<String, Object>> payloads = new ArrayList<>();
+        for (JsonNode record : records)
+        {
+            JsonNode metadata = record.path("metadata");
+            if (metadata.path("payloadChunked").asBoolean())
+            {
+                payloads.add(ordered(
+                        "logicalRecordSequence", record.path("sequence").asInt(),
+                        "payloadId", metadata.path("payloadId").asText(),
+                        "contentType", metadata.path("contentType").asText(),
+                        "chunkCount", metadata.path("chunkCount").asInt()));
+            }
+        }
+        assertThat(JSON.<JsonNode>valueToTree(payloads)).isEqualTo(expected.path("payloads"));
+    }
+
+    private static String nullableText(JsonNode node)
+    {
+        return node.isNull() ? null : node.asText();
+    }
+
+    private static long millis(JsonNode record)
+    {
+        return record.path("timestamp").decimalValue().movePointRight(3).longValueExact();
+    }
+
+    private static boolean isDescendant(String candidate, String ancestor, Map<String, String> parents)
+    {
+        Set<String> visited = new LinkedHashSet<>();
+        String parent = parents.get(candidate);
+        while (parent != null)
+        {
+            if (parent.equals(ancestor))
+            {
+                return true;
+            }
+            if (!visited.add(parent))
+            {
+                return false;
+            }
+            parent = parents.get(parent);
+        }
+        return false;
     }
 
     @Test
     @Order(4)
+    void validFixtureUsagePrecisionValuesAreCurrentEnums() throws Exception
+    {
+        for (String name : VALID)
+        {
+            for (JsonNode record : parseLines(fixtureRoot().resolve("traces").resolve(name + ".ndjson")))
+            {
+                if ("MODEL_RESPONSE_RECEIVED".equals(record.path("recordType").asText())
+                        && record.at("/metadata/usage").isObject())
+                {
+                    assertThatCode(() -> UsagePrecision.valueOf(record.at("/metadata/usage/precision").asText()))
+                            .doesNotThrowAnyException();
+                }
+            }
+        }
+    }
+
+    @Test
+    @Order(5)
     void invalidFixturesHaveOneNamedExpectedClassification() throws Exception
     {
         for (Map.Entry<String, String> entry : INVALID.entrySet())
@@ -180,17 +409,19 @@ class ConsoleTraceFixtureCorpusTest
     }
 
     @Test
-    @Order(5)
-    void unattributedUsageExpectedResultIsTerminalMinusAttributedResponses() throws Exception
+    @Order(6)
+    void expectedUsageReconcilesEveryComponentIndependently() throws Exception
     {
-        JsonNode expected = JSON.readTree(
-                fixtureRoot().resolve("expected/unattributed-usage.json").toFile());
-        assertThat(expected.at("/unattributedUsage/promptUnits").asInt()).isEqualTo(
-                expected.at("/terminalUsage/promptUnits").asInt()
-                        - expected.at("/attributedUsage/promptUnits").asInt());
-        assertThat(expected.at("/unattributedUsage/completionUnits").asInt()).isEqualTo(
-                expected.at("/terminalUsage/completionUnits").asInt()
-                        - expected.at("/attributedUsage/completionUnits").asInt());
+        for (String name : VALID)
+        {
+            JsonNode expected = JSON.readTree(fixtureRoot().resolve("expected").resolve(name + ".json").toFile());
+            for (String component : List.of("promptUnits", "completionUnits", "totalUnits"))
+            {
+                assertThat(expected.at("/unattributedUsage/" + component).asInt()).isEqualTo(
+                        expected.at("/terminalUsage/" + component).asInt()
+                                - expected.at("/attributedUsage/" + component).asInt());
+            }
+        }
     }
 
     private static void generate(Path root) throws Exception
@@ -262,7 +493,7 @@ class ConsoleTraceFixtureCorpusTest
             }
             case "nested-retry-sequences" ->
             {
-                appendAttempt(handle, "retry-outer", "attempt-outer-1", 1, 4, 2, "ESTIMATED");
+                appendAttempt(handle, "retry-outer", "attempt-outer-1", 1, 4, 2, "HEURISTIC");
                 appendAttempt(handle, "retry-inner", "attempt-inner-1", 1, 5, 1, "EXACT");
                 appendAttempt(handle, "retry-inner", "attempt-inner-2", 2, 3, 1, "EXACT");
                 attributed = terminal = new Usage(12, 4);
@@ -286,11 +517,13 @@ class ConsoleTraceFixtureCorpusTest
             }
             case "unavailable-usage" -> appendAttempt(
                     handle, "retry-1", "attempt-1", 1, 0, 0, "UNAVAILABLE");
+            case "missing-response-usage" -> appendAttemptWithoutUsage(
+                    handle, "retry-1", "attempt-1", 1);
             case "unattributed-usage" ->
             {
-                appendAttempt(handle, "retry-1", "attempt-1", 1, 10, 4, "EXACT");
-                attributed = new Usage(10, 4);
-                terminal = new Usage(13, 6);
+                appendAttempt(handle, "retry-1", "attempt-1", 1, new Usage(10, 4, 16), "EXACT");
+                attributed = new Usage(10, 4, 16);
+                terminal = new Usage(13, 6, 21);
             }
             case "nonterminal-error-then-success" ->
             {
@@ -311,6 +544,64 @@ class ConsoleTraceFixtureCorpusTest
                 appendResponse(handle, "retry-1", "attempt-1", 1, 2, 1, "EXACT");
                 attributed = terminal = new Usage(2, 1);
             }
+            case "chunked-json-payload" ->
+            {
+                handle.append(TraceRecordType.MODEL_REQUEST_PREPARED,
+                        attempt("retry-1", "attempt-1", 1, Map.of()),
+                        Map.of("messages", List.of("user")));
+                handle.append(TraceRecordType.MODEL_REQUEST_SENT,
+                        attempt("retry-1", "attempt-1", 1, Map.of()),
+                        Map.of("content", "x".repeat(5000)));
+                appendResponse(handle, "retry-1", "attempt-1", 1, 2, 1, "EXACT");
+                attributed = terminal = new Usage(2, 1);
+            }
+            case "nested-frame-usage" ->
+            {
+                ExecutionFrame rootFrame = frame("root", null, TraceFrameType.ROOT_MISSION, "root.skill");
+                ExecutionFrame skill = frame("skill", "root", TraceFrameType.SKILL_EXECUTION, "root.skill");
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, rootFrame, CLOCK.instant());
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, skill, CLOCK.instant().plusSeconds(1));
+                appendAttempt(handle, skill, "retry-framed", "attempt-framed", 1, 4, 2, "EXACT");
+                appendAttempt(handle, "retry-unframed", "attempt-unframed", 1, 1, 1, "HEURISTIC");
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, skill, CLOCK.instant().plusSeconds(5));
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, rootFrame, CLOCK.instant().plusSeconds(8));
+                attributed = terminal = new Usage(5, 3);
+            }
+            case "repeated-skill-invocations" ->
+            {
+                ExecutionFrame rootFrame = frame("root", null, TraceFrameType.ROOT_MISSION, "root.skill");
+                ExecutionFrame first = frame("skill-1", "root", TraceFrameType.SKILL_EXECUTION, "root.skill");
+                ExecutionFrame second = frame("skill-2", "root", TraceFrameType.SKILL_EXECUTION, "root.skill");
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, rootFrame, CLOCK.instant());
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, first, CLOCK.instant().plusSeconds(1));
+                appendAttempt(handle, first, "retry-1", "attempt-1", 1, 2, 1, "EXACT");
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, first, CLOCK.instant().plusSeconds(3));
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, second, CLOCK.instant().plusSeconds(4));
+                appendAttempt(handle, second, "retry-2", "attempt-2", 1, 3, 2, "EXACT");
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, second, CLOCK.instant().plusSeconds(6));
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, rootFrame, CLOCK.instant().plusSeconds(7));
+                attributed = terminal = new Usage(5, 3);
+            }
+            case "incomplete-frame-duration" ->
+            {
+                ExecutionFrame rootFrame = frame("root", null, TraceFrameType.ROOT_MISSION, "root.skill");
+                ExecutionFrame incomplete = frame("incomplete", "root", TraceFrameType.TOOL_INVOCATION, "root.tool");
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, rootFrame, CLOCK.instant());
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, incomplete, CLOCK.instant().plusSeconds(1));
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, rootFrame, CLOCK.instant().plusSeconds(4));
+            }
+            case "overlapping-frame-duration" ->
+            {
+                ExecutionFrame rootFrame = frame("root", null, TraceFrameType.ROOT_MISSION, "root.skill");
+                ExecutionFrame first = frame("child-1", "root", TraceFrameType.SKILL_EXECUTION, "root.first");
+                ExecutionFrame second = frame("child-2", "root", TraceFrameType.SKILL_EXECUTION, "root.second");
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, rootFrame, CLOCK.instant());
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, first, CLOCK.instant().plusSeconds(1));
+                appendFrame(handle, TraceRecordType.FRAME_OPENED, second, CLOCK.instant().plusSeconds(3));
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, first, CLOCK.instant().plusSeconds(5));
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, second, CLOCK.instant().plusSeconds(7));
+                appendFrame(handle, TraceRecordType.FRAME_CLOSED, rootFrame, CLOCK.instant().plusSeconds(8));
+            }
             default -> throw new IllegalArgumentException(name);
         }
 
@@ -325,8 +616,7 @@ class ConsoleTraceFixtureCorpusTest
                 TraceOutcome.valueOf(outcome),
                 new SessionUsageSnapshot(
                         0, 0, 0, 0,
-                        terminal.promptUnits(), terminal.completionUnits(),
-                        terminal.promptUnits() + terminal.completionUnits(),
+                        terminal.promptUnits(), terminal.completionUnits(), terminal.totalUnits(),
                         0, 0, 0),
                 terminalFailureId,
                 completionDetails));
@@ -342,10 +632,49 @@ class ConsoleTraceFixtureCorpusTest
             int completion,
             String precision) throws IOException
     {
+        appendAttempt(handle, retryId, attemptId, number, new Usage(prompt, completion), precision);
+    }
+
+    private static void appendAttempt(
+            DefaultExecutionTraceHandle handle,
+            String retryId,
+            String attemptId,
+            int number,
+            Usage usage,
+            String precision) throws IOException
+    {
         Map<String, Object> metadata = attempt(retryId, attemptId, number, Map.of());
         handle.append(TraceRecordType.MODEL_REQUEST_PREPARED, metadata, Map.of("messages", List.of("user")));
         handle.append(TraceRecordType.MODEL_REQUEST_SENT, metadata, Map.of("messages", List.of("user")));
-        appendResponse(handle, retryId, attemptId, number, prompt, completion, precision);
+        appendResponse(handle, retryId, attemptId, number, usage, precision);
+    }
+
+    private static void appendAttemptWithoutUsage(
+            DefaultExecutionTraceHandle handle,
+            String retryId,
+            String attemptId,
+            int number) throws IOException
+    {
+        Map<String, Object> metadata = attempt(retryId, attemptId, number, Map.of());
+        handle.append(TraceRecordType.MODEL_REQUEST_PREPARED, metadata, Map.of("messages", List.of("user")));
+        handle.append(TraceRecordType.MODEL_REQUEST_SENT, metadata, Map.of("messages", List.of("user")));
+        handle.append(TraceRecordType.MODEL_RESPONSE_RECEIVED, metadata, Map.of("content", "fixture response"));
+    }
+
+    private static void appendAttempt(
+            DefaultExecutionTraceHandle handle,
+            ExecutionFrame frame,
+            String retryId,
+            String attemptId,
+            int number,
+            int prompt,
+            int completion,
+            String precision) throws IOException
+    {
+        Map<String, Object> metadata = attempt(retryId, attemptId, number, Map.of());
+        handle.append(TraceRecordType.MODEL_REQUEST_PREPARED, frame, frame.traceFrameType(), metadata, Map.of("messages", List.of("user")));
+        handle.append(TraceRecordType.MODEL_REQUEST_SENT, frame, frame.traceFrameType(), metadata, Map.of("messages", List.of("user")));
+        appendResponse(handle, frame, retryId, attemptId, number, prompt, completion, precision);
     }
 
     private static void appendResponse(
@@ -357,10 +686,54 @@ class ConsoleTraceFixtureCorpusTest
             int completion,
             String precision) throws IOException
     {
-        Map<String, Object> usage = usage(prompt, completion, precision);
+        appendResponse(handle, retryId, attemptId, number, new Usage(prompt, completion), precision);
+    }
+
+    private static void appendResponse(
+            DefaultExecutionTraceHandle handle,
+            String retryId,
+            String attemptId,
+            int number,
+            Usage usage,
+            String precision) throws IOException
+    {
         handle.append(TraceRecordType.MODEL_RESPONSE_RECEIVED,
+                attempt(retryId, attemptId, number, Map.of("usage", usage(usage, precision))),
+                Map.of("content", "fixture response"));
+    }
+
+    private static void appendResponse(
+            DefaultExecutionTraceHandle handle,
+            ExecutionFrame frame,
+            String retryId,
+            String attemptId,
+            int number,
+            int prompt,
+            int completion,
+            String precision) throws IOException
+    {
+        Map<String, Object> usage = usage(new Usage(prompt, completion), precision);
+        handle.append(TraceRecordType.MODEL_RESPONSE_RECEIVED, frame, frame.traceFrameType(),
                 attempt(retryId, attemptId, number, Map.of("usage", usage)),
                 Map.of("content", "fixture response"));
+    }
+
+    private static ExecutionFrame frame(
+            String frameId,
+            String parentFrameId,
+            TraceFrameType frameType,
+            String route)
+    {
+        return new ExecutionFrame(frameId, parentFrameId, OperationType.SKILL, frameType, route, Map.of(), CLOCK.instant());
+    }
+
+    private static void appendFrame(
+            DefaultExecutionTraceHandle handle,
+            TraceRecordType recordType,
+            ExecutionFrame frame,
+            Instant timestamp) throws IOException
+    {
+        handle.append(recordType, frame, frame.traceFrameType(), Map.of("timestampOverride", timestamp.toString()), null);
     }
 
     private static Map<String, Object> attempt(
@@ -377,14 +750,11 @@ class ConsoleTraceFixtureCorpusTest
         return result;
     }
 
-    private static Map<String, Object> usage(int prompt, int completion, String precision)
+    private static Map<String, Object> usage(Usage usage, String precision)
     {
-        Map<String, Object> usage = new LinkedHashMap<>();
-        usage.put("promptUnits", prompt);
-        usage.put("completionUnits", completion);
-        usage.put("totalUnits", prompt + completion);
-        usage.put("precision", precision);
-        return usage;
+        Map<String, Object> result = new LinkedHashMap<>(usage.asMap());
+        result.put("precision", precision);
+        return result;
     }
 
     private static Map<String, Object> ordered(Object... keysAndValues)
@@ -414,8 +784,15 @@ class ConsoleTraceFixtureCorpusTest
         result.put("attributedUsage", attributed.asMap());
         result.put("terminalUsage", terminal.asMap());
         result.put("unattributedUsage", terminal.minus(attributed).asMap());
+        result.put("usageComplete", usageComplete(name));
         result.put("attempts", expectedAttempts(name));
+        result.put("retries", expectedRetries(name));
         result.put("validationLinks", expectedValidationLinks(name));
+        result.put("frames", expectedFrames(name));
+        result.put("unframedAttributedUsage", expectedUnframedUsage(name).asMap());
+        result.put("payloads", expectedPayloads(name));
+        result.put("gaps", expectedGaps(name));
+        result.put("uncertainties", expectedUncertainties(name));
         return result;
     }
 
@@ -424,18 +801,74 @@ class ConsoleTraceFixtureCorpusTest
         return switch (name)
         {
             case "advisor-retry", "validation-exhaustion" -> List.of(
-                    expectedAttempt("retry-1", "attempt-1", 1),
-                    expectedAttempt("retry-1", "attempt-2", 2));
+                    expectedAttempt(name, "retry-1", "attempt-1", 1),
+                    expectedAttempt(name, "retry-1", "attempt-2", 2));
             case "nested-retry-sequences" -> List.of(
-                    expectedAttempt("retry-outer", "attempt-outer-1", 1),
-                    expectedAttempt("retry-inner", "attempt-inner-1", 1),
-                    expectedAttempt("retry-inner", "attempt-inner-2", 2));
-            case "terminal-abort", "nonterminal-error-then-success" ->
-                    name.equals("terminal-abort")
-                            ? List.of()
-                            : List.of(expectedAttempt("retry-1", "attempt-1", 1));
-            default -> List.of(expectedAttempt("retry-1", "attempt-1", 1));
+                    expectedAttempt(name, "retry-outer", "attempt-outer-1", 1),
+                    expectedAttempt(name, "retry-inner", "attempt-inner-1", 1),
+                    expectedAttempt(name, "retry-inner", "attempt-inner-2", 2));
+            case "terminal-abort", "incomplete-frame-duration", "overlapping-frame-duration" -> List.of();
+            case "missing-response-usage" -> List.of(expectedAttempt(name, "retry-1", "attempt-1", 1));
+            case "nested-frame-usage" -> List.of(
+                    expectedAttempt(name, "retry-framed", "attempt-framed", 1),
+                    expectedAttempt(name, "retry-unframed", "attempt-unframed", 1));
+            case "repeated-skill-invocations" -> List.of(
+                    expectedAttempt(name, "retry-1", "attempt-1", 1),
+                    expectedAttempt(name, "retry-2", "attempt-2", 1));
+            default -> List.of(expectedAttempt(name, "retry-1", "attempt-1", 1));
         };
+    }
+
+    private static boolean usageComplete(String name)
+    {
+        return !name.equals("unavailable-usage") && !name.equals("missing-response-usage");
+    }
+
+    private static Usage expectedAttemptUsage(String name, String attemptId)
+    {
+        return switch (name)
+        {
+            case "advisor-retry" -> attemptId.equals("attempt-1") ? new Usage(10, 4) : new Usage(8, 3);
+            case "nested-retry-sequences" -> switch (attemptId)
+            {
+                case "attempt-outer-1" -> new Usage(4, 2);
+                case "attempt-inner-1" -> new Usage(5, 1);
+                default -> new Usage(3, 1);
+            };
+            case "validation-exhaustion" -> attemptId.equals("attempt-1") ? new Usage(6, 2) : new Usage(5, 2);
+            case "unavailable-usage", "missing-response-usage" -> Usage.ZERO;
+            case "unattributed-usage" -> new Usage(10, 4, 16);
+            case "nonterminal-error-then-success" -> new Usage(5, 2);
+            case "chunked-payload", "chunked-json-payload" -> new Usage(2, 1);
+            case "nested-frame-usage" -> attemptId.equals("attempt-framed") ? new Usage(4, 2) : new Usage(1, 1);
+            case "repeated-skill-invocations" -> attemptId.equals("attempt-1") ? new Usage(2, 1) : new Usage(3, 2);
+            case "terminal-failure" -> new Usage(7, 2);
+            default -> new Usage(10, 4);
+        };
+    }
+
+    private static List<Map<String, Object>> expectedRetries(String name)
+    {
+        return retryResults(expectedAttempts(name));
+    }
+
+    private static List<Map<String, Object>> retryResults(List<Map<String, Object>> attempts)
+    {
+        Map<String, Usage> usage = new LinkedHashMap<>();
+        Map<String, Boolean> complete = new LinkedHashMap<>();
+        for (Map<String, Object> attempt : attempts)
+        {
+            String retrySequenceId = (String) attempt.get("retrySequenceId");
+            Usage attemptUsage = usageFrom((Map<String, Object>) attempt.get("usage"));
+            usage.merge(retrySequenceId, attemptUsage, Usage::plus);
+            complete.merge(retrySequenceId, (Boolean) attempt.get("usageComplete"), (left, right) -> left && right);
+        }
+        List<Map<String, Object>> retries = new ArrayList<>();
+        usage.forEach((retrySequenceId, retryUsage) -> retries.add(ordered(
+                "retrySequenceId", retrySequenceId,
+                "usage", retryUsage.asMap(),
+                "usageComplete", complete.get(retrySequenceId))));
+        return retries;
     }
 
     private static List<Map<String, Object>> expectedValidationLinks(String name)
@@ -452,15 +885,157 @@ class ConsoleTraceFixtureCorpusTest
         };
     }
 
+    private static List<Map<String, Object>> expectedFrames(String name)
+    {
+        return switch (name)
+        {
+            case "nested-frame-usage" -> List.of(
+                    expectedFrame("root", null, "ROOT_MISSION", "root.skill", 8000, 4000, Usage.ZERO, new Usage(4, 2), new Usage(4, 2)),
+                    expectedFrame("skill", "root", "SKILL_EXECUTION", "root.skill", 4000, 4000, new Usage(4, 2), Usage.ZERO, new Usage(4, 2)));
+            case "repeated-skill-invocations" -> List.of(
+                    expectedFrame("root", null, "ROOT_MISSION", "root.skill", 7000, 3000, Usage.ZERO, new Usage(5, 3), new Usage(5, 3)),
+                    expectedFrame("skill-1", "root", "SKILL_EXECUTION", "root.skill", 2000, 2000, new Usage(2, 1), Usage.ZERO, new Usage(2, 1)),
+                    expectedFrame("skill-2", "root", "SKILL_EXECUTION", "root.skill", 2000, 2000, new Usage(3, 2), Usage.ZERO, new Usage(3, 2)));
+            case "incomplete-frame-duration" -> List.of(
+                    expectedFrame("root", null, "ROOT_MISSION", "root.skill", 4000, null, Usage.ZERO, Usage.ZERO, Usage.ZERO),
+                    expectedFrame("incomplete", "root", "TOOL_INVOCATION", "root.tool", null, null, Usage.ZERO, Usage.ZERO, Usage.ZERO));
+            case "overlapping-frame-duration" -> List.of(
+                    expectedFrame("root", null, "ROOT_MISSION", "root.skill", 8000, null, Usage.ZERO, Usage.ZERO, Usage.ZERO),
+                    expectedFrame("child-1", "root", "SKILL_EXECUTION", "root.first", 4000, 4000, Usage.ZERO, Usage.ZERO, Usage.ZERO),
+                    expectedFrame("child-2", "root", "SKILL_EXECUTION", "root.second", 4000, 4000, Usage.ZERO, Usage.ZERO, Usage.ZERO));
+            default -> List.of();
+        };
+    }
+
+    private static Map<String, Object> expectedFrame(
+            String frameId,
+            String parentFrameId,
+            String frameType,
+            String route,
+            Integer inclusiveDurationMillis,
+            Integer selfDurationMillis,
+            Usage directUsage,
+            Usage descendantUsage,
+            Usage inclusiveUsage)
+    {
+        Map<String, Object> entry = ordered(
+                "frameId", frameId,
+                "parentFrameId", parentFrameId,
+                "frameType", frameType,
+                "inclusiveDurationMillis", inclusiveDurationMillis,
+                "selfDurationMillis", selfDurationMillis,
+                "directUsage", directUsage.asMap(),
+                "descendantUsage", descendantUsage.asMap(),
+                "inclusiveUsage", inclusiveUsage.asMap());
+        if (route != null && !route.isEmpty())
+        {
+            entry.put("route", route);
+        }
+        return entry;
+    }
+
+    private static Usage expectedUnframedUsage(String name)
+    {
+        return switch (name)
+        {
+            case "single-attempt-success" -> new Usage(10, 4);
+            case "terminal-failure" -> new Usage(7, 2);
+            case "advisor-retry" -> new Usage(18, 7);
+            case "nested-retry-sequences" -> new Usage(12, 4);
+            case "validation-exhaustion" -> new Usage(11, 4);
+            case "unattributed-usage" -> new Usage(10, 4, 16);
+            case "nonterminal-error-then-success" -> new Usage(5, 2);
+            case "chunked-payload", "chunked-json-payload" -> new Usage(2, 1);
+            case "nested-frame-usage" -> new Usage(1, 1);
+            default -> Usage.ZERO;
+        };
+    }
+
+    private static List<Map<String, Object>> expectedPayloads(String name)
+    {
+        return switch (name)
+        {
+            case "chunked-payload" -> List.of(expectedPayload(4, "payload-1", "text/plain", 2));
+            case "chunked-json-payload" -> List.of(expectedPayload(4, "payload-1", "application/json", 2));
+            default -> List.of();
+        };
+    }
+
+    private static Map<String, Object> expectedPayload(
+            int logicalRecordSequence,
+            String payloadId,
+            String contentType,
+            int chunkCount)
+    {
+        return ordered(
+                "logicalRecordSequence", logicalRecordSequence,
+                "payloadId", payloadId,
+                "contentType", contentType,
+                "chunkCount", chunkCount);
+    }
+
+    private static List<Map<String, Object>> expectedGaps(String name)
+    {
+        return name.equals("incomplete-frame-duration")
+                ? List.of(ordered("kind", "OPEN_FRAME_NOT_CLOSED", "frameId", "incomplete"))
+                : List.of();
+    }
+
+    private static List<Map<String, Object>> expectedUncertainties(String name)
+    {
+        return switch (name)
+        {
+            case "incomplete-frame-duration" -> List.of(ordered(
+                    "kind", "SELF_DURATION_UNAVAILABLE_INCOMPLETE_CHILD", "frameId", "root"));
+            case "overlapping-frame-duration" -> List.of(ordered(
+                    "kind", "SELF_DURATION_UNAVAILABLE_OVERLAPPING_CHILDREN", "frameId", "root"));
+            default -> List.of();
+        };
+    }
+
     private static Map<String, Object> expectedAttempt(
+            String name,
             String retrySequenceId,
             String attemptId,
             int attemptNumber)
     {
+        return attemptResult(
+                retrySequenceId,
+                attemptId,
+                attemptNumber,
+                expectedAttemptUsage(name, attemptId),
+                usageComplete(name));
+    }
+
+    private static Map<String, Object> attemptResult(
+            String retrySequenceId,
+            String attemptId,
+            int attemptNumber,
+            Usage usage,
+            boolean usageComplete)
+    {
         return ordered(
                 "retrySequenceId", retrySequenceId,
                 "attemptId", attemptId,
-                "attemptNumber", attemptNumber);
+                "attemptNumber", attemptNumber,
+                "usage", usage.asMap(),
+                "usageComplete", usageComplete);
+    }
+
+    private static Usage usageFrom(Map<String, Object> values)
+    {
+        return new Usage(
+                ((Number) values.get("promptUnits")).intValue(),
+                ((Number) values.get("completionUnits")).intValue(),
+                ((Number) values.get("totalUnits")).intValue());
+    }
+
+    private static Usage usageFrom(JsonNode values)
+    {
+        return new Usage(
+                values.path("promptUnits").asInt(),
+                values.path("completionUnits").asInt(),
+                values.path("totalUnits").asInt());
     }
 
     private static Map<String, Object> expectedValidationLink(
@@ -519,11 +1094,106 @@ class ConsoleTraceFixtureCorpusTest
                         .replace("\"promptUnits\":10", "\"promptUnits\":1")
                         .replace("\"totalUnits\":14", "\"totalUnits\":2"));
         writeInvalid(root, "contradictory-usage-reconciliation", contradictory);
+
+        List<String> duplicateChunks = new ArrayList<>(chunks);
+        replaceFirstLineContaining(duplicateChunks, "\"chunkIndex\":1", "\"chunkIndex\":1", "\"chunkIndex\":0");
+        writeInvalid(root, "duplicate-chunks", duplicateChunks);
+
+        List<String> mismatchedChunks = new ArrayList<>(chunks);
+        replaceFirstLineContaining(mismatchedChunks, "\"chunkIndex\":1", "\"chunkCount\":2", "\"chunkCount\":3");
+        writeInvalid(root, "mismatched-chunks", mismatchedChunks);
+
+        List<String> outOfOrderChunks = new ArrayList<>(chunks);
+        replaceFirstLineContaining(outOfOrderChunks, "\"chunkIndex\":0", "\"chunkIndex\":0", "\"chunkIndex\":1");
+        replaceLastLineContaining(outOfOrderChunks, "\"chunkIndex\":1", "\"chunkIndex\":1", "\"chunkIndex\":0");
+        writeInvalid(root, "out-of-order-chunks", outOfOrderChunks);
+
+        List<String> nestedFrames = Files.readAllLines(root.resolve("traces/nested-frame-usage.ndjson"), StandardCharsets.UTF_8);
+        List<String> invalidFrame = new ArrayList<>(nestedFrames);
+        replaceAllLines(invalidFrame, "\"frameId\":\"root\",\"parentFrameId\":null", "\"frameId\":\"root\",\"parentFrameId\":\"root\"");
+        writeInvalid(root, "invalid-frame-relationship", invalidFrame);
+
+        List<String> cyclicFrame = new ArrayList<>(nestedFrames);
+        replaceAllLines(cyclicFrame, "\"frameId\":\"root\",\"parentFrameId\":null", "\"frameId\":\"root\",\"parentFrameId\":\"skill\"");
+        writeInvalid(root, "cyclic-frame-relationship", cyclicFrame);
+
+        List<String> terminalFailure = Files.readAllLines(root.resolve("traces/terminal-failure.ndjson"), StandardCharsets.UTF_8);
+        List<String> invalidTerminalFailure = new ArrayList<>(terminalFailure);
+        replaceFirstLineContaining(invalidTerminalFailure, "\"recordType\":\"TRACE_COMPLETED\"", "failure-terminal", "missing-terminal-failure");
+        writeInvalid(root, "invalid-terminal-failure-link", invalidTerminalFailure);
+
+        List<String> inconsistentAttempt = new ArrayList<>(base);
+        replaceFirstLineContaining(inconsistentAttempt, "\"recordType\":\"MODEL_RESPONSE_RECEIVED\"", "\"attemptId\":\"attempt-1\"", "\"attemptId\":\"attempt-other\"");
+        writeInvalid(root, "inconsistent-attempt-identity", inconsistentAttempt);
+
+        List<String> negativeUsage = new ArrayList<>(base);
+        replaceFirstLineContaining(negativeUsage, "\"recordType\":\"MODEL_RESPONSE_RECEIVED\"", "\"promptUnits\":10", "\"promptUnits\":-1");
+        writeInvalid(root, "negative-usage", negativeUsage);
+
+        List<String> overflowingUsage = new ArrayList<>(base);
+        replaceFirstLineContaining(overflowingUsage, "\"recordType\":\"MODEL_RESPONSE_RECEIVED\"", "\"promptUnits\":10", "\"promptUnits\":9223372036854775808");
+        writeInvalid(root, "overflowing-usage", overflowingUsage);
+
+        List<String> oversizedRecord = new ArrayList<>(base);
+        oversizedRecord.set(0, oversizedRecord.getFirst().replace("\"threadName\":\"fixture-thread\"", "\"threadName\":\"" + "x".repeat(1024 * 1024) + "\""));
+        writeInvalid(root, "oversized-physical-record", oversizedRecord);
+
+        List<String> excessiveDepth = new ArrayList<>(base);
+        excessiveDepth.set(0, excessiveDepth.getFirst().replace("{\"sessionId\":\"session-single-attempt-success\"}", nestedJson(129)));
+        writeInvalid(root, "excessive-json-nesting", excessiveDepth);
+
+        List<String> truncatedFinal = new ArrayList<>(base);
+        truncatedFinal.set(truncatedFinal.size() - 1, truncatedFinal.getLast().substring(0, truncatedFinal.getLast().length() - 1));
+        writeInvalid(root, "truncated-final-input", truncatedFinal);
+    }
+
+    private static void replaceAllLines(List<String> lines, String target, String replacement)
+    {
+        for (int index = 0; index < lines.size(); index++)
+        {
+            lines.set(index, lines.get(index).replace(target, replacement));
+        }
+    }
+
+    private static void replaceFirstLineContaining(List<String> lines, String marker, String target, String replacement)
+    {
+        for (int index = 0; index < lines.size(); index++)
+        {
+            if (lines.get(index).contains(marker))
+            {
+                lines.set(index, lines.get(index).replace(target, replacement));
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No fixture line contains '" + marker + "'");
+    }
+
+    private static void replaceLastLineContaining(List<String> lines, String marker, String target, String replacement)
+    {
+        for (int index = lines.size() - 1; index >= 0; index--)
+        {
+            if (lines.get(index).contains(marker))
+            {
+                lines.set(index, lines.get(index).replace(target, replacement));
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No fixture line contains '" + marker + "'");
+    }
+
+    private static String nestedJson(int depth)
+    {
+        return "{\"value\":".repeat(depth) + "null" + "}".repeat(depth);
     }
 
     private static void writeInvalid(Path root, String name, List<String> lines) throws Exception
     {
-        Files.write(root.resolve("traces").resolve(name + ".ndjson"), lines, StandardCharsets.UTF_8);
+        // Join with explicit LF to match the production NdjsonTraceRecordWriter
+        // and the committed fixture corpus, regardless of platform.
+        String joined = String.join("\n", lines) + "\n";
+        Files.write(
+                root.resolve("traces").resolve(name + ".ndjson"),
+                joined.getBytes(StandardCharsets.UTF_8));
         Map<String, Object> expected = new LinkedHashMap<>();
         expected.put("case", name);
         expected.put("valid", false);
@@ -533,10 +1203,19 @@ class ConsoleTraceFixtureCorpusTest
 
     private static void writeExpected(Path root, String name, Map<String, Object> expected) throws Exception
     {
+        // Force LF line endings so the generated file matches the committed
+        // corpus on every platform. Jackson's DefaultPrettyPrinter uses
+        // System.lineSeparator() which is CRLF on Windows.
         String serialized = JSON.writerWithDefaultPrettyPrinter()
                 .writeValueAsString(expected)
-                .replace("\r\n", "\n") + "\n";
-        Files.writeString(root.resolve("expected").resolve(name + ".json"), serialized, StandardCharsets.UTF_8);
+                .replace("\r\n", "\n")
+                .replace("\r", "\n") + "\n";
+        byte[] bytes = serialized.getBytes(StandardCharsets.UTF_8);
+        try (java.io.OutputStream out = new java.io.FileOutputStream(
+                root.resolve("expected").resolve(name + ".json").toFile()))
+        {
+            out.write(bytes);
+        }
     }
 
     private static List<JsonNode> parseLines(Path path) throws Exception
@@ -578,11 +1257,29 @@ class ConsoleTraceFixtureCorpusTest
         }
     }
 
+    private static Map<String, String> transportFixtures(Path root) throws IOException
+    {
+        Map<String, String> fixtures = new LinkedHashMap<>();
+        try (Stream<Path> files = Files.walk(root))
+        {
+            for (Path path : files.filter(Files::isRegularFile).sorted().toList())
+            {
+                String name = root.relativize(path).toString().replace('\\', '/');
+                if (!name.startsWith("traces/") && !name.startsWith("expected/") && !"README.md".equals(name))
+                {
+                    fixtures.put(name, Files.readString(path, StandardCharsets.UTF_8));
+                }
+            }
+        }
+        return fixtures;
+    }
+
     private static void copyCorpus(Path source, Path target) throws IOException
     {
         Files.createDirectories(target.resolve("traces"));
         Files.createDirectories(target.resolve("expected"));
-        for (String name : fileNames(source))
+        Set<String> sourceFiles = Set.copyOf(fileNames(source));
+        for (String name : sourceFiles)
         {
             Path destination = target.resolve(name);
             Files.createDirectories(destination.getParent());
@@ -591,12 +1288,16 @@ class ConsoleTraceFixtureCorpusTest
         try (Stream<Path> existing = Files.walk(target))
         {
             for (Path path : existing.filter(Files::isRegularFile)
-                    .filter(path -> !path.getFileName().toString().equals("README.md"))
+                    .filter(path ->
+                    {
+                        String name = target.relativize(path).toString().replace('\\', '/');
+                        return name.startsWith("traces/") || name.startsWith("expected/");
+                    })
                     .sorted(Comparator.reverseOrder())
                     .toList())
             {
                 String name = target.relativize(path).toString().replace('\\', '/');
-                if (!fileNames(source).contains(name))
+                if (!sourceFiles.contains(name))
                 {
                     Files.delete(path);
                 }
@@ -604,22 +1305,42 @@ class ConsoleTraceFixtureCorpusTest
         }
     }
 
-    private record Usage(int promptUnits, int completionUnits)
+    private record FrameInterval(long startMillis, long endMillis)
+    {
+    }
+
+    private record Usage(int promptUnits, int completionUnits, int totalUnits)
     {
         private static final Usage ZERO = new Usage(0, 0);
+
+        private Usage(int promptUnits, int completionUnits)
+        {
+            this(promptUnits, completionUnits, promptUnits + completionUnits);
+        }
 
         private Map<String, Object> asMap()
         {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("promptUnits", promptUnits);
             result.put("completionUnits", completionUnits);
-            result.put("totalUnits", promptUnits + completionUnits);
+            result.put("totalUnits", totalUnits);
             return result;
         }
 
         private Usage minus(Usage other)
         {
-            return new Usage(promptUnits - other.promptUnits, completionUnits - other.completionUnits);
+            return new Usage(
+                    promptUnits - other.promptUnits,
+                    completionUnits - other.completionUnits,
+                    totalUnits - other.totalUnits);
+        }
+
+        private Usage plus(Usage other)
+        {
+            return new Usage(
+                    promptUnits + other.promptUnits,
+                    completionUnits + other.completionUnits,
+                    totalUnits + other.totalUnits);
         }
     }
 }

@@ -186,6 +186,7 @@ func TestRestartCleanupNeverAdoptsPriorEntries(t *testing.T) {
 		Workspace:    svc.workspace,
 		TraceLoader:  loader.loader(),
 		StreamOpener: opener.opener(),
+		Processor:    newFakeProcessor(),
 		Clock:        time.Now,
 		Entropy:      (&deterministicEntropy{}).factory(),
 		TimerFactory: (&manualTimerFactory{}).factory(),

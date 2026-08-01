@@ -27,6 +27,7 @@ type Dependencies struct {
 	Workspace    *workspace.Workspace
 	TraceLoader  TraceLoader
 	StreamOpener StreamOpener
+	Processor    Processor
 	Fatal        func(error)
 	Clock        func() time.Time
 	Entropy      func() ([]byte, error)
@@ -35,9 +36,10 @@ type Dependencies struct {
 }
 
 // Service is the sole owner of analysis artifact state. It acquires each
-// selected finalized trace at most once per target scope, installs it
-// atomically beneath the verified workspace, and owns its opaque handle,
-// capacity charge, idle lifetime, active-use pinning, and removal.
+// selected finalized trace at most once per target scope, installs one validated
+// bundle (raw artifact plus derived components) atomically beneath the verified
+// workspace, and owns its opaque handle, aggregate capacity charge, idle
+// lifetime, active-use pinning, and removal.
 //
 // Browser calls and future MCP calls use the same service. The service is
 // transport-neutral; PR 12 exposes browser adapters in Phase 3.
@@ -53,6 +55,7 @@ type Service struct {
 	handles        map[Handle]*entry
 	traceLoader    TraceLoader
 	streamOpener   StreamOpener
+	processor      Processor
 	fatal          func(error)
 	clock          func() time.Time
 	entropy        func() ([]byte, error)
@@ -76,6 +79,9 @@ func New(config Config, deps Dependencies) (*Service, error) {
 	}
 	if deps.StreamOpener == nil {
 		return nil, fmt.Errorf("artifact service requires a stream opener")
+	}
+	if deps.Processor == nil {
+		return nil, fmt.Errorf("artifact service requires a processor")
 	}
 	clock := deps.Clock
 	if clock == nil {
@@ -109,6 +115,7 @@ func New(config Config, deps Dependencies) (*Service, error) {
 		handles:        make(map[Handle]*entry),
 		traceLoader:    deps.TraceLoader,
 		streamOpener:   deps.StreamOpener,
+		processor:      deps.Processor,
 		fatal:          deps.Fatal,
 		clock:          clock,
 		entropy:        entropy,
@@ -491,9 +498,10 @@ func (service *Service) Close() {
 }
 
 // removeEntryLocked removes an entry: cancels its acquisition context, removes
-// its file, releases its charged bytes, and removes it from all maps. The
-// caller must hold the service mutex. This is safe for any entry state; the
-// leader goroutine will see stateRemoved and publish the error via acquireDone.
+// its installed bundle directory, releases its charged bytes, and removes it
+// from all maps. The caller must hold the service mutex. This is safe for any
+// entry state; the leader goroutine will see stateRemoved and publish the error
+// via acquireDone.
 func (service *Service) removeEntryLocked(entry *entry) *consolecore.Error {
 	if entry.state == stateRemoved {
 		return nil
@@ -504,7 +512,7 @@ func (service *Service) removeEntryLocked(entry *entry) *consolecore.Error {
 	if entry.scopeStop != nil {
 		entry.scopeStop()
 	}
-	if domain := service.removeInstalledFileLocked(entry); domain != nil {
+	if domain := service.removeInstalledBundleLocked(entry); domain != nil {
 		entry.state = stateDeferredRemoval
 		return domain
 	}
@@ -516,16 +524,17 @@ func (service *Service) removeEntryLocked(entry *entry) *consolecore.Error {
 	return nil
 }
 
-// removeInstalledFileLocked removes an installed file with one retry through
-// the workspace safety boundary. The caller must hold the service mutex.
-func (service *Service) removeInstalledFileLocked(entry *entry) *consolecore.Error {
-	if entry.installedPath == "" {
+// removeInstalledBundleLocked removes an installed bundle directory with one
+// retry through the workspace safety boundary. The caller must hold the service
+// mutex.
+func (service *Service) removeInstalledBundleLocked(entry *entry) *consolecore.Error {
+	if entry.installedDir == "" {
 		return nil
 	}
-	path := entry.installedPath
-	if err := service.storage.remove(path); err != nil {
+	path := entry.installedDir
+	if err := service.storage.removeBundle(path); err != nil {
 		classified := service.workspace.ClassifyArtifactFailure(err, func() error {
-			return service.storage.remove(path)
+			return service.storage.removeBundle(path)
 		})
 		if workspace.IsFatal(classified) {
 			domain := consolecore.NewError(consolecore.CodeConsoleError,
@@ -537,7 +546,7 @@ func (service *Service) removeInstalledFileLocked(entry *entry) *consolecore.Err
 			return domain
 		}
 	}
-	entry.installedPath = ""
+	entry.installedDir = ""
 	return nil
 }
 

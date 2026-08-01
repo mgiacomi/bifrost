@@ -123,8 +123,8 @@ func TestCapacityUnlimitedSkipsChecks(t *testing.T) {
 	svc.ActivateActivity(scope)
 
 	artifact := acquireSync(t, svc, context.Background(), scope, "trace-1")
-	if artifact.LocalBytes != int64(len(data)) {
-		t.Fatalf("expected local bytes %d, got %d", len(data), artifact.LocalBytes)
+	if artifact.LocalBytes != int64(len(data))+fakeDerivedSize() {
+		t.Fatalf("expected local bytes %d, got %d", int64(len(data))+fakeDerivedSize(), artifact.LocalBytes)
 	}
 }
 
@@ -154,8 +154,8 @@ func TestCapacityChargesExactInstalledBytes(t *testing.T) {
 	acquireSync(t, svc, context.Background(), scope, "trace-2")
 
 	snapshot, _ := svc.StorageSnapshot(scope.ID)
-	if snapshot.ChargedBytes != 500 {
-		t.Fatalf("expected charged bytes 500, got %d", snapshot.ChargedBytes)
+	if snapshot.ChargedBytes != 500+fakeDerivedSize() {
+		t.Fatalf("expected charged bytes %d, got %d", 500+fakeDerivedSize(), snapshot.ChargedBytes)
 	}
 }
 
@@ -165,7 +165,10 @@ func TestCapacityLRUTieBreakIsDeterministic(t *testing.T) {
 	data := bytes.Repeat([]byte("x"), 75)
 	loader1 := newFakeLoader(testTraceMetadata("trace-a", int64(len(data))))
 	opener1 := newFakeOpener(data, int64(len(data)))
-	config := Config{MaxBytes: 150, IdleTTL: time.Hour}
+	// Each bundle is 75 raw + fakeDerivedSize() derived. Two bundles fit
+	// exactly; a third forces eviction.
+	perEntry := int64(len(data)) + fakeDerivedSize()
+	config := Config{MaxBytes: perEntry * 2, IdleTTL: time.Hour}
 	timers := &manualTimerFactory{}
 	clock := newManualClock(time.UnixMilli(1000000))
 	svc := newTestServiceWithDeps(t, config, loader1, opener1, timers, clock, nil)
@@ -194,9 +197,9 @@ func TestCapacityLRUTieBreakIsDeterministic(t *testing.T) {
 	leaseB, _ := svc.Use(scope.ID, handleB)
 	_ = leaseB.Close(true)
 
-	// Both entries now have the same lastUsedAt. Acquire trace-c (75 bytes).
-	// 150 (existing) + 75 (new) = 225 > 150, so one entry must be evicted.
-	// trace-a (older acquisition time) should be evicted by the tie-breaker.
+	// Both entries now have the same lastUsedAt. Acquire trace-c.
+	// 2*perEntry (existing) + perEntry (new) > MaxBytes, so one entry must be
+	// evicted. trace-a (older acquisition time) is evicted by the tie-breaker.
 	loader3 := newFakeLoader(testTraceMetadata("trace-c", int64(len(data))))
 	opener3 := newFakeOpener(data, int64(len(data)))
 	svc.traceLoader = loader3.loader()
@@ -225,7 +228,10 @@ func TestCapacityEvictsExpiredBeforeLRU(t *testing.T) {
 	data := bytes.Repeat([]byte("x"), 75)
 	loader1 := newFakeLoader(testTraceMetadata("trace-a", int64(len(data))))
 	opener1 := newFakeOpener(data, int64(len(data)))
-	config := Config{MaxBytes: 150, IdleTTL: 5 * time.Minute}
+	// Each bundle is 75 raw + fakeDerivedSize() derived. Two bundles fit
+	// exactly; a third forces eviction.
+	perEntry := int64(len(data)) + fakeDerivedSize()
+	config := Config{MaxBytes: perEntry * 2, IdleTTL: 5 * time.Minute}
 	timers := &manualTimerFactory{}
 	clock := newManualClock(time.UnixMilli(1000000))
 	svc := newTestServiceWithDeps(t, config, loader1, opener1, timers, clock, nil)
@@ -250,9 +256,10 @@ func TestCapacityEvictsExpiredBeforeLRU(t *testing.T) {
 	// expired but trace-b is not.
 	clock.advance(4*time.Minute + 30*time.Second)
 
-	// Acquire trace-c (75 bytes). 150 (existing) + 75 (new) = 225 > 150.
+	// Acquire trace-c. 2*perEntry (existing) + perEntry (new) > MaxBytes.
 	// trace-a is expired and should be evicted first (before LRU trace-b).
-	// After evicting trace-a: 75 + 75 = 150 ≤ 150, so trace-b survives.
+	// After evicting trace-a: perEntry + perEntry = 2*perEntry ≤ MaxBytes,
+	// so trace-b survives.
 	loader3 := newFakeLoader(testTraceMetadata("trace-c", int64(len(data))))
 	opener3 := newFakeOpener(data, int64(len(data)))
 	svc.traceLoader = loader3.loader()
@@ -280,7 +287,10 @@ func TestCapacityExactFitSucceeds(t *testing.T) {
 	data50 := bytes.Repeat([]byte("x"), 50)
 	loader1 := newFakeLoader(testTraceMetadata("trace-a", 50))
 	opener1 := newFakeOpener(data50, 50)
-	config := Config{MaxBytes: 100, IdleTTL: time.Hour}
+	// Each bundle is 50 raw + fakeDerivedSize() derived. Two bundles fit
+	// exactly.
+	perEntry := int64(50) + fakeDerivedSize()
+	config := Config{MaxBytes: perEntry * 2, IdleTTL: time.Hour}
 	timers := &manualTimerFactory{}
 	clock := newManualClock(time.UnixMilli(1000000))
 	svc := newTestServiceWithDeps(t, config, loader1, opener1, timers, clock, nil)
@@ -288,25 +298,25 @@ func TestCapacityExactFitSucceeds(t *testing.T) {
 	defer cancelScope()
 	svc.ActivateActivity(scope)
 
-	// Acquire trace-a (50 bytes), leaving exactly 50 bytes of capacity.
+	// Acquire trace-a, leaving exactly perEntry bytes of capacity.
 	acquireSync(t, svc, context.Background(), scope, "trace-a")
 
-	// Acquire trace-b (50 bytes) — exactly fits.
+	// Acquire trace-b — exactly fits.
 	data50b := bytes.Repeat([]byte("y"), 50)
 	loader2 := newFakeLoader(testTraceMetadata("trace-b", 50))
 	opener2 := newFakeOpener(data50b, 50)
 	svc.traceLoader = loader2.loader()
 	svc.streamOpener = opener2.opener()
 	artifact := acquireSync(t, svc, context.Background(), scope, "trace-b")
-	if artifact.LocalBytes != 50 {
-		t.Fatalf("expected 50 local bytes, got %d", artifact.LocalBytes)
+	if artifact.LocalBytes != perEntry {
+		t.Fatalf("expected %d local bytes, got %d", perEntry, artifact.LocalBytes)
 	}
 
 	snapshot, _ := svc.StorageSnapshot(scope.ID)
 	if snapshot.AcquiredCount != 2 {
 		t.Fatalf("expected 2 entries (exact fit), got %d", snapshot.AcquiredCount)
 	}
-	if snapshot.ChargedBytes != 100 {
-		t.Fatalf("expected charged bytes 100, got %d", snapshot.ChargedBytes)
+	if snapshot.ChargedBytes != perEntry*2 {
+		t.Fatalf("expected charged bytes %d, got %d", perEntry*2, snapshot.ChargedBytes)
 	}
 }

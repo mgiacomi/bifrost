@@ -26,7 +26,7 @@ Response usage is normalized as prompt, completion, and total units with a preci
 | Precision | Meaning |
 | --- | --- |
 | `EXACT` | Provider supplied usable counts. |
-| `ESTIMATED` | Bifrost estimated counts from available request/response content. |
+| `HEURISTIC` | Bifrost estimated counts from available request/response content. |
 | `UNAVAILABLE` | Neither provider counts nor a defensible estimate was available. |
 
 Each returned physical attempt is traced before its usage is applied to quota and metrics accounting, and is accounted once. `UNAVAILABLE` is a property of an individual attempt. `Unattributed usage` is different: Console derives it component-wise when the terminal session snapshot exceeds the sum of attributed response facts. Java does not emit a separate unattributed counter.

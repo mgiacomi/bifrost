@@ -207,6 +207,18 @@ func TestActivitySSEStreamEndToEndWithTabHeader(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
+	// Snapshot the response body under the stream lock. The header map is
+	// written by the handler goroutine via ApplyHeaders and must not be read
+	// concurrently. We cancel the stream and wait for the handler to exit
+	// before reading headers to avoid a data race on the ResponseRecorder's
+	// header map.
+	streamCancel()
+	select {
+	case <-streamDone:
+	case <-time.After(time.Second):
+		t.Fatal("stream handler did not exit after context cancellation")
+	}
+
 	if contentType := streamResponse.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
 		t.Fatalf("expected text/event-stream, got %q", contentType)
 	}
@@ -226,13 +238,6 @@ func TestActivitySSEStreamEndToEndWithTabHeader(t *testing.T) {
 	}
 	if xcto := streamResponse.Header().Get("X-Content-Type-Options"); xcto != "nosniff" {
 		t.Fatalf("expected X-Content-Type-Options nosniff, got %q", xcto)
-	}
-
-	streamCancel()
-	select {
-	case <-streamDone:
-	case <-time.After(time.Second):
-		t.Fatal("stream handler did not exit after context cancellation")
 	}
 }
 

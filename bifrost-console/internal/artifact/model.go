@@ -76,11 +76,20 @@ type entry struct {
 	state    entryState
 	metadata TraceMetadata
 
-	// installedPath is the absolute path to the installed file beneath the
-	// verified transient subtree. It is never returned to callers.
-	installedPath string
-	// localBytes is the exact installed byte count charged to capacity.
+	// installedDir is the absolute path to the installed bundle directory
+	// beneath the verified transient subtree. It contains the raw NDJSON
+	// component and processor-created derived components. It is never returned
+	// to callers.
+	installedDir string
+	// localBytes is the aggregate raw plus derived byte count charged to
+	// capacity for the complete bundle.
 	localBytes int64
+	// rawBytes is the exact installed raw artifact byte count. It is a component
+	// of localBytes and is retained for raw-component addressing.
+	rawBytes int64
+	// componentSizes maps each derived component name to its final synced byte
+	// count. The raw artifact (ComponentRawArtifact) is tracked via rawBytes.
+	componentSizes map[ComponentName]int64
 
 	// acquisitionTime is when the entry was created.
 	acquisitionTime time.Time

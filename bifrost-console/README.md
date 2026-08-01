@@ -248,20 +248,23 @@ incrementally and validates event names against the `bifrost.activity` and
 
 Console maintains a local artifact cache beneath the verified workspace
 `transient/` subtree. Acquiring a trace artifact downloads the finalized
-NDJSON trace from the upstream application and installs it as a
-randomly named immutable file. Each installed entry carries an opaque handle, a
-charged byte count, and an idle TTL deadline. Entries with active leases
-(pins) cannot be removed; expiry during a pin defers removal until the last
-lease closes.
+NDJSON trace from the upstream application, validates it through the trace
+analysis processor, and installs one randomly named immutable bundle directory
+containing the raw artifact component and processor-derived components (such as
+the analysis manifest). Each installed entry carries an opaque handle, an
+aggregate charged byte count (raw plus derived), and an idle TTL deadline.
+Entries with active leases (pins) cannot be removed; expiry during a pin defers
+removal until the last lease closes.
 
 ### Capacity and eviction
 
 The `trace-workspace.max-bytes` setting bounds the aggregate bytes charged
-across all partial reservations and complete installed artifacts. When the
-cache is full, expired unused entries are evicted first, followed by
-least-recently-successfully-used (LRU) unpinned entries. Active leases are
-never evicted. The sentinel `unlimited` disables aggregate-capacity
-eviction entirely.
+across all partial reservations and complete installed bundles. The charged
+byte count for one entry is the sum of its raw artifact bytes and all derived
+component bytes. When the cache is full, expired unused entries are evicted
+first, followed by least-recently-successfully-used (LRU) unpinned entries.
+Active leases are never evicted. The sentinel `unlimited` disables
+aggregate-capacity eviction entirely.
 
 ### Idle TTL
 
@@ -277,10 +280,10 @@ cleanup.
 All local artifacts are bound to their acquiring target scope. When the
 target scope rotates (new target selected, credential replaced, or instance
 identity changes), every entry for the prior scope is invalidated and its
-installed file is removed. On process shutdown the entire `transient/`
-subtree is cleaned. On restart, any prior-process files beneath `transient/`
-are removed before the workspace is served; no prior-process cache metadata
-is adopted.
+installed bundle directory is removed. On process shutdown the entire
+`transient/` subtree is cleaned. On restart, any prior-process bundle
+directories beneath `transient/` are removed before the workspace is served;
+no prior-process cache metadata is adopted.
 
 ### Handles and paths
 

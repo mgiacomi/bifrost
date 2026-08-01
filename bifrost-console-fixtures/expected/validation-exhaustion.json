@@ -20,14 +20,36 @@
     "completionUnits" : 0,
     "totalUnits" : 0
   },
+  "usageComplete" : true,
   "attempts" : [ {
     "retrySequenceId" : "retry-1",
     "attemptId" : "attempt-1",
-    "attemptNumber" : 1
+    "attemptNumber" : 1,
+    "usage" : {
+      "promptUnits" : 6,
+      "completionUnits" : 2,
+      "totalUnits" : 8
+    },
+    "usageComplete" : true
   }, {
     "retrySequenceId" : "retry-1",
     "attemptId" : "attempt-2",
-    "attemptNumber" : 2
+    "attemptNumber" : 2,
+    "usage" : {
+      "promptUnits" : 5,
+      "completionUnits" : 2,
+      "totalUnits" : 7
+    },
+    "usageComplete" : true
+  } ],
+  "retries" : [ {
+    "retrySequenceId" : "retry-1",
+    "usage" : {
+      "promptUnits" : 11,
+      "completionUnits" : 4,
+      "totalUnits" : 15
+    },
+    "usageComplete" : true
   } ],
   "validationLinks" : [ {
     "status" : "retrying",
@@ -39,5 +61,14 @@
     "retrySequenceId" : "retry-1",
     "attemptId" : "attempt-2",
     "attemptNumber" : 2
-  } ]
+  } ],
+  "frames" : [ ],
+  "unframedAttributedUsage" : {
+    "promptUnits" : 11,
+    "completionUnits" : 4,
+    "totalUnits" : 15
+  },
+  "payloads" : [ ],
+  "gaps" : [ ],
+  "uncertainties" : [ ]
 }

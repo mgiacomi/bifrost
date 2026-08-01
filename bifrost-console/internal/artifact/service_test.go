@@ -373,7 +373,7 @@ func TestRemoveFailureRetainsEntryAndCapacityUntilCleanupSucceeds(t *testing.T) 
 
 	var fatalCalled bool
 	svc.fatal = func(error) { fatalCalled = true }
-	fs.removeFail = errors.New("remove denied")
+	fs.removeAllFail = errors.New("remove bundle denied")
 	domain := svc.Remove(scope.ID, "trace-1")
 	if domain == nil || domain.Code != consolecore.CodeConsoleError {
 		t.Fatalf("expected CONSOLE_ERROR, got %#v", domain)
@@ -381,7 +381,7 @@ func TestRemoveFailureRetainsEntryAndCapacityUntilCleanupSucceeds(t *testing.T) 
 	if !fatalCalled {
 		t.Fatal("expected persistent cleanup failure to reach the fatal path")
 	}
-	if svc.totalCharged != int64(len(data)) {
+	if svc.totalCharged != int64(len(data))+fakeDerivedSize() {
 		t.Fatalf("failed removal released capacity: got %d", svc.totalCharged)
 	}
 	if _, exists := svc.entries[entryKey{scopeID: scope.ID, traceID: "trace-1"}]; !exists {
