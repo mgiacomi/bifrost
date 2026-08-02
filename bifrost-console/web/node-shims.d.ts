@@ -58,6 +58,8 @@ declare module "node:http" {
     listen(port: number, host: string, callback: () => void): void;
     address(): AddressInfo | string | null;
     close(callback: (error?: Error) => void): void;
+    closeAllConnections(): void;
+    closeIdleConnections(): void;
   };
   const http: {
     createServer(

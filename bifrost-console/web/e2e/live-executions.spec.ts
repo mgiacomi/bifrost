@@ -183,6 +183,14 @@ function makeTargetServer(initialState: TargetState) {
                   activityClient?.end();
                   activityClient = null;
                   server.close((err) => (err ? rej(err) : res()));
+                  // Forcefully destroy every established socket, including
+                  // active SSE connections the Go console may reopen over a
+                  // pooled keep-alive connection during teardown. Without this,
+                  // server.close()'s callback can wait indefinitely for an
+                  // immortal active connection and exceed Playwright's test
+                  // timeout. closeAllConnections is safe to call right after
+                  // server.close and is the recommended pattern.
+                  server.closeAllConnections();
                 }),
               setState: (s) => { state = s; },
               pushEvent: (evt) => {
