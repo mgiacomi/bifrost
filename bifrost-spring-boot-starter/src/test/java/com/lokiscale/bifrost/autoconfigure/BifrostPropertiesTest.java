@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.StandardEnvironment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,7 +15,12 @@ class BifrostPropertiesTest {
             .withConfiguration(AutoConfigurations.of(
                     ConfigurationPropertiesAutoConfiguration.class,
                     BifrostAutoConfiguration.class))
-            .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml");
+            .withPropertyValues("bifrost.skills.locations=classpath:/skills/none/**/*.yaml")
+            .withInitializer(context -> {
+                if (context.getEnvironment() instanceof StandardEnvironment env) {
+                    env.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+                }
+            });
 
     @Test
     void bindsDisabledObservabilityDefaultsAndValidExternalizedValues()
