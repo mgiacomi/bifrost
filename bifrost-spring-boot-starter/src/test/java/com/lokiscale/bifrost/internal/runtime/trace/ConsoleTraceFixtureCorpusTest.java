@@ -739,7 +739,7 @@ class ConsoleTraceFixtureCorpusTest
             ExecutionFrame frame,
             Instant timestamp) throws IOException
     {
-        handle.append(recordType, frame, frame.traceFrameType(), Map.of(
+        handle.append(recordType, frame, frame.traceFrameType(), ordered(
                 "timestampOverride", timestamp.toString(),
                 "skillName", frame.route()), null);
     }
