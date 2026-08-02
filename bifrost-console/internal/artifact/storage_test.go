@@ -365,6 +365,9 @@ func TestConcurrentReservationsCannotOvercommitFiniteCapacity(t *testing.T) {
 	config := Config{MaxBytes: 150, IdleTTL: time.Hour}
 	timers := &manualTimerFactory{}
 	clock := newManualClock(time.UnixMilli(1000000))
+	processor := newFakeProcessor()
+	processor.barrier = make(chan struct{})
+	processor.release = make(chan struct{})
 
 	ws := testWorkspace(t)
 	entropy := &deterministicEntropy{}
@@ -373,7 +376,7 @@ func TestConcurrentReservationsCannotOvercommitFiniteCapacity(t *testing.T) {
 		Workspace:    ws,
 		TraceLoader:  sharedLoader,
 		StreamOpener: sharedOpener,
-		Processor:    newFakeProcessor(),
+		Processor:    processor,
 		Clock:        clock.nowFunc(),
 		Entropy:      entropy.factory(),
 		TimerFactory: timers.factory(),
@@ -391,6 +394,7 @@ func TestConcurrentReservationsCannotOvercommitFiniteCapacity(t *testing.T) {
 	var wg sync.WaitGroup
 	var successes atomic.Int64
 	var failures atomic.Int64
+	allRejected := make(chan struct{})
 	wg.Add(goroutines)
 	for i := 0; i < goroutines; i++ {
 		go func(idx int) {
@@ -400,16 +404,33 @@ func TestConcurrentReservationsCannotOvercommitFiniteCapacity(t *testing.T) {
 			if domain == nil {
 				successes.Add(1)
 			} else {
-				failures.Add(1)
+				if failures.Add(1) == goroutines-1 {
+					close(allRejected)
+				}
 			}
 		}(i)
 	}
+	select {
+	case <-processor.barrier:
+	case <-time.After(5 * time.Second):
+		close(processor.release)
+		wg.Wait()
+		t.Fatal("first reserved acquisition did not reach the processor")
+	}
+	select {
+	case <-allRejected:
+	case <-time.After(5 * time.Second):
+		close(processor.release)
+		wg.Wait()
+		t.Fatalf("expected %d capacity rejections while the first reservation was held, got %d", goroutines-1, failures.Load())
+	}
+	close(processor.release)
 	wg.Wait()
 
-	// At most one artifact (100 bytes) can fit in 150 bytes capacity.
-	// The rest should fail with LIMIT_EXCEEDED.
-	if successes.Load() > 1 {
-		t.Fatalf("expected at most 1 success, got %d", successes.Load())
+	// Exactly one artifact (100 raw bytes plus the derived component) can fit
+	// while its reservation is held. The rest fail with LIMIT_EXCEEDED.
+	if successes.Load() != 1 {
+		t.Fatalf("expected 1 success, got %d", successes.Load())
 	}
 	if successes.Load()+failures.Load() != goroutines {
 		t.Fatalf("expected %d total results, got %d", goroutines, successes.Load()+failures.Load())
