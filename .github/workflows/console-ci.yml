@@ -43,7 +43,7 @@ jobs:
         working-directory: bifrost-console
         shell: bash
         run: |
-          VERSION=$(../mvnw -q help:evaluate -Dexpression=project.version -DforceStdout)
+          VERSION=$(../mvnw -q -f ../pom.xml help:evaluate -Dexpression=project.version -DforceStdout)
           mkdir -p build
           go build -trimpath -ldflags "-X=github.com/mgiacomi/bifrost/bifrost-console/internal/release.productVersion=${VERSION}" -o build/bifrost-console ./cmd/bifrost-console
       - name: Install Chromium

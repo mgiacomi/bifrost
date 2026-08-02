@@ -74,7 +74,7 @@ func TestConsoleWorkflowsArePinnedAndLeastPrivilege(t *testing.T) {
 			}
 		}
 	}
-	for _, required := range []string{"pull_request:", "contents: read", "go-version: 1.26.5", "node-version: 24.18.0", "npm@12.0.2", "go run ./internal/buildtool verify", "npm --prefix web run test:e2e"} {
+	for _, required := range []string{"pull_request:", "contents: read", "go-version: 1.26.5", "node-version: 24.18.0", "npm@12.0.2", "-f ../pom.xml help:evaluate", "go run ./internal/buildtool verify", "npm --prefix web run test:e2e"} {
 		if !strings.Contains(ci, required) {
 			t.Errorf("CI workflow does not contain %q", required)
 		}
