@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   getTraceRetries: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
   getTraceFailures: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
   getTraceValidationLinks: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
+  listSkills: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
   getTraceGaps: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
   getTraceUncertainties: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
   getTracePayloads: vi.fn().mockResolvedValue({ targetScopeId: "scope-1", items: [], hasMore: false, nextCursor: null }),
@@ -200,4 +201,25 @@ test("expired local artifact clears explorer state and requests reacquisition", 
   expect(screen.getByLabelText("location")).not.toHaveTextContent("frameId");
   expect(screen.getByLabelText("location")).not.toHaveTextContent("recordSequence");
   expect(screen.queryByText(/FAILED/)).toBeNull();
+});
+
+test("failure focus selects the recorded terminal failure and never loads raw payloads", async () => {
+  api.getTraceAnalysisSummary.mockResolvedValueOnce({ targetScopeId: "scope-1", traceId: "trace-1", sessionId: "session-1", outcome: "FAILED", terminalFailureId: "terminal-1", recordCount: 120, frameCount: 1, attemptCount: 1, retryCount: 1, validationCount: 1, failureCount: 2, payloadCount: 1, gapCount: 1, uncertaintyCount: 1, rootFrameIds: ["f-1"], usageComplete: false, configuredLimits: null });
+  api.getTraceFailures.mockResolvedValueOnce({ targetScopeId: "scope-1", items: [{ failureId: "recovered", terminal: false, sequence: 3, timestampMillis: 3, recordType: "ERROR_RECORDED", frameId: "", route: "", attemptId: "", retrySequenceId: "", validationStatus: "" }], hasMore: true, nextCursor: "failure-next" }).mockResolvedValueOnce({ targetScopeId: "scope-1", items: [{ failureId: "terminal-1", terminal: true, sequence: 119, timestampMillis: 119, recordType: "ERROR_RECORDED", frameId: "f-1", route: "hello", attemptId: "a-1", retrySequenceId: "r-1", validationStatus: "exhausted" }], hasMore: false, nextCursor: null });
+  render(<MemoryRouter><TraceExplorer traceId="trace-1" /></MemoryRouter>);
+  expect(await screen.findByRole("heading", { name: "Terminal failure evidence" })).toBeInTheDocument();
+  await screen.findByText("ERROR_RECORDED sequence 119");
+  expect(screen.getByText(/does not identify root cause/)).toBeInTheDocument();
+  expect(api.getPayloadRange).not.toHaveBeenCalled();
+  expect(api.getRawRecordRange).not.toHaveBeenCalled();
+});
+
+test("selected frames link only exact current registered skill names", async () => {
+  api.getTraceFrames.mockResolvedValueOnce({ targetScopeId: "scope-1", items: [{ frameId: "f-1", parentFrameId: null, childFrameIds: [], frameType: "SKILL", route: "root.child", inclusiveDurationMillis: 1, selfDurationMillis: 1, skillNames: ["exact.skill", "Missing.Skill"] }], hasMore: false, nextCursor: null });
+  api.listSkills.mockResolvedValueOnce({ targetScopeId: "scope-1", items: [{ registeredName: "exact.skill", sourcePath: "<unsafe>" }, { registeredName: "missing.skill", sourcePath: "other" }], hasMore: false, nextCursor: null });
+  render(<MemoryRouter initialEntries={["/?frameId=f-1"]}><TraceExplorer traceId="trace-1" /></MemoryRouter>);
+  expect(await screen.findByRole("link", { name: "exact.skill" })).toHaveAttribute("href", "/skills/exact.skill?targetScopeId=scope-1");
+  expect(screen.getByText("Missing.Skill").closest("li")).toHaveTextContent("not in current registered catalog");
+  expect(screen.queryByRole("link", { name: "Missing.Skill" })).toBeNull();
+  expect(screen.queryByText("<unsafe>")).toBeNull();
 });

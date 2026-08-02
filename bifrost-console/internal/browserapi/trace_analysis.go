@@ -60,7 +60,7 @@ func (router *Router) traceAnalysisSummary(w http.ResponseWriter, r *http.Reques
 		writeDomainError(w, d)
 		return
 	}
-	router.writeScopedJSON(w, s.ID, summaryDTO{TargetScopeID: string(s.ID), TraceID: v.Context.TraceID, SessionID: v.Context.SessionID, Outcome: v.Outcome, TerminalFailureID: v.TerminalFailureID, RecordCount: v.RecordCount, FrameCount: v.FrameCount, AttemptCount: v.AttemptCount, RetryCount: v.RetryCount, ValidationCount: v.ValidationCount, FailureCount: v.FailureCount, PayloadCount: v.PayloadCount, GapCount: v.GapCount, UncertaintyCount: v.UncertaintyCount, RootFrameIDs: append([]string{}, v.RootFrameIDs...), AttributedUsage: usageDTOValue(v.AttributedUsage), TerminalUsage: usageDTOValue(v.TerminalUsage), UnattributedUsage: usageDTOValue(v.UnattributedUsage), UnframedAttributedUsage: usageDTOValue(v.UnframedAttributed), UsageComplete: v.UsageComplete})
+	router.writeScopedJSON(w, s.ID, summaryDTO{TargetScopeID: string(s.ID), TraceID: v.Context.TraceID, SessionID: v.Context.SessionID, Outcome: v.Outcome, TerminalFailureID: v.TerminalFailureID, ConfiguredLimits: configuredLimitsDTOValue(v.ConfiguredLimits), RecordCount: v.RecordCount, FrameCount: v.FrameCount, AttemptCount: v.AttemptCount, RetryCount: v.RetryCount, ValidationCount: v.ValidationCount, FailureCount: v.FailureCount, PayloadCount: v.PayloadCount, GapCount: v.GapCount, UncertaintyCount: v.UncertaintyCount, RootFrameIDs: append([]string{}, v.RootFrameIDs...), AttributedUsage: usageDTOValue(v.AttributedUsage), TerminalUsage: usageDTOValue(v.TerminalUsage), UnattributedUsage: usageDTOValue(v.UnattributedUsage), UnframedAttributedUsage: usageDTOValue(v.UnframedAttributed), UsageComplete: v.UsageComplete})
 }
 func (router *Router) traceAnalysisFrames(w http.ResponseWriter, r *http.Request, _ string) {
 	var b struct {
@@ -83,7 +83,7 @@ func (router *Router) traceAnalysisFrames(w http.ResponseWriter, r *http.Request
 	}
 	items := make([]frameDTO, 0, len(v.Items))
 	for _, x := range v.Items {
-		items = append(items, frameDTO{FrameID: x.FrameID, ParentFrameID: x.ParentFrameID, ChildFrameIDs: append([]string{}, x.ChildFrameIDs...), FrameType: x.FrameType, Route: x.Route, OpenedTimestampMillis: x.OpenedTimestampMillis, ClosedTimestampMillis: x.ClosedTimestampMillis, InclusiveDurationMillis: x.InclusiveDurationMillis, SelfDurationMillis: x.SelfDurationMillis, DirectUsage: usageDTOValue(x.DirectUsage), DirectUsageComplete: x.DirectUsageComplete, DescendantUsage: usageDTOValue(x.DescendantUsage), DescendantUsageComplete: x.DescendantUsageComplete, InclusiveUsage: usageDTOValue(x.InclusiveUsage), InclusiveUsageComplete: x.InclusiveUsageComplete})
+		items = append(items, frameDTO{FrameID: x.FrameID, ParentFrameID: x.ParentFrameID, ChildFrameIDs: append([]string{}, x.ChildFrameIDs...), FrameType: x.FrameType, Route: x.Route, OpenedTimestampMillis: x.OpenedTimestampMillis, ClosedTimestampMillis: x.ClosedTimestampMillis, InclusiveDurationMillis: x.InclusiveDurationMillis, SelfDurationMillis: x.SelfDurationMillis, DirectUsage: usageDTOValue(x.DirectUsage), DirectUsageComplete: x.DirectUsageComplete, DescendantUsage: usageDTOValue(x.DescendantUsage), DescendantUsageComplete: x.DescendantUsageComplete, InclusiveUsage: usageDTOValue(x.InclusiveUsage), InclusiveUsageComplete: x.InclusiveUsageComplete, SkillNames: append([]string{}, x.SkillNames...), Outcomes: append([]string{}, x.Outcomes...), AttemptIDs: append([]string{}, x.AttemptIDs...), RetrySequenceIDs: append([]string{}, x.RetrySequenceIDs...), ValidationStatuses: append([]string{}, x.ValidationStatuses...), FailureIDs: append([]string{}, x.FailureIDs...)})
 	}
 	router.writeScopedJSON(w, s.ID, pageDTO[frameDTO]{TargetScopeID: string(s.ID), Items: items, HasMore: v.HasMore, NextCursor: nullCursor(v.NextCursor)})
 }
@@ -205,7 +205,7 @@ func (router *Router) traceAnalysisFailures(w http.ResponseWriter, r *http.Reque
 	}
 	items := make([]failureDTO, 0, len(v.Items))
 	for _, x := range v.Items {
-		items = append(items, failureDTO{FailureID: x.FailureID, Terminal: x.Terminal})
+		items = append(items, failureDTO{FailureID: x.FailureID, Terminal: x.Terminal, Sequence: x.Sequence, TimestampMillis: x.TimestampMillis, RecordType: x.RecordType, FrameID: x.FrameID, Route: x.Route, AttemptID: x.AttemptID, RetrySequenceID: x.RetrySequenceID, ValidationStatus: x.ValidationStatus})
 	}
 	router.writeScopedJSON(w, s.ID, pageDTO[failureDTO]{TargetScopeID: string(s.ID), Items: items, HasMore: v.HasMore, NextCursor: nullCursor(v.NextCursor)})
 }
@@ -348,26 +348,27 @@ func (router *Router) traceAnalysisRange(w http.ResponseWriter, r *http.Request,
 }
 
 type summaryDTO struct {
-	TargetScopeID           string        `json:"targetScopeId"`
-	TraceID                 string        `json:"traceId"`
-	SessionID               string        `json:"sessionId"`
-	Outcome                 string        `json:"outcome"`
-	TerminalFailureID       *string       `json:"terminalFailureId"`
-	RecordCount             int64         `json:"recordCount"`
-	FrameCount              int           `json:"frameCount"`
-	AttemptCount            int           `json:"attemptCount"`
-	RetryCount              int           `json:"retryCount"`
-	ValidationCount         int           `json:"validationCount"`
-	FailureCount            int           `json:"failureCount"`
-	PayloadCount            int           `json:"payloadCount"`
-	GapCount                int           `json:"gapCount"`
-	UncertaintyCount        int           `json:"uncertaintyCount"`
-	RootFrameIDs            []string      `json:"rootFrameIds"`
-	AttributedUsage         usageValueDTO `json:"attributedUsage"`
-	TerminalUsage           usageValueDTO `json:"terminalUsage"`
-	UnattributedUsage       usageValueDTO `json:"unattributedUsage"`
-	UnframedAttributedUsage usageValueDTO `json:"unframedAttributedUsage"`
-	UsageComplete           bool          `json:"usageComplete"`
+	TargetScopeID           string               `json:"targetScopeId"`
+	TraceID                 string               `json:"traceId"`
+	SessionID               string               `json:"sessionId"`
+	Outcome                 string               `json:"outcome"`
+	TerminalFailureID       *string              `json:"terminalFailureId"`
+	ConfiguredLimits        *configuredLimitsDTO `json:"configuredLimits"`
+	RecordCount             int64                `json:"recordCount"`
+	FrameCount              int                  `json:"frameCount"`
+	AttemptCount            int                  `json:"attemptCount"`
+	RetryCount              int                  `json:"retryCount"`
+	ValidationCount         int                  `json:"validationCount"`
+	FailureCount            int                  `json:"failureCount"`
+	PayloadCount            int                  `json:"payloadCount"`
+	GapCount                int                  `json:"gapCount"`
+	UncertaintyCount        int                  `json:"uncertaintyCount"`
+	RootFrameIDs            []string             `json:"rootFrameIds"`
+	AttributedUsage         usageValueDTO        `json:"attributedUsage"`
+	TerminalUsage           usageValueDTO        `json:"terminalUsage"`
+	UnattributedUsage       usageValueDTO        `json:"unattributedUsage"`
+	UnframedAttributedUsage usageValueDTO        `json:"unframedAttributedUsage"`
+	UsageComplete           bool                 `json:"usageComplete"`
 }
 type frameDTO struct {
 	FrameID                 string        `json:"frameId"`
@@ -385,6 +386,12 @@ type frameDTO struct {
 	DescendantUsageComplete bool          `json:"descendantUsageComplete"`
 	InclusiveUsage          usageValueDTO `json:"inclusiveUsage"`
 	InclusiveUsageComplete  bool          `json:"inclusiveUsageComplete"`
+	SkillNames              []string      `json:"skillNames"`
+	Outcomes                []string      `json:"outcomes"`
+	AttemptIDs              []string      `json:"attemptIds"`
+	RetrySequenceIDs        []string      `json:"retrySequenceIds"`
+	ValidationStatuses      []string      `json:"validationStatuses"`
+	FailureIDs              []string      `json:"failureIds"`
 }
 type recordDTO struct {
 	Sequence        int64  `json:"sequence"`
@@ -442,9 +449,34 @@ type validationDTO struct {
 	AttemptNumber   int64  `json:"attemptNumber"`
 }
 type failureDTO struct {
-	FailureID string `json:"failureId"`
-	Terminal  bool   `json:"terminal"`
+	FailureID        string `json:"failureId"`
+	Terminal         bool   `json:"terminal"`
+	Sequence         int64  `json:"sequence"`
+	TimestampMillis  int64  `json:"timestampMillis"`
+	RecordType       string `json:"recordType"`
+	FrameID          string `json:"frameId"`
+	Route            string `json:"route"`
+	AttemptID        string `json:"attemptId"`
+	RetrySequenceID  string `json:"retrySequenceId"`
+	ValidationStatus string `json:"validationStatus"`
 }
+
+type configuredLimitsDTO struct {
+	MaxSkillInvocations int64 `json:"maxSkillInvocations"`
+	MaxToolInvocations  int64 `json:"maxToolInvocations"`
+	MaxLinterRetries    int64 `json:"maxLinterRetries"`
+	MaxModelCalls       int64 `json:"maxModelCalls"`
+	MaxUsageUnits       int64 `json:"maxUsageUnits"`
+}
+
+func configuredLimitsDTOValue(v *traceanalysis.ConfiguredLimits) *configuredLimitsDTO {
+	if v == nil {
+		return nil
+	}
+	return &configuredLimitsDTO{MaxSkillInvocations: v.MaxSkillInvocations, MaxToolInvocations: v.MaxToolInvocations,
+		MaxLinterRetries: v.MaxLinterRetries, MaxModelCalls: v.MaxModelCalls, MaxUsageUnits: v.MaxUsageUnits}
+}
+
 type payloadDTO struct {
 	PayloadID   string `json:"payloadId"`
 	Sequence    int64  `json:"sequence"`

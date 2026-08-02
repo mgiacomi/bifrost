@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +33,71 @@ func TestProjectDeclarationsMatchPinnedToolchains(t *testing.T) {
 	}
 }
 
+func TestReleaseLicenseAndRuntimeDocumentExist(t *testing.T) {
+	paths, err := resolveProjectPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	license, err := os.ReadFile(filepath.Join(paths.repository, "LICENSE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest := fmt.Sprintf("%x", sha256.Sum256(license)); digest != "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85" {
+		t.Fatalf("LICENSE is not the canonical MPL 2.0 text: %s", digest)
+	}
+	readme, err := os.ReadFile(filepath.Join(paths.release, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"--version", "--no-open-browser", "SHA256SUMS", "no JVM", "Target keys"} {
+		if !strings.Contains(string(readme), required) {
+			t.Errorf("release README does not contain %q", required)
+		}
+	}
+}
+
+func TestConsoleWorkflowsArePinnedAndLeastPrivilege(t *testing.T) {
+	paths, err := resolveProjectPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflowDirectory := filepath.Join(paths.repository, ".github", "workflows")
+	ci := readTestFile(t, filepath.Join(workflowDirectory, "console-ci.yml"))
+	releaseWorkflow := readTestFile(t, filepath.Join(workflowDirectory, "console-release.yml"))
+	for name, contents := range map[string]string{"console-ci.yml": ci, "console-release.yml": releaseWorkflow} {
+		if strings.Contains(contents, "pull_request_target") {
+			t.Fatalf("%s executes pull_request_target", name)
+		}
+		for _, line := range strings.Split(contents, "\n") {
+			if strings.Contains(line, "uses:") && !regexp.MustCompile(`uses: [^@]+@[0-9a-f]{40} # v[0-9]+$`).MatchString(strings.TrimSpace(line)) {
+				t.Errorf("%s has an unpinned action: %s", name, line)
+			}
+		}
+	}
+	for _, required := range []string{"pull_request:", "contents: read", "go-version: 1.26.5", "node-version: 24.18.0", "npm@12.0.2", "go run ./internal/buildtool verify", "npm --prefix web run test:e2e"} {
+		if !strings.Contains(ci, required) {
+			t.Errorf("CI workflow does not contain %q", required)
+		}
+	}
+	for _, required := range []string{"windows-latest", "ubuntu-latest", "macos-15", "windows-x86_64", "linux-x86_64", "macos-arm64", "workflow_dispatch:", "tags: [\"v*\"]", "SHA256SUMS"} {
+		if !strings.Contains(releaseWorkflow, required) {
+			t.Errorf("release workflow does not contain %q", required)
+		}
+	}
+	if count := strings.Count(releaseWorkflow, "contents: write"); count != 1 {
+		t.Fatalf("release workflow contains %d write grants, want exactly one", count)
+	}
+}
+
+func readTestFile(t *testing.T, filename string) string {
+	t.Helper()
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(contents)
+}
+
 func TestPackageManifestUsesExactDirectVersions(t *testing.T) {
 	paths, err := resolveProjectPaths()
 	if err != nil {
@@ -55,7 +122,8 @@ func TestPackageManifestUsesExactDirectVersions(t *testing.T) {
 		t.Fatalf("package metadata does not match pinned tools: %+v", manifest)
 	}
 	expected := map[string]string{
-		"@tailwindcss/vite": "4.3.3", "react": "19.2.8", "react-aria-components": "1.19.0",
+		"@axe-core/playwright": "4.12.1",
+		"@tailwindcss/vite":    "4.3.3", "react": "19.2.8", "react-aria-components": "1.19.0",
 		"react-dom": "19.2.8", "react-router": "8.3.0", "tailwindcss": "4.3.3",
 		"@playwright/test": "1.62.0", "@testing-library/dom": "10.4.1",
 		"@testing-library/jest-dom": "7.0.0", "@testing-library/react": "16.3.2",

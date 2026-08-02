@@ -10,7 +10,10 @@
 package traceanalysis
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
@@ -60,6 +63,7 @@ func (processor *Processor) Process(req artifact.ProcessRequest) (artifact.Proce
 	defer writer.abortRecordIndex()
 
 	var completionRec *Record
+	var configuredLimits *ConfiguredLimits
 	var lastSeq int64
 
 	// Parse and validate in one streaming pass. The callback retains only the
@@ -70,6 +74,13 @@ func (processor *Processor) Process(req artifact.ProcessRequest) (artifact.Proce
 			return d
 		}
 		lastSeq = rec.Sequence
+		if rec.Type == RecordTraceStarted {
+			var valid bool
+			configuredLimits, valid = extractConfiguredLimits(rec)
+			if !valid {
+				return invalidityError(CategoryUnsupportedValue, scopeID)
+			}
+		}
 
 		// Record-address index row.
 		if d := writer.appendRecordRow(recordIndexRow{
@@ -307,6 +318,7 @@ func (processor *Processor) Process(req artifact.ProcessRequest) (artifact.Proce
 		SessionID:         validator.sessionID,
 		Outcome:           string(outcome),
 		TerminalFailureID: terminalFailurePtr,
+		ConfiguredLimits:  configuredLimits,
 		RecordCount:       writer.recordCount,
 		FrameCount:        len(frameResults),
 		AttemptCount:      len(attemptResults),
@@ -428,12 +440,87 @@ func buildUsageFacts(c *usageCalculator, unattributed Usage) []any {
 func failureFacts(g *failureGraph) []any {
 	out := make([]any, 0, len(g.order))
 	for _, id := range g.order {
-		out = append(out, map[string]any{
-			"failureId": id,
-			"terminal":  g.failures[id],
-		})
+		out = append(out, g.failures[id])
 	}
 	return out
+}
+
+func extractConfiguredLimits(rec *Record) (*ConfiguredLimits, bool) {
+	metadata, err := rec.metadataObject()
+	if err != nil {
+		return nil, false
+	}
+	raw, present := metadata["configuredLimits"]
+	if !present {
+		return nil, true
+	}
+	if bytes.Equal(raw, nullBytes) {
+		return nil, false
+	}
+	fields, ok := decodeUniqueObject(raw)
+	if !ok || len(fields) != 5 {
+		return nil, false
+	}
+	read := func(name string) (int64, bool) {
+		value, ok := fields[name]
+		if !ok || bytes.Equal(value, nullBytes) {
+			return 0, false
+		}
+		decoder := json.NewDecoder(bytes.NewReader(value))
+		decoder.UseNumber()
+		var number json.Number
+		if decoder.Decode(&number) != nil {
+			return 0, false
+		}
+		parsed, err := number.Int64()
+		return parsed, err == nil && parsed >= 0 && parsed <= 2147483647
+	}
+	maxSkills, ok1 := read("maxSkillInvocations")
+	maxTools, ok2 := read("maxToolInvocations")
+	maxRetries, ok3 := read("maxLinterRetries")
+	maxModels, ok4 := read("maxModelCalls")
+	maxUsage, ok5 := read("maxUsageUnits")
+	if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+		return nil, false
+	}
+	return &ConfiguredLimits{MaxSkillInvocations: maxSkills, MaxToolInvocations: maxTools,
+		MaxLinterRetries: maxRetries, MaxModelCalls: maxModels, MaxUsageUnits: maxUsage}, true
+}
+
+func decodeUniqueObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	opening, err := decoder.Token()
+	if err != nil || opening != json.Delim('{') {
+		return nil, false
+	}
+	fields := make(map[string]json.RawMessage)
+	for decoder.More() {
+		name, err := decoder.Token()
+		if err != nil {
+			return nil, false
+		}
+		key, ok := name.(string)
+		if !ok {
+			return nil, false
+		}
+		if _, duplicate := fields[key]; duplicate {
+			return nil, false
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, false
+		}
+		fields[key] = value
+	}
+	closing, err := decoder.Token()
+	if err != nil || closing != json.Delim('}') {
+		return nil, false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, false
+	}
+	return fields, true
 }
 
 // payloadFacts produces the neutral payload descriptor facts written to the

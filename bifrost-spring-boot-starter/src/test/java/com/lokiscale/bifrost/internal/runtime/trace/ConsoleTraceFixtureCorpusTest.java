@@ -78,6 +78,12 @@ class ConsoleTraceFixtureCorpusTest
             Map.entry("inconsistent-attempt-identity", "INVALID_ATTEMPT"),
             Map.entry("negative-usage", "INVALID_USAGE"),
             Map.entry("overflowing-usage", "INVALID_USAGE"),
+            Map.entry("configured-limits-missing-member", "UNSUPPORTED_VALUE"),
+            Map.entry("configured-limits-unknown-member", "UNSUPPORTED_VALUE"),
+            Map.entry("configured-limits-float", "UNSUPPORTED_VALUE"),
+            Map.entry("configured-limits-negative", "UNSUPPORTED_VALUE"),
+            Map.entry("configured-limits-overflow", "UNSUPPORTED_VALUE"),
+            Map.entry("configured-limits-duplicate-member", "UNSUPPORTED_VALUE"),
             Map.entry("oversized-physical-record", "LINE_TOO_LARGE"),
             Map.entry("excessive-json-nesting", "EXCESSIVE_JSON_DEPTH"),
             Map.entry("truncated-final-input", "TRUNCATED_INPUT"));
@@ -439,15 +445,15 @@ class ConsoleTraceFixtureCorpusTest
     {
         Path trace = root.resolve("traces").resolve(name + ".ndjson");
         AtomicInteger ids = new AtomicInteger();
-        DefaultExecutionTraceHandle handle = new DefaultExecutionTraceHandle(
-                "trace-" + name,
-                "session-" + name,
-                trace,
-                TracePersistencePolicy.ALWAYS,
-                CLOCK,
-                () -> "payload-" + ids.incrementAndGet(),
-                "fixture-thread",
-                "traces/" + name + ".ndjson");
+        DefaultExecutionTraceHandle handle = name.equals("single-attempt-success")
+                ? new DefaultExecutionTraceHandle(
+                        "trace-" + name, "session-" + name, trace, TracePersistencePolicy.ALWAYS,
+                        CLOCK, () -> "payload-" + ids.incrementAndGet(), "fixture-thread",
+                        "traces/" + name + ".ndjson", new ConfiguredLimitsSnapshot(7, 11, 3, 5, 1234))
+                : new DefaultExecutionTraceHandle(
+                        "trace-" + name, "session-" + name, trace, TracePersistencePolicy.ALWAYS,
+                        CLOCK, () -> "payload-" + ids.incrementAndGet(), "fixture-thread",
+                        "traces/" + name + ".ndjson");
 
         Usage attributed = Usage.ZERO;
         Usage terminal = Usage.ZERO;
@@ -733,7 +739,9 @@ class ConsoleTraceFixtureCorpusTest
             ExecutionFrame frame,
             Instant timestamp) throws IOException
     {
-        handle.append(recordType, frame, frame.traceFrameType(), Map.of("timestampOverride", timestamp.toString()), null);
+        handle.append(recordType, frame, frame.traceFrameType(), Map.of(
+                "timestampOverride", timestamp.toString(),
+                "skillName", frame.route()), null);
     }
 
     private static Map<String, Object> attempt(
@@ -781,6 +789,15 @@ class ConsoleTraceFixtureCorpusTest
         result.put("sessionId", "session-" + name);
         result.put("outcome", outcome);
         result.put("terminalFailureId", terminalFailureId);
+        if (name.equals("single-attempt-success"))
+        {
+            result.put("configuredLimits", ordered(
+                    "maxSkillInvocations", 7,
+                    "maxToolInvocations", 11,
+                    "maxLinterRetries", 3,
+                    "maxModelCalls", 5,
+                    "maxUsageUnits", 1234));
+        }
         result.put("attributedUsage", attributed.asMap());
         result.put("terminalUsage", terminal.asMap());
         result.put("unattributedUsage", terminal.minus(attributed).asMap());
@@ -1133,6 +1150,30 @@ class ConsoleTraceFixtureCorpusTest
         List<String> overflowingUsage = new ArrayList<>(base);
         replaceFirstLineContaining(overflowingUsage, "\"recordType\":\"MODEL_RESPONSE_RECEIVED\"", "\"promptUnits\":10", "\"promptUnits\":9223372036854775808");
         writeInvalid(root, "overflowing-usage", overflowingUsage);
+
+        List<String> missingLimit = new ArrayList<>(base);
+        missingLimit.set(0, missingLimit.getFirst().replace(",\"maxUsageUnits\":1234", ""));
+        writeInvalid(root, "configured-limits-missing-member", missingLimit);
+
+        List<String> unknownLimit = new ArrayList<>(base);
+        unknownLimit.set(0, unknownLimit.getFirst().replace("\"maxUsageUnits\":1234", "\"maxUsageUnits\":1234,\"futureLimit\":1"));
+        writeInvalid(root, "configured-limits-unknown-member", unknownLimit);
+
+        List<String> floatLimit = new ArrayList<>(base);
+        floatLimit.set(0, floatLimit.getFirst().replace("\"maxUsageUnits\":1234", "\"maxUsageUnits\":1.5"));
+        writeInvalid(root, "configured-limits-float", floatLimit);
+
+        List<String> negativeLimit = new ArrayList<>(base);
+        negativeLimit.set(0, negativeLimit.getFirst().replace("\"maxUsageUnits\":1234", "\"maxUsageUnits\":-1"));
+        writeInvalid(root, "configured-limits-negative", negativeLimit);
+
+        List<String> overflowLimit = new ArrayList<>(base);
+        overflowLimit.set(0, overflowLimit.getFirst().replace("\"maxUsageUnits\":1234", "\"maxUsageUnits\":2147483648"));
+        writeInvalid(root, "configured-limits-overflow", overflowLimit);
+
+        List<String> duplicateLimit = new ArrayList<>(base);
+        duplicateLimit.set(0, duplicateLimit.getFirst().replace("\"maxUsageUnits\":1234", "\"maxUsageUnits\":1234,\"maxUsageUnits\":1234"));
+        writeInvalid(root, "configured-limits-duplicate-member", duplicateLimit);
 
         List<String> oversizedRecord = new ArrayList<>(base);
         oversizedRecord.set(0, oversizedRecord.getFirst().replace("\"threadName\":\"fixture-thread\"", "\"threadName\":\"" + "x".repeat(1024 * 1024) + "\""));

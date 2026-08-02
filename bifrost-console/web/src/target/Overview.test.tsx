@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { TargetResponse } from "../api/contracts";
@@ -104,8 +104,8 @@ test("overview connects and always clears application-key form ownership", async
   const secret = "BIFROST_" + "TEST_APPLICATION_KEY_DO_NOT_LEAK_123456";
   operations.connect.mockRejectedValue(new Error("safe failure"));
   render(<Overview />);
-  await userEvent.type(screen.getByLabelText("Target address"), "https://application.example");
-  await userEvent.type(screen.getByLabelText("Application key"), secret);
+  fireEvent.change(screen.getByLabelText("Target address"), { target: { value: "https://application.example" } });
+  fireEvent.change(screen.getByLabelText("Application key"), { target: { value: secret } });
   await userEvent.click(screen.getByRole("button", { name: "Connect" }));
   expect(operations.connect).toHaveBeenCalledWith("https://application.example", secret);
   expect(screen.getByLabelText("Application key")).toHaveValue("");
@@ -122,11 +122,8 @@ test("overview explicitly confirms and submits target replacement", async () => 
 
   await userEvent.click(screen.getByRole("button", { name: "Change target" }));
   expect(screen.getByText(/clears all data associated with the current target scope/)).toBeVisible();
-  await userEvent.type(
-    screen.getByLabelText("Target address"),
-    "https://replacement.example",
-  );
-  await userEvent.type(screen.getByLabelText("Application key"), replacementKey);
+  fireEvent.change(screen.getByLabelText("Target address"), { target: { value: "https://replacement.example" } });
+  fireEvent.change(screen.getByLabelText("Application key"), { target: { value: replacementKey } });
   await userEvent.click(screen.getByRole("button", { name: "Replace target" }));
 
   expect(operations.connect).toHaveBeenCalledWith(

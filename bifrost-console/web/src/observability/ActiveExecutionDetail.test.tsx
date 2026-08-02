@@ -223,7 +223,7 @@ test("finalization failure is distinct from a completed outcome", async () => {
       kind: "EXECUTION_OBSERVATION_ENDED",
       executionStatus: "COMPLETED",
       summary: "Trace finalization failed",
-      details: { applicationTraceAvailability: "CORE_FINALIZATION_FAILED" },
+      details: { applicationTraceAvailability: "UNAVAILABLE", applicationTraceUnavailableReason: "CORE_FINALIZATION_FAILED" },
     }],
     connected: false,
     continuity: null,
@@ -258,7 +258,7 @@ const acquiredArtifact: AcquiredArtifact = {
   hasIdleExpiry: true,
 };
 
-function completedActivity() {
+function completedActivity(terminalFailureId?: string) {
   return {
     activities: [{
       instanceId: "11111111-1111-4111-8111-111111111111",
@@ -270,7 +270,7 @@ function completedActivity() {
       kind: "TRACE_COMPLETED",
       executionStatus: "COMPLETED",
       summary: "Execution completed",
-      details: { outcome: "succeeded", applicationTraceAvailability: "AVAILABLE" },
+      details: { outcome: terminalFailureId ? "failed" : "succeeded", applicationTraceAvailability: "AVAILABLE", ...(terminalFailureId ? { terminalFailureId } : {}) },
     }],
     connected: true,
     continuity: null,
@@ -289,7 +289,7 @@ test("completed execution renders acquire button when artifact is available", as
 });
 
 test("completed execution acquire button calls acquireArtifact and shows success state", async () => {
-  activityView.current = completedActivity();
+  activityView.current = completedActivity("failure-terminal");
   vi.mocked(acquireArtifact).mockResolvedValue(acquiredArtifact);
   vi.mocked(getActiveExecutionDetail).mockRejectedValue(
     new (await import("../api/client")).BrowserAPIError("NOT_FOUND", "Execution not found", 404),
@@ -304,6 +304,7 @@ test("completed execution acquire button calls acquireArtifact and shows success
   });
   expect(acquireArtifact).toHaveBeenCalledWith("trace-1", { tabId: "test-tab", csrfToken: "test-token" });
   expect(screen.getByText("handle-abc")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open focused explorer" })).toHaveAttribute("href", "/traces/trace-1?targetScopeId=scope-1&failureId=failure-terminal");
 });
 
 test("completed execution acquire button shows error on failure", async () => {

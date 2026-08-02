@@ -25,6 +25,7 @@ type manifest struct {
 	SessionID         string                           `json:"sessionId"`
 	Outcome           string                           `json:"outcome"`
 	TerminalFailureID *string                          `json:"terminalFailureId"`
+	ConfiguredLimits  *ConfiguredLimits                `json:"configuredLimits"`
 	RecordCount       int64                            `json:"recordCount"`
 	FrameCount        int                              `json:"frameCount"`
 	AttemptCount      int                              `json:"attemptCount"`
