@@ -293,6 +293,7 @@ test("WF-SE same-instance transient disconnect reconnects without discarding con
   await page.getByLabel("Target address").fill(targetApp.origin);
   await page.getByLabel("Application key").fill("E2E_APPLICATION_KEY_12345678901234567890");
   await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("heading", { name: "Instance Overview" })).toBeFocused();
   await page.goto(`${consoleProcess.origin}/active-executions`);
   await page.getByRole("link", { name: "session-1" }).click();
   await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible({ timeout: 10_000 });
