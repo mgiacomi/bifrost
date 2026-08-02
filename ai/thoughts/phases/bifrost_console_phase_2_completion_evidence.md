@@ -31,7 +31,7 @@ pending until it exists.
 | `npm --prefix web run test:e2e` including axe scans | Windows / 2026-08-01 | Passing; 27 tests |
 | Fixture regeneration twice with no second diff | Windows / 2026-08-01 | Passing; trace and expected files are LF-only |
 | `package` plus `smoke` | Windows x86-64 / 2026-08-01 | Passing; repeat archive SHA-256 `7a232df62a0d01fa3e879b286f06b6ab26627e4b285aecbbe3785ef96b5fdeca` |
-| `.github/workflows/console-ci.yml` | GitHub-hosted Linux x86-64 | Pending workflow run |
+| `.github/workflows/console-ci.yml` | GitHub-hosted Linux x86-64 / 2026-08-01 | Passing; [Console CI run 30729350889](https://github.com/mgiacomi/bifrost/actions/runs/30729350889) |
 | `.github/workflows/console-release.yml` manual non-publishing validation | Windows x86-64, Linux x86-64, macOS arm64 | Pending workflow run |
 
 ## Release artifact evidence
