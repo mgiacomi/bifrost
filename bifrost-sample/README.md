@@ -954,5 +954,5 @@ No test calls OpenRouter or Ollama for incident/insurance/support/travel skills.
 ## Related modules
 
 - **`bifrost-spring-boot-starter`** — framework core and auto-configuration
-- **`bifrost-cli`** — deprecated trace-viewer proof of concept scheduled for removal after Bifrost Console is implemented
+- **`bifrost-console`** — independent Go module with an embedded React application; its explicit build uses pinned Go, Node.js, and npm toolchains and is not part of the Maven reactor
 - Root **`README.md`** — framework concepts, skill YAML reference, and starter setup

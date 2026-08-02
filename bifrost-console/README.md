@@ -2,7 +2,7 @@
 
 Bifrost Console is an independent Go module containing an embedded
 React/TypeScript application. A production build creates one executable; it is
-not a Maven module and it does not reuse the deprecated `bifrost-cli`.
+not a Maven module.
 
 The executable owns one local profile, one disposable workspace, a paired
 browser security realm, and one process-local selected Bifrost application
