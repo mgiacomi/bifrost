@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/windowsacl"
 	"golang.org/x/sys/windows"
 )
 
@@ -134,9 +135,19 @@ func verifyWindowsProtection(path string) error {
 	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
 		return fmt.Errorf("path DACL is not protected")
 	}
-	text := sd.String()
-	if strings.Count(text, "(") != 3 || !strings.Contains(text, user.String()) ||
-		!strings.Contains(text, ";;;SY)") || !strings.Contains(text, ";;;BA)") {
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return fmt.Errorf("cannot inspect path DACL")
+	}
+	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		return err
+	}
+	administrators, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return err
+	}
+	if !windowsacl.GrantsOnly(dacl, user, system, administrators) {
 		return fmt.Errorf("path DACL grants unexpected principals")
 	}
 	return nil
