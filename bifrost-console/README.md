@@ -26,6 +26,7 @@ From `bifrost-console/`:
 ```text
 go run ./internal/buildtool verify
 go run ./internal/buildtool build
+go run ./internal/buildtool package --expected-version VERSION
 ```
 
 Both commands check exact toolchain patches, read the direct version from the
@@ -37,6 +38,34 @@ executable beneath `build/` with the same complete version injected.
 The product version cannot be overridden. A release caller may add
 `--expected-version VERSION` to assert that its expected tag/version equals
 the root POM value.
+
+`package` performs the same clean native build, accepts only the current
+supported release target, and writes one deterministic archive plus its
+`.sha256` sidecar beneath `dist/`. Validate an extracted archive on its native
+host with:
+
+```text
+go run ./internal/buildtool smoke --expected-version VERSION --archive dist/ARCHIVE
+```
+
+The release names are
+`bifrost-console-VERSION-windows-x86_64.zip`,
+`bifrost-console-VERSION-linux-x86_64.tar.gz`, and
+`bifrost-console-VERSION-macos-arm64.tar.gz`. Each has one top-level directory
+containing only the executable, `LICENSE`, and the runtime-only `README.md`.
+Check `SHA256SUMS` with `sha256sum -c SHA256SUMS` on POSIX systems; in
+PowerShell compare `(Get-FileHash -Algorithm SHA256 .\\ARCHIVE).Hash` with the
+matching entry. `.github/workflows/console-ci.yml` runs Java fixture/adapter,
+canonical Console, and Playwright verification. The tag/manual validation
+workflow in `.github/workflows/console-release.yml` builds and smokes all three
+native targets; only its final tag-gated job can publish.
+
+Run the browser workflow suite after a canonical build with:
+
+```text
+npx playwright install chromium
+npm --prefix web run test:e2e
+```
 
 Generated browser assets, dependencies, coverage, Playwright output, and
 binaries are ignored. Only

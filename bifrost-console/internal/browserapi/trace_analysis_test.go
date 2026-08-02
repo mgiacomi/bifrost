@@ -18,6 +18,7 @@ type fakeTraceAnalysisService struct {
 	summaryErr        *consolecore.Error
 	frameQuery        traceanalysis.FrameQuery
 	framePage         traceanalysis.Page[traceanalysis.FrameSummary]
+	failurePage       traceanalysis.Page[traceanalysis.FailureSummary]
 	searchQuery       traceanalysis.SearchQuery
 	payloadRangeQuery traceanalysis.RangeRequest
 	rawRangeQuery     traceanalysis.RangeRequest
@@ -47,6 +48,9 @@ func (f *fakeTraceAnalysisService) QueryValidationLinks(context.Context, target.
 	return traceanalysis.Page[traceanalysis.ValidationSummary]{Items: []traceanalysis.ValidationSummary{}}, nil
 }
 func (f *fakeTraceAnalysisService) QueryFailures(context.Context, target.ScopeID, traceanalysis.FailureQuery) (traceanalysis.Page[traceanalysis.FailureSummary], *consolecore.Error) {
+	if f.failurePage.Items != nil {
+		return f.failurePage, nil
+	}
 	return traceanalysis.Page[traceanalysis.FailureSummary]{Items: []traceanalysis.FailureSummary{}}, nil
 }
 func (f *fakeTraceAnalysisService) QueryPayloads(context.Context, target.ScopeID, traceanalysis.PayloadQuery) (traceanalysis.Page[traceanalysis.PayloadDescriptor], *consolecore.Error) {
@@ -160,14 +164,36 @@ func TestTraceAnalysisFramesPreserveTimingUsageAndUnknownValues(t *testing.T) {
 		ClosedTimestampMillis: &closed, InclusiveDurationMillis: &duration, SelfDurationMillis: nil,
 		DirectUsage: traceanalysis.Usage{PromptUnits: 3, CompletionUnits: 2, TotalUnits: 5}, DirectUsageComplete: false,
 		InclusiveUsage: traceanalysis.Usage{PromptUnits: 3, CompletionUnits: 2, TotalUnits: 5}, InclusiveUsageComplete: false,
+		SkillNames: []string{"registered.skill"}, Outcomes: []string{"FAILED"}, AttemptIDs: []string{"attempt-1"},
+		RetrySequenceIDs: []string{"retry-1"}, ValidationStatuses: []string{"exhausted"}, FailureIDs: []string{"failure-1"},
 	}}}
 	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/frames", `{"traceId":"trace-1","pageSize":10}`, cookie)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	for _, expected := range []string{`"openedTimestampMillis":100`, `"closedTimestampMillis":112`, `"selfDurationMillis":null`, `"directUsage":{"promptUnits":3,"completionUnits":2,"totalUnits":5}`, `"directUsageComplete":false`} {
+	for _, expected := range []string{`"openedTimestampMillis":100`, `"closedTimestampMillis":112`, `"selfDurationMillis":null`, `"directUsage":{"promptUnits":3,"completionUnits":2,"totalUnits":5}`, `"directUsageComplete":false`, `"skillNames":["registered.skill"]`, `"attemptIds":["attempt-1"]`, `"failureIds":["failure-1"]`} {
 		if !strings.Contains(w.Body.String(), expected) {
 			t.Errorf("missing %s in %s", expected, w.Body.String())
+		}
+	}
+}
+
+func TestTraceAnalysisMapsConfiguredLimitsAndDirectFailureRelationships(t *testing.T) {
+	router, _, cookie, fake := traceAnalysisRouter(t)
+	fake.summary.ConfiguredLimits = &traceanalysis.ConfiguredLimits{MaxSkillInvocations: 7, MaxToolInvocations: 11, MaxLinterRetries: 3, MaxModelCalls: 5, MaxUsageUnits: 1234}
+	fake.failurePage = traceanalysis.Page[traceanalysis.FailureSummary]{Items: []traceanalysis.FailureSummary{{
+		FailureID: "failure-1", Terminal: true, Sequence: 42, TimestampMillis: 1000,
+		RecordType: "ERROR_RECORDED", FrameID: "frame-1", Route: "root.child",
+		AttemptID: "attempt-1", RetrySequenceID: "retry-1", ValidationStatus: "exhausted",
+	}}}
+	summary := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, cookie)
+	if summary.Code != http.StatusOK || !strings.Contains(summary.Body.String(), `"configuredLimits":{"maxSkillInvocations":7,"maxToolInvocations":11,"maxLinterRetries":3,"maxModelCalls":5,"maxUsageUnits":1234}`) {
+		t.Fatalf("summary=%s", summary.Body.String())
+	}
+	failures := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/failures", `{"traceId":"trace-1"}`, cookie)
+	for _, expected := range []string{`"sequence":42`, `"recordType":"ERROR_RECORDED"`, `"frameId":"frame-1"`, `"attemptId":"attempt-1"`, `"validationStatus":"exhausted"`} {
+		if !strings.Contains(failures.Body.String(), expected) {
+			t.Errorf("missing %s in %s", expected, failures.Body.String())
 		}
 	}
 }

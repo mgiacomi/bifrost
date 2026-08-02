@@ -51,9 +51,11 @@ function makeTargetServer(initialState: TargetState) {
   let state = initialState;
   let activityClient: any = null;
   let activityRequest: any = null;
+  let activityConnectionCount = 0;
 
   const server = http.createServer((request, response) => {
-    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+    const path = requestUrl.pathname;
 
     if (request.method !== "GET") {
       response.writeHead(404).end();
@@ -110,22 +112,30 @@ function makeTargetServer(initialState: TargetState) {
     }
 
     if (path === "/_bifrost/observability/v1/activity") {
+      activityConnectionCount += 1;
+      const afterCursor = requestUrl.searchParams.get("afterCursor") ?? "0";
       response.writeHead(200, {
         "Content-Type": "text/event-stream",
         "X-Bifrost-Instance-Id": state.instanceId,
         "Cache-Control": "no-store",
       });
       response.write(
-        `event: handshake\ndata: {"instanceId":"${state.instanceId}","observedAt":"2026-07-27T00:00:00Z","afterCursor":"0"}\n\n`,
+        `event: handshake\ndata: {"instanceId":"${state.instanceId}","observedAt":"2026-07-27T00:00:00Z","afterCursor":"${afterCursor}"}\n\n`,
       );
-      for (const evt of state.activityEvents) {
-        response.write(evt);
+      if (afterCursor === "0") {
+        for (const evt of state.activityEvents) {
+          response.write(evt);
+        }
       }
       activityClient = response;
       activityRequest = request;
       request.on("close", () => {
-        activityClient = null;
-        activityRequest = null;
+        if (activityClient === response) {
+          activityClient = null;
+        }
+        if (activityRequest === request) {
+          activityRequest = null;
+        }
       });
       return;
     }
@@ -158,7 +168,7 @@ function makeTargetServer(initialState: TargetState) {
 
   return {
     listen: () =>
-      new Promise<{ origin: string; close: () => Promise<void>; setState: (s: TargetState) => void; pushEvent: (evt: string) => void; closeActivity: () => void }>(
+      new Promise<{ origin: string; close: () => Promise<void>; setState: (s: TargetState) => void; pushEvent: (evt: string) => void; closeActivity: () => void; activityConnectionCount: () => number }>(
         (resolve, reject) => {
           server.listen(0, "127.0.0.1", () => {
             const address = server.address();
@@ -173,6 +183,14 @@ function makeTargetServer(initialState: TargetState) {
                   activityClient?.end();
                   activityClient = null;
                   server.close((err) => (err ? rej(err) : res()));
+                  // Forcefully destroy every established socket, including
+                  // active SSE connections the Go console may reopen over a
+                  // pooled keep-alive connection during teardown. Without this,
+                  // server.close()'s callback can wait indefinitely for an
+                  // immortal active connection and exceed Playwright's test
+                  // timeout. closeAllConnections is safe to call right after
+                  // server.close and is the recommended pattern.
+                  server.closeAllConnections();
                 }),
               setState: (s) => { state = s; },
               pushEvent: (evt) => {
@@ -182,6 +200,7 @@ function makeTargetServer(initialState: TargetState) {
                 activityClient?.end();
                 activityClient = null;
               },
+              activityConnectionCount: () => activityConnectionCount,
             });
           });
         },
@@ -196,6 +215,7 @@ const test = consoleTest.extend<{
     setState: (s: TargetState) => void;
     pushEvent: (evt: string) => void;
     closeActivity: () => void;
+    activityConnectionCount: () => number;
   };
 }>({
   targetApp: async ({}, use) => {
@@ -218,7 +238,7 @@ const test = consoleTest.extend<{
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
-test("WF-SE live execution preserves selection while activity advances", async ({
+test("WF-SLOW-EXECUTION (WF-SE) preserves selection while live activity advances", async ({
   page,
   consoleProcess,
   targetApp,
@@ -269,6 +289,32 @@ test("WF-SE terminal and observation-ended transitions remain in place", async (
   await expect(page.getByText(/Outcome:/)).toBeVisible();
   await expect(page).toHaveURL(/\/active-executions\/session-1/);
   await expect(page.getByRole("link", { name: "Inspect trace" })).toBeVisible();
+});
+
+test("WF-SE same-instance transient disconnect reconnects without discarding context", async ({
+  page,
+  consoleProcess,
+  targetApp,
+}) => {
+  await page.goto(consoleProcess.pairingUrl);
+  await page.goto(`${consoleProcess.origin}/target`);
+  await page.getByLabel("Target address").fill(targetApp.origin);
+  await page.getByLabel("Application key").fill("E2E_APPLICATION_KEY_12345678901234567890");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("heading", { name: "Instance Overview" })).toBeFocused();
+  await page.goto(`${consoleProcess.origin}/active-executions`);
+  await page.getByRole("link", { name: "session-1" }).click();
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible({ timeout: 10_000 });
+
+  const connectionCount = targetApp.activityConnectionCount();
+  targetApp.closeActivity();
+  await expect.poll(targetApp.activityConnectionCount, { timeout: 15_000 }).toBeGreaterThan(connectionCount);
+  targetApp.pushEvent(
+    'id: 4\nevent: activity\ndata: {"instanceId":"11111111-1111-4111-8111-111111111111","cursor":"4","sessionId":"session-1","traceId":"trace-1","canonicalSequence":4,"timestamp":"2026-07-27T00:00:04Z","kind":"STEP_COMPLETED","executionStatus":"RUNNING","summary":"Step observed after reconnect","details":{}}\n\n',
+  );
+  await expect(page.getByText("Step observed after reconnect", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".activity-narrative-summary", { hasText: "Execution started" }).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/active-executions\/session-1/);
 });
 
 test("WF-SE target change discards prior live state", async ({

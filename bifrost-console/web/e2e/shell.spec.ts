@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "./fixtures/consoleProcess";
+import { expectNoSeriousAccessibilityViolations } from "./accessibility";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const pom = fs.readFileSync(path.resolve(currentDirectory, "../../..", "pom.xml"), "utf8");
@@ -16,6 +17,7 @@ test("embedded shell serves root, deep link, version, theme, and assets", async 
   const entryResponse = await page.goto(consoleProcess.pairingUrl);
   await expect(page.getByRole("heading", { name: "Bifrost Console" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Instance Overview", exact: true })).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page);
   await expect(page.getByTestId("build-version")).toHaveText(expectedVersion ?? "");
   expect(entryResponse?.headers()["cache-control"]).toBe("no-store");
 
@@ -34,6 +36,7 @@ test("embedded shell serves root, deep link, version, theme, and assets", async 
 
   await page.goto(`${consoleProcess.origin}/foundation/deep-link`);
   await expect(page.getByRole("heading", { name: "This Console route does not exist" })).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page);
   expect((await request.get(`${consoleProcess.origin}/assets/missing-12345678.js`)).status()).toBe(404);
   expect((await request.get(`${consoleProcess.origin}/api/console/missing`)).status()).toBe(404);
   expect(await page.evaluate(() => navigator.serviceWorker?.controller ?? null)).toBeNull();

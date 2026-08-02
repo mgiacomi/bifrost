@@ -3,6 +3,8 @@ package com.lokiscale.bifrost.internal.core;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory;
 import com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandleFactory;
 import com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention;
+import com.lokiscale.bifrost.internal.runtime.trace.ConfiguredLimitsSnapshot;
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 
@@ -64,6 +66,27 @@ public class BifrostSessionRunner
                                 Objects.requireNonNull(
                                         completionGraceRetention,
                                         "completionGraceRetention must not be null")));
+    }
+
+    public BifrostSessionRunner(
+            int maxDepth,
+            TracePersistencePolicy tracePersistencePolicy,
+            Clock clock,
+            ExecutionObservationHandleFactory observationHandleFactory,
+            CompletionGraceRetention completionGraceRetention,
+            BifrostProperties.Session.Quotas quotas)
+    {
+        this(maxDepth, tracePersistencePolicy, clock, observationHandleFactory,
+                (sessionId, policy, handleClock, observationHandle) ->
+                        new com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle(
+                                sessionId,
+                                policy,
+                                handleClock,
+                                observationHandle,
+                                Objects.requireNonNull(
+                                        completionGraceRetention,
+                                        "completionGraceRetention must not be null"),
+                                ConfiguredLimitsSnapshot.from(quotas)));
     }
 
     BifrostSessionRunner(

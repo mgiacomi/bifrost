@@ -5,6 +5,7 @@ import com.lokiscale.bifrost.api.SkillExecutionView;
 import com.lokiscale.bifrost.api.SkillTemplate;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
 
@@ -62,8 +63,9 @@ class SampleControllerTest {
             return "\"ok\"";
         }).when(skillTemplate).invoke(eq("duplicateInvoiceChecker"), any(Map.class), any());
 
+        String fixturePath = new ClassPathResource("fixtures/duplicate-invoice.txt").getFile().getAbsolutePath();
         Map<String, Object> response = (Map<String, Object>) controller.checkDuplicateInvoice(
-                "C:\\opendev\\code\\bifrost\\bifrost-sample\\src\\test\\resources\\fixtures\\duplicate-invoice.txt");
+                fixturePath);
 
         verify(skillTemplate).invoke(eq("duplicateInvoiceChecker"), any(Map.class), any());
         assertThat(response.get("result")).isEqualTo("\"ok\"");

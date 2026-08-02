@@ -75,6 +75,16 @@ type Usage struct {
 	TotalUnits      int64
 }
 
+// ConfiguredLimits is the optional immutable run-start quota snapshot recorded
+// by current Spring producers on TRACE_STARTED.
+type ConfiguredLimits struct {
+	MaxSkillInvocations int64 `json:"maxSkillInvocations"`
+	MaxToolInvocations  int64 `json:"maxToolInvocations"`
+	MaxLinterRetries    int64 `json:"maxLinterRetries"`
+	MaxModelCalls       int64 `json:"maxModelCalls"`
+	MaxUsageUnits       int64 `json:"maxUsageUnits"`
+}
+
 // usageZero is the recorded zero usage value.
 var usageZero = Usage{}
 
@@ -180,6 +190,19 @@ type frameResult struct {
 	FailureIDs              []string `json:"failureIds,omitempty"`
 }
 
+type failureResult struct {
+	FailureID        string `json:"failureId"`
+	Terminal         bool   `json:"terminal"`
+	Sequence         int64  `json:"sequence"`
+	TimestampMillis  int64  `json:"timestampMillis"`
+	RecordType       string `json:"recordType"`
+	FrameID          string `json:"frameId,omitempty"`
+	Route            string `json:"route,omitempty"`
+	AttemptID        string `json:"attemptId,omitempty"`
+	RetrySequenceID  string `json:"retrySequenceId,omitempty"`
+	ValidationStatus string `json:"validationStatus,omitempty"`
+}
+
 // gapResult records one structural gap (for example an open frame never closed).
 type gapResult struct {
 	Kind      string `json:"kind"`
@@ -203,6 +226,7 @@ type analysisResult struct {
 	SessionID               string              `json:"sessionId,omitempty"`
 	Outcome                 string              `json:"outcome,omitempty"`
 	TerminalFailureID       *string             `json:"terminalFailureId,omitempty"`
+	ConfiguredLimits        *ConfiguredLimits   `json:"configuredLimits,omitempty"`
 	AttributedUsage         Usage               `json:"attributedUsage,omitempty"`
 	TerminalUsage           Usage               `json:"terminalUsage,omitempty"`
 	UnattributedUsage       Usage               `json:"unattributedUsage,omitempty"`

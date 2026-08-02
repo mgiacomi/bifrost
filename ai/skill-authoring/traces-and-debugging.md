@@ -31,6 +31,20 @@ Response usage is normalized as prompt, completion, and total units with a preci
 
 Each returned physical attempt is traced before its usage is applied to quota and metrics accounting, and is accounted once. `UNAVAILABLE` is a property of an individual attempt. `Unattributed usage` is different: Console derives it component-wise when the terminal session snapshot exceeds the sum of attributed response facts. Java does not emit a separate unattributed counter.
 
+For Spring-created executions, `TRACE_STARTED.configuredLimits` records the five
+quota values in effect when the trace is created: skill invocations, tool
+invocations, linter retries, model calls, and usage units. The snapshot is
+immutable for that run. Standalone/internal trace construction may omit the
+object; omission means limit comparison is unavailable. When present, all five
+values are required non-negative integers.
+
+Console compares only counters for which the finalized trace exposes matching
+facts. A supported comparison displays the observed numerator, configured
+denominator, and an arithmetic percentage with at most two decimal places. A
+zero denominator has an undefined proportion, and an absent snapshot is
+unavailable; neither produces a percentage. These comparisons are not monetary
+cost, excess, correctness, importance, cause, or action recommendations.
+
 ## Terminal outcome and failures
 
 The final trace record carries one outcome: `SUCCEEDED`, `FAILED`, or `ABORTED`, plus the authoritative terminal session-usage snapshot. A failed or aborted completion has a `terminalFailureId` that links to the corresponding `ERROR_RECORDED` fact. Success has no terminal failure ID. Earlier nonterminal errors can coexist with a successful outcome.
@@ -45,7 +59,13 @@ If finalization itself cannot append a completion record, do not infer one. A mi
 4. Follow validator mutation facts back to the exact attempt.
 5. Compare attributed response usage with terminal usage; treat a positive remainder as unattributed and a negative remainder as contradictory.
 6. Inspect linked error facts and frame relationships, keeping recovered errors separate from the terminal cause.
-7. Reproduce with the same checkout before treating a serialized-field difference as a runtime defect.
+7. For limit comparison, use the finalized usage and the run-start snapshot;
+   preserve unavailable and zero-denominator distinctions.
+8. For a selected frame, use its exact recorded skill names. Console links a
+   name only when it exactly matches the current target's registered catalog,
+   and displays the application-provided YAML unchanged. `sourcePath` is
+   descriptive text, not a local workspace locator or provenance claim.
+9. Reproduce with the same checkout before treating a serialized-field difference as a runtime defect.
 
 ## Implementation and test anchors
 
@@ -55,3 +75,8 @@ If finalization itself cannot append a completion record, do not infer one. A mi
 - [`ModelAttemptCallAdvisorIntegrationTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/chat/ModelAttemptCallAdvisorIntegrationTest.java) protects retry cardinality, failure behavior, usage, and quota enforcement.
 - [`BifrostSessionRunnerTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/core/BifrostSessionRunnerTest.java) and [`ExecutionCoordinatorTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/ExecutionCoordinatorTest.java) protect terminal failure linkage.
 - [`bifrost-console-fixtures`](../../bifrost-console-fixtures/README.md) is the executable cross-language semantic corpus.
+- `ConsoleTraceFixtureCorpusTest` and Go `fixture_corpus_test.go` protect the
+  optional complete run-start snapshot and malformed-object rejection.
+- `TraceUsage` and `TraceExplorer` component tests protect arithmetic-only
+  presentation and exact registered-name navigation without interpreting YAML
+  or `sourcePath`.

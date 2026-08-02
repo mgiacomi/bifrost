@@ -6,13 +6,13 @@ import "github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
 // failure linkage. Failure identity uses only explicit failureId and
 // terminalFailureId.
 type failureGraph struct {
-	failures map[string]bool // failureId -> terminal flag
-	order    []string        // failureId in first-seen order
+	failures map[string]failureResult // failureId -> directly recorded fact
+	order    []string                 // failureId in first-seen order
 }
 
 // newFailureGraph creates an empty failure graph.
 func newFailureGraph() *failureGraph {
-	return &failureGraph{failures: map[string]bool{}}
+	return &failureGraph{failures: map[string]failureResult{}}
 }
 
 // onErrorRecord processes an ERROR_RECORDED record. It records the failureId
@@ -33,13 +33,18 @@ func (g *failureGraph) onErrorRecord(rec *Record) *consolecore.Error {
 		// Default to nonterminal when the flag is absent.
 		terminal = false
 	}
+	fact := failureResult{FailureID: failureID, Terminal: terminal, Sequence: rec.Sequence,
+		TimestampMillis: rec.TimestampMillis, RecordType: string(rec.Type), FrameID: rec.FrameID,
+		Route: rec.Route, AttemptID: rec.metadataStringOrEmpty("attemptId"),
+		RetrySequenceID:  rec.metadataStringOrEmpty("retrySequenceId"),
+		ValidationStatus: rec.metadataStringOrEmpty("status")}
 	if existing, dup := g.failures[failureID]; dup {
 		// A repeated failureId must not change terminality.
-		if existing != terminal {
+		if existing.Terminal != terminal {
 			return invalidityError(CategoryInvalidTerminalFailure, rec.TraceID)
 		}
 	} else {
-		g.failures[failureID] = terminal
+		g.failures[failureID] = fact
 		g.order = append(g.order, failureID)
 	}
 	return nil
@@ -70,8 +75,8 @@ func (g *failureGraph) validateTerminalLink(outcome TraceOutcome, terminalFailur
 	if terminalFailureID == "" {
 		return invalidityError(CategoryInvalidTerminalFailure, traceID)
 	}
-	terminal, exists := g.failures[terminalFailureID]
-	if !exists || !terminal {
+	failure, exists := g.failures[terminalFailureID]
+	if !exists || !failure.Terminal {
 		return invalidityError(CategoryInvalidTerminalFailure, traceID)
 	}
 	return nil
@@ -80,6 +85,6 @@ func (g *failureGraph) validateTerminalLink(outcome TraceOutcome, terminalFailur
 // hasTerminalFailure reports whether a terminal failure with the given ID was
 // recorded.
 func (g *failureGraph) hasTerminalFailure(id string) bool {
-	terminal, ok := g.failures[id]
-	return ok && terminal
+	failure, ok := g.failures[id]
+	return ok && failure.Terminal
 }

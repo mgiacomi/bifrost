@@ -56,6 +56,7 @@ func (service *Service) GetSummary(ctx context.Context, scopeID target.ScopeID, 
 		Context:            traceCtx,
 		Outcome:            m.Outcome,
 		TerminalFailureID:  m.TerminalFailureID,
+		ConfiguredLimits:   m.ConfiguredLimits,
 		RecordCount:        m.RecordCount,
 		FrameCount:         m.FrameCount,
 		AttemptCount:       m.AttemptCount,
@@ -399,9 +400,10 @@ func (service *Service) QueryFailures(ctx context.Context, scopeID target.ScopeI
 	}
 	items, nextPosition, hasMore, domain := collectFactPage[failureSummary, FailureSummary](ctx, lease, scopeID, ComponentFailureIndex, startIdx, pageSize, func(f failureSummary) FailureSummary {
 		return FailureSummary{
-			Context:   traceCtx,
-			FailureID: f.FailureID,
-			Terminal:  f.Terminal,
+			Context: traceCtx, FailureID: f.FailureID, Terminal: f.Terminal,
+			Sequence: f.Sequence, TimestampMillis: f.TimestampMillis, RecordType: f.RecordType,
+			FrameID: f.FrameID, Route: f.Route, AttemptID: f.AttemptID,
+			RetrySequenceID: f.RetrySequenceID, ValidationStatus: f.ValidationStatus,
 		}
 	})
 	if domain != nil {
@@ -420,8 +422,16 @@ func (service *Service) QueryFailures(ctx context.Context, scopeID target.ScopeI
 
 // failureSummary is the internal parsed failure fact.
 type failureSummary struct {
-	FailureID string `json:"failureId"`
-	Terminal  bool   `json:"terminal"`
+	FailureID        string `json:"failureId"`
+	Terminal         bool   `json:"terminal"`
+	Sequence         int64  `json:"sequence"`
+	TimestampMillis  int64  `json:"timestampMillis"`
+	RecordType       string `json:"recordType"`
+	FrameID          string `json:"frameId,omitempty"`
+	Route            string `json:"route,omitempty"`
+	AttemptID        string `json:"attemptId,omitempty"`
+	RetrySequenceID  string `json:"retrySequenceId,omitempty"`
+	ValidationStatus string `json:"validationStatus,omitempty"`
 }
 
 // PayloadQuery is a bounded, continuable payload descriptor query.

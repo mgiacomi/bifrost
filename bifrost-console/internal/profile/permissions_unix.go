@@ -29,6 +29,29 @@ func rejectUnsafePath(path string) error {
 	return nil
 }
 
+func resolveSafeDirectory(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("%s is a symbolic link", path)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	absolute = filepath.Clean(absolute)
+	if err := rejectUnsafePath(absolute); err != nil {
+		return "", err
+	}
+	return absolute, nil
+}
+
 func verifyProtectedDirectory(path string) error {
 	return verifyOwnedMode(path, true, 0o700)
 }

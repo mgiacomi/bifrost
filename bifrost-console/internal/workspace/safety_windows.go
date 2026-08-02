@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mgiacomi/bifrost/bifrost-console/internal/windowsacl"
 	"golang.org/x/sys/windows"
 )
 
@@ -37,6 +38,23 @@ func unsafePath(path string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func resolveSafeDirectory(path string) (string, error) {
+	if unsafe, err := unsafePath(path); err != nil {
+		return "", err
+	} else if unsafe {
+		return "", fmt.Errorf("work directory contains a reparse point")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absolute), nil
 }
 
 func protectNewDirectory(path string) error { return setWindowsProtection(path, true) }
@@ -117,9 +135,19 @@ func verifyWindowsProtection(path string) error {
 	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
 		return fmt.Errorf("path DACL is not protected")
 	}
-	text := sd.String()
-	if strings.Count(text, "(") != 3 || !strings.Contains(text, user.String()) ||
-		!strings.Contains(text, ";;;SY)") || !strings.Contains(text, ";;;BA)") {
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return fmt.Errorf("cannot inspect path DACL")
+	}
+	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		return err
+	}
+	administrators, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return err
+	}
+	if !windowsacl.GrantsOnly(dacl, user, system, administrators) {
 		return fmt.Errorf("path DACL grants unexpected principals")
 	}
 	return nil

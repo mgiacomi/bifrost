@@ -183,6 +183,7 @@ class BifrostPublicSurfaceArchitectureTest
             Map.entry("com.lokiscale.bifrost.internal.runtime.tool.ToolSurfaceService", "Public only for Java collaboration between distinct internal subsystem packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.DefaultExecutionTraceHandle", "Public only for Java collaboration between distinct internal subsystem packages."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.CompletionGraceRetention", "Public only for core-owned trace retention composition across internal packages."),
+            Map.entry("com.lokiscale.bifrost.internal.runtime.trace.ConfiguredLimitsSnapshot", "Public only to carry an immutable run-start quota snapshot from internal core wiring into the trace writer."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.ImmediateCompletionRetention", "Public only for framework-owned disabled trace-retention composition."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.ScheduledCompletionGraceRetention", "Public only for framework-owned trace-retention lifecycle composition."),
             Map.entry("com.lokiscale.bifrost.internal.runtime.trace.ExecutionJournalProjector", "Public only for Java collaboration between distinct internal subsystem packages."),

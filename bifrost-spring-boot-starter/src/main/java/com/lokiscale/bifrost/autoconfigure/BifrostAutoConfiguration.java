@@ -178,7 +178,8 @@ public class BifrostAutoConfiguration
                 executionTraceProperties.getPersistence(),
                 Clock.systemUTC(),
                 observabilityActivationCoordinator.observationFactory(),
-                observabilityActivationCoordinator.completionRetention());
+                observabilityActivationCoordinator.completionRetention(),
+                properties.getSession().getQuotas());
     }
 
     @Bean

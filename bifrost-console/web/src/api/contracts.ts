@@ -227,6 +227,7 @@ export type TraceAnalysisSummary = {
   attributedUsage: TraceUsageValue; terminalUsage: TraceUsageValue;
   unattributedUsage: TraceUsageValue; unframedAttributedUsage: TraceUsageValue;
   usageComplete: boolean;
+  configuredLimits: ConfiguredLimits | null;
 };
 export type TraceFrame = {
   frameId: string; parentFrameId: string | null; childFrameIds: string[];
@@ -236,6 +237,8 @@ export type TraceFrame = {
   directUsageComplete: boolean; descendantUsage: TraceUsageValue;
   descendantUsageComplete: boolean; inclusiveUsage: TraceUsageValue;
   inclusiveUsageComplete: boolean;
+  skillNames: string[]; outcomes: string[]; attemptIds: string[];
+  retrySequenceIds: string[]; validationStatuses: string[]; failureIds: string[];
 };
 export type TraceRecord = {
   sequence: number; type: string; frameId: string; parentFrameId: string;
@@ -248,7 +251,9 @@ export type TraceUsage = { targetScopeId: string; attributed: TraceUsageValue; u
 export type TraceUsageValue = { promptUnits: number; completionUnits: number; totalUnits: number };
 export type TraceAttempt = { retrySequenceId: string; attemptId: string; attemptNumber: number; usage: TraceUsageValue; usageComplete: boolean };
 export type TraceRetry = { retrySequenceId: string; usage: TraceUsageValue; usageComplete: boolean };
-export type TraceFailure = { failureId: string; terminal: boolean };
+export type TraceFailure = { failureId: string; terminal: boolean; sequence: number; timestampMillis: number;
+  recordType: string; frameId: string; route: string; attemptId: string;
+  retrySequenceId: string; validationStatus: string };
 export type TraceValidation = { status: string; retrySequenceId: string; attemptId: string; attemptNumber: number };
 export type TraceGap = { kind: string; frameId: string; attemptId: string };
 export type TraceUncertainty = { kind: string; frameId: string };

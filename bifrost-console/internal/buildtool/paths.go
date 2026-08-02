@@ -12,6 +12,8 @@ type projectPaths struct {
 	web        string
 	generated  string
 	build      string
+	dist       string
+	release    string
 }
 
 func resolveProjectPaths() (projectPaths, error) {
@@ -29,5 +31,7 @@ func resolveProjectPaths() (projectPaths, error) {
 		web:        filepath.Join(module, "web"),
 		generated:  filepath.Join(module, "internal", "webassets", "generated"),
 		build:      filepath.Join(module, "build"),
+		dist:       filepath.Join(module, "dist"),
+		release:    filepath.Join(module, "release"),
 	}, nil
 }
