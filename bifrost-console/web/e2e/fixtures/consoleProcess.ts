@@ -17,6 +17,7 @@ const binary = path.resolve(currentDirectory, "../../../build", executable);
 async function waitForPairing(child: ChildProcessWithoutNullStreams): Promise<string> {
   return new Promise((resolve, reject) => {
     let buffered = "";
+    let stderr = "";
     const timeout = setTimeout(() => reject(new Error("Console pairing URL was not available")), 15_000);
     child.stdout.on("data", (chunk: Buffer) => {
       buffered += chunk.toString("utf8");
@@ -28,9 +29,13 @@ async function waitForPairing(child: ChildProcessWithoutNullStreams): Promise<st
         }
       }
     });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString("utf8")).slice(-4096);
+    });
     child.once("exit", (code) => {
       clearTimeout(timeout);
-      reject(new Error(`Console exited before pairing (code ${code ?? "unknown"})`));
+      const detail = stderr.trim() || "no stderr output";
+      reject(new Error(`Console exited before pairing (code ${code ?? "unknown"}): ${detail}`));
     });
   });
 }
