@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -54,6 +55,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     private final String tracePathMetadata;
     private final ExecutionObservationHandle observationHandle;
     private final CompletionGraceRetention completionGraceRetention;
+    private final ConfiguredLimitsSnapshot configuredLimits;
 
     private volatile boolean errored;
     private volatile boolean completed;
@@ -62,7 +64,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
     public DefaultExecutionTraceHandle(String sessionId, TracePersistencePolicy persistencePolicy, Clock clock)
     {
         this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
-                DefaultExecutionTraceHandle::newTraceId, null, null, NoOpExecutionObservationHandle.INSTANCE);
+                DefaultExecutionTraceHandle::newTraceId, null, null, NoOpExecutionObservationHandle.INSTANCE, null);
         resetTraceFile();
         initialize();
     }
@@ -74,7 +76,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             ExecutionObservationHandle observationHandle)
     {
         this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
-                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle);
+                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle, null);
         resetTraceFile();
         initialize();
     }
@@ -90,7 +92,25 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             String tracePathMetadata)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
-                idSupplier, threadName, tracePathMetadata, NoOpExecutionObservationHandle.INSTANCE);
+                idSupplier, threadName, tracePathMetadata, NoOpExecutionObservationHandle.INSTANCE, null);
+        resetTraceFile();
+        initialize();
+    }
+
+    DefaultExecutionTraceHandle(
+            String traceId,
+            String sessionId,
+            Path tracePath,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            Supplier<String> idSupplier,
+            String threadName,
+            String tracePathMetadata,
+            ConfiguredLimitsSnapshot configuredLimits)
+    {
+        this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
+                idSupplier, threadName, tracePathMetadata, NoOpExecutionObservationHandle.INSTANCE,
+                Objects.requireNonNull(configuredLimits, "configuredLimits must not be null"));
         resetTraceFile();
         initialize();
     }
@@ -107,7 +127,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             ExecutionObservationHandle observationHandle)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
-                idSupplier, threadName, tracePathMetadata, observationHandle);
+                idSupplier, threadName, tracePathMetadata, observationHandle, null);
         resetTraceFile();
         initialize();
     }
@@ -125,7 +145,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             TraceRecordWriter writer)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, false, false, clock, 0L, false,
-                idSupplier, threadName, tracePathMetadata, observationHandle, writer,
+                idSupplier, threadName, tracePathMetadata, observationHandle, null, writer,
                 ImmediateCompletionRetention.INSTANCE);
         resetTraceFile();
         initialize();
@@ -144,10 +164,11 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             Supplier<String> idSupplier,
             @Nullable String threadName,
             @Nullable String tracePathMetadata,
-            ExecutionObservationHandle observationHandle)
+            ExecutionObservationHandle observationHandle,
+            @Nullable ConfiguredLimitsSnapshot configuredLimits)
     {
         this(traceId, sessionId, tracePath, persistencePolicy, errored, completed, clock, startingSequence,
-                initialized, idSupplier, threadName, tracePathMetadata, observationHandle, null,
+                initialized, idSupplier, threadName, tracePathMetadata, observationHandle, configuredLimits, null,
                 ImmediateCompletionRetention.INSTANCE);
     }
 
@@ -165,6 +186,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             @Nullable String threadName,
             @Nullable String tracePathMetadata,
             ExecutionObservationHandle observationHandle,
+            @Nullable ConfiguredLimitsSnapshot configuredLimits,
             @Nullable TraceRecordWriter writer,
             CompletionGraceRetention completionGraceRetention)
     {
@@ -183,6 +205,7 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
         this.threadName = threadName == null || threadName.isBlank() ? null : threadName;
         this.tracePathMetadata = tracePathMetadata == null ? this.tracePath.toString() : tracePathMetadata;
         this.observationHandle = Objects.requireNonNull(observationHandle, "observationHandle must not be null");
+        this.configuredLimits = configuredLimits;
         this.completionGraceRetention = Objects.requireNonNull(
                 completionGraceRetention, "completionGraceRetention must not be null");
     }
@@ -195,7 +218,23 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
             CompletionGraceRetention completionGraceRetention)
     {
         this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
-                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle, null,
+                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle, null, null,
+                completionGraceRetention);
+        resetTraceFile();
+        initialize();
+    }
+
+    public DefaultExecutionTraceHandle(
+            String sessionId,
+            TracePersistencePolicy persistencePolicy,
+            Clock clock,
+            ExecutionObservationHandle observationHandle,
+            CompletionGraceRetention completionGraceRetention,
+            ConfiguredLimitsSnapshot configuredLimits)
+    {
+        this(newTraceId(), sessionId, null, persistencePolicy, false, false, clock, 0L, false,
+                DefaultExecutionTraceHandle::newTraceId, null, null, observationHandle,
+                Objects.requireNonNull(configuredLimits, "configuredLimits must not be null"), null,
                 completionGraceRetention);
         resetTraceFile();
         initialize();
@@ -207,7 +246,14 @@ public final class DefaultExecutionTraceHandle implements ExecutionTraceHandle
         {
             if (initialized.compareAndSet(false, true))
             {
-                appendInternal(TraceRecordType.TRACE_STARTED, null, null, null, null, Map.of("tracePath", tracePathMetadata), Map.of("sessionId", sessionId));
+                LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("tracePath", tracePathMetadata);
+                if (configuredLimits != null)
+                {
+                    metadata.put("configuredLimits", configuredLimits.asMetadata());
+                }
+                appendInternal(TraceRecordType.TRACE_STARTED, null, null, null, null,
+                        Collections.unmodifiableMap(metadata), Map.of("sessionId", sessionId));
                 appendInternal(TraceRecordType.TRACE_CAPTURE_POLICY_RECORDED, null, null, null, null, Map.of("persistencePolicy", persistencePolicy.name()), null);
             }
         }

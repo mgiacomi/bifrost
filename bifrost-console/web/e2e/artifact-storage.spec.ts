@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test as consoleTest, expect } from "./fixtures/consoleProcess";
+import { expectNoSeriousAccessibilityViolations } from "./accessibility";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.resolve(currentDirectory, "../../../bifrost-console-fixtures/traces");
@@ -106,7 +107,7 @@ function makeTargetServer(initial: TargetState) {
           consoleCompatibilityVersion: "0.1.0-SNAPSHOT",
           observedAt: "2026-07-27T00:00:00Z",
           liveMonitoringAvailable: true,
-          registeredSkillCount: 0,
+          registeredSkillCount: 1,
           activeExecutionCount: 0,
           catalogedTraceCount: 1,
           tracePersistencePolicy: "PERSISTENT",
@@ -127,6 +128,24 @@ function makeTargetServer(initial: TargetState) {
           observedAt: "2026-07-27T00:00:00Z",
         }),
       );
+      return;
+    }
+
+    if (pathname === "/_bifrost/observability/v1/skills") {
+      response.writeHead(200, headers);
+      response.end(JSON.stringify({
+        items: [{ registeredName: "root.skill", sourcePath: "classpath:/skills/<script>alert(1)</script>.yaml", href: "skills/root.skill" }],
+        hasMore: false, nextCursor: null, observedAt: "2026-07-27T00:00:00Z",
+      }));
+      return;
+    }
+    if (pathname === "/_bifrost/observability/v1/skills/root.skill") {
+      response.writeHead(200, headers);
+      response.end(JSON.stringify({
+        registeredName: "root.skill",
+        sourcePath: "classpath:/skills/<script>alert(1)</script>.yaml",
+        yaml: "name: root.skill\ninstructions: '<script>window.location=\\\"https://attacker.invalid\\\"</script><a href=\\\"/target\\\">connect</a>'\n",
+      }));
       return;
     }
 
@@ -353,19 +372,32 @@ test("WF-AS-01E acquired trace opens bounded explorer evidence without exposing 
 test("WF-EXPENSIVE-EXECUTION explores returned hierarchy timeline and frame usage", async ({ page, consoleProcess, targetApp }) => {
   await connectToTarget(page, consoleProcess, targetApp.origin);
   await acquireAndOpenExplorer(page, consoleProcess, "trace-nested-frame-usage");
+  const root = page.getByRole("button", { name: "ROOT_MISSION: root.skill" });
   const child = page.getByRole("button", { name: "SKILL_EXECUTION: root.skill" });
+  await root.focus();
+  await page.keyboard.press("End");
+  await expect(child).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(root).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(child).toBeFocused();
   await child.click();
   await expect(page).toHaveURL(/frameId=skill/);
   await page.getByRole("tab", { name: "Timeline" }).click();
   await expect(page.getByRole("img").first()).toBeVisible();
   await expect(page).toHaveURL(/frameId=skill/);
   await page.getByRole("tab", { name: "Usage" }).click();
+  await expectNoSeriousAccessibilityViolations(page);
   await expect(page.getByRole("table", { name: "Usage facts" })).toContainText("Selected frame direct");
   await expect(page.getByRole("table", { name: "Usage facts" })).toContainText("6");
   await page.setViewportSize({ width: 640, height: 720 });
   await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
   await page.evaluate(() => { document.documentElement.style.zoom = "200%"; });
   await page.getByRole("tab", { name: "Hierarchy" }).focus();
+  await expect(page.getByRole("tab", { name: "Hierarchy" })).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(page.getByRole("tab", { name: "Records" })).toBeFocused();
+  await page.keyboard.press("Home");
   await expect(page.getByRole("tab", { name: "Hierarchy" })).toBeFocused();
 });
 
@@ -380,12 +412,25 @@ test("WF-UNFAMILIAR-SKILL-PATH retains repeated invocation selection across view
   await expect(page.locator('.trace-timeline-row[aria-current="true"]')).toContainText("root.skill");
   await page.reload();
   await expect(page.locator('.trace-timeline-row[aria-current="true"]')).toContainText("root.skill", { timeout: 15_000 });
+  await expectNoSeriousAccessibilityViolations(page);
+  await page.getByRole("tab", { name: "Hierarchy" }).click();
+  const skillLink = page.getByRole("link", { name: "root.skill" });
+  await expect(skillLink).toBeVisible();
+  await skillLink.click();
+  await expect(page.getByRole("heading", { name: "Skill Detail" })).toBeVisible();
+  await expect(page.locator("pre")).toContainText("<script>window.location");
+  await expect(page.getByRole("link", { name: /connect/i })).toHaveCount(0);
+  await expect(page.locator("script")).toHaveCount(1);
+  await expectNoSeriousAccessibilityViolations(page);
 });
 
 test("WF-FAILED-EXECUTION explores failure and inert supporting records", async ({ page, consoleProcess, targetApp }) => {
   await connectToTarget(page, consoleProcess, targetApp.origin);
   await acquireAndOpenExplorer(page, consoleProcess, "trace-terminal-failure");
-  await page.getByRole("tab", { name: "Records" }).click();
+  await expect(page.getByRole("heading", { name: "Terminal failure evidence" })).toBeVisible();
+  await expect(page.getByText("failure-terminal", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Evidence content" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Show records" }).click();
   const failure = page.getByRole("button", { name: "failure-terminal (terminal)" });
   await failure.click();
   await expect(page).toHaveURL(/failureId=failure-terminal/);
@@ -393,6 +438,7 @@ test("WF-FAILED-EXECUTION explores failure and inert supporting records", async 
   const evidence = page.getByRole("region", { name: "Evidence content" });
   await expect(evidence).toContainText("Text bytes");
   await expect(evidence.getByRole("link")).toHaveCount(0);
+  await expectNoSeriousAccessibilityViolations(page);
 });
 
 test("chunked payload inspection is deliberate and incomplete timing stays explicit", async ({ page, consoleProcess, targetApp }) => {

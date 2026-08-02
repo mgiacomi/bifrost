@@ -37,25 +37,26 @@ func fixtureRoot(t *testing.T) string {
 
 // expectedFile is the JSON shape of one committed expected result.
 type expectedFile struct {
-	Case                    string          `json:"case"`
-	Valid                   bool            `json:"valid"`
-	TraceID                 string          `json:"traceId,omitempty"`
-	SessionID               string          `json:"sessionId,omitempty"`
-	Outcome                 string          `json:"outcome,omitempty"`
-	TerminalFailureID       *string         `json:"terminalFailureId,omitempty"`
-	AttributedUsage         json.RawMessage `json:"attributedUsage,omitempty"`
-	TerminalUsage           json.RawMessage `json:"terminalUsage,omitempty"`
-	UnattributedUsage       json.RawMessage `json:"unattributedUsage,omitempty"`
-	UsageComplete           bool            `json:"usageComplete,omitempty"`
-	Attempts                json.RawMessage `json:"attempts,omitempty"`
-	Retries                 json.RawMessage `json:"retries,omitempty"`
-	ValidationLinks         json.RawMessage `json:"validationLinks,omitempty"`
-	Frames                  json.RawMessage `json:"frames,omitempty"`
-	UnframedAttributedUsage json.RawMessage `json:"unframedAttributedUsage,omitempty"`
-	Payloads                json.RawMessage `json:"payloads,omitempty"`
-	Gaps                    json.RawMessage `json:"gaps,omitempty"`
-	Uncertainties           json.RawMessage `json:"uncertainties,omitempty"`
-	ErrorCategory           string          `json:"errorCategory,omitempty"`
+	Case                    string            `json:"case"`
+	Valid                   bool              `json:"valid"`
+	TraceID                 string            `json:"traceId,omitempty"`
+	SessionID               string            `json:"sessionId,omitempty"`
+	Outcome                 string            `json:"outcome,omitempty"`
+	TerminalFailureID       *string           `json:"terminalFailureId,omitempty"`
+	ConfiguredLimits        *ConfiguredLimits `json:"configuredLimits,omitempty"`
+	AttributedUsage         json.RawMessage   `json:"attributedUsage,omitempty"`
+	TerminalUsage           json.RawMessage   `json:"terminalUsage,omitempty"`
+	UnattributedUsage       json.RawMessage   `json:"unattributedUsage,omitempty"`
+	UsageComplete           bool              `json:"usageComplete,omitempty"`
+	Attempts                json.RawMessage   `json:"attempts,omitempty"`
+	Retries                 json.RawMessage   `json:"retries,omitempty"`
+	ValidationLinks         json.RawMessage   `json:"validationLinks,omitempty"`
+	Frames                  json.RawMessage   `json:"frames,omitempty"`
+	UnframedAttributedUsage json.RawMessage   `json:"unframedAttributedUsage,omitempty"`
+	Payloads                json.RawMessage   `json:"payloads,omitempty"`
+	Gaps                    json.RawMessage   `json:"gaps,omitempty"`
+	Uncertainties           json.RawMessage   `json:"uncertainties,omitempty"`
+	ErrorCategory           string            `json:"errorCategory,omitempty"`
 }
 
 // TestFixtureCorpusMatchesJavaExpectedSemantics processes every Java fixture in
@@ -157,6 +158,7 @@ func buildAnalysisResultFromSink(t *testing.T, sink *fakeSink) analysisResult {
 		Outcome:   m.Outcome,
 	}
 	result.TerminalFailureID = m.TerminalFailureID
+	result.ConfiguredLimits = m.ConfiguredLimits
 
 	// Usage index: ATTRIBUTED, UNATTRIBUTED, UNFRAMED_ATTRIBUTED, TERMINAL.
 	usageFacts := readFactRowsRaw(t, sink, ComponentUsageIndex)
@@ -310,6 +312,10 @@ func compareAnalysisResult(t *testing.T, name string, result analysisResult, exp
 	}
 	if result.TerminalFailureID != nil && expected.TerminalFailureID != nil && *result.TerminalFailureID != *expected.TerminalFailureID {
 		t.Errorf("terminalFailureId mismatch for %s: got %s want %s", name, *result.TerminalFailureID, *expected.TerminalFailureID)
+	}
+	if (result.ConfiguredLimits == nil) != (expected.ConfiguredLimits == nil) ||
+		(result.ConfiguredLimits != nil && expected.ConfiguredLimits != nil && *result.ConfiguredLimits != *expected.ConfiguredLimits) {
+		t.Errorf("configuredLimits mismatch for %s: got %v want %v", name, result.ConfiguredLimits, expected.ConfiguredLimits)
 	}
 	// Usage comparison.
 	if len(expected.AttributedUsage) > 0 {

@@ -89,7 +89,7 @@ test("initializes without probing and remounts children only on scope change", a
   expect(screen.getByText("none")).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "connect" }));
   await waitFor(() => expect(screen.getByText("scope-1")).toBeVisible());
-  expect(screen.getByText("/")).toBeVisible();
+  await waitFor(() => expect(screen.getByText("/")).toBeVisible());
   await userEvent.click(screen.getByRole("button", { name: "recheck" }));
   await waitFor(() => expect(calls.recheck).toHaveBeenCalled());
 });
@@ -106,7 +106,7 @@ test("refreshes committed status after a target-changed error", async () => {
   );
   await userEvent.click(screen.getByRole("button", { name: "credential" }));
   await waitFor(() => expect(screen.getByText("scope-1")).toBeVisible());
-  expect(screen.getByText("/")).toBeVisible();
+  await waitFor(() => expect(screen.getByText("/")).toBeVisible());
 });
 
 test("preserves a same-scope operation error after refreshing committed status", async () => {

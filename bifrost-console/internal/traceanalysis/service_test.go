@@ -280,6 +280,23 @@ func TestFrameQueriesExposeUsageCompletenessAndRecordedCrossReferences(t *testin
 	if child.DirectUsageComplete || child.InclusiveUsageComplete {
 		t.Fatalf("unavailable direct usage reported complete: %+v", child)
 	}
+	if !reflect.DeepEqual(child.SkillNames, []string{"skill.alpha"}) ||
+		!reflect.DeepEqual(child.Outcomes, []string{"completed"}) ||
+		!reflect.DeepEqual(child.AttemptIDs, []string{"attempt-1"}) ||
+		!reflect.DeepEqual(child.RetrySequenceIDs, []string{"retry-1"}) ||
+		!reflect.DeepEqual(child.ValidationStatuses, []string{"passed"}) ||
+		!reflect.DeepEqual(child.FailureIDs, []string{"failure-1"}) {
+		t.Fatalf("recorded frame relationships were not preserved: %+v", child)
+	}
+	failurePage, failureDomain := h.service.QueryFailures(context.Background(), h.scopeID, FailureQuery{Handle: h.handle, PageSize: 10})
+	if failureDomain != nil || len(failurePage.Items) != 1 {
+		t.Fatalf("failure query: page=%+v domain=%v", failurePage, failureDomain)
+	}
+	failure := failurePage.Items[0]
+	if failure.Sequence != 8 || failure.RecordType != "ERROR_RECORDED" || failure.FrameID != "child" ||
+		failure.Route != "root.skill" || failure.FailureID != "failure-1" {
+		t.Fatalf("direct failure relationships were not preserved: %+v", failure)
+	}
 
 	all, domain := h.service.QueryFrames(context.Background(), h.scopeID, FrameQuery{Handle: h.handle, PageSize: 1})
 	if domain != nil || !all.HasMore {

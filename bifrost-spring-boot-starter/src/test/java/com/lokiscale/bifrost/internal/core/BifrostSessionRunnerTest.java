@@ -1,5 +1,6 @@
 package com.lokiscale.bifrost.internal.core;
 
+import com.lokiscale.bifrost.autoconfigure.BifrostProperties;
 import com.lokiscale.bifrost.internal.runtime.trace.ExecutionTraceReaders;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandle;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionObservationHandleFactory;
@@ -7,6 +8,7 @@ import com.lokiscale.bifrost.internal.runtime.observation.ObservationCompletionD
 import com.lokiscale.bifrost.internal.runtime.observation.DefaultExecutionObservationHandleFactory;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivity;
 import com.lokiscale.bifrost.internal.runtime.observation.ExecutionActivityKind;
+import com.lokiscale.bifrost.internal.runtime.trace.ImmediateCompletionRetention;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -274,6 +276,35 @@ class BifrostSessionRunnerTest {
         });
 
         assertThat(timestamp).isEqualTo(Instant.parse("2026-03-15T12:34:56Z"));
+    }
+
+    @Test
+    void snapshotsConfiguredLimitsWhenTheTraceIsCreated() {
+        BifrostProperties.Session.Quotas quotas = new BifrostProperties.Session.Quotas();
+        quotas.setMaxSkillInvocations(7);
+        quotas.setMaxToolInvocations(11);
+        quotas.setMaxLinterRetries(3);
+        quotas.setMaxModelCalls(5);
+        quotas.setMaxUsageUnits(1234);
+        BifrostSessionRunner runner = new BifrostSessionRunner(
+                4, TracePersistencePolicy.ALWAYS, Clock.systemUTC(),
+                sessionId -> com.lokiscale.bifrost.internal.runtime.observation.NoOpExecutionObservationHandle.INSTANCE,
+                ImmediateCompletionRetention.INSTANCE, quotas);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> snapshot = runner.callWithNewSession(session -> {
+            quotas.setMaxModelCalls(99);
+            List<TraceRecord> records = new ArrayList<>();
+            session.readTraceRecords(records::add);
+            return (Map<String, Integer>) records.getFirst().metadata().get("configuredLimits");
+        });
+
+        assertThat(snapshot).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "maxSkillInvocations", 7,
+                "maxToolInvocations", 11,
+                "maxLinterRetries", 3,
+                "maxModelCalls", 5,
+                "maxUsageUnits", 1234));
     }
 
     @Test

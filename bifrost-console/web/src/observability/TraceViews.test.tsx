@@ -6,7 +6,7 @@ import { TraceUsage } from "./TraceUsage";
 import { TraceRecords } from "./TraceRecords";
 import { TraceEvidenceDetail } from "./TraceEvidenceDetail";
 
-const frame = { frameId: "frame-1", parentFrameId: null, childFrameIds: [], frameType: "SKILL", route: "hello", openedTimestampMillis: 10, closedTimestampMillis: 15, inclusiveDurationMillis: 5, selfDurationMillis: null, directUsage: { promptUnits: 1, completionUnits: 1, totalUnits: 2 }, directUsageComplete: true, descendantUsage: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, descendantUsageComplete: true, inclusiveUsage: { promptUnits: 1, completionUnits: 1, totalUnits: 2 }, inclusiveUsageComplete: true };
+const frame = { frameId: "frame-1", parentFrameId: null, childFrameIds: [], frameType: "SKILL", route: "hello", openedTimestampMillis: 10, closedTimestampMillis: 15, inclusiveDurationMillis: 5, selfDurationMillis: null, directUsage: { promptUnits: 1, completionUnits: 1, totalUnits: 2 }, directUsageComplete: true, descendantUsage: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, descendantUsageComplete: true, inclusiveUsage: { promptUnits: 1, completionUnits: 1, totalUnits: 2 }, inclusiveUsageComplete: true, skillNames: [], outcomes: [], attemptIds: [], retrySequenceIds: [], validationStatuses: [], failureIds: [] };
 test("hierarchy and timeline select returned frames without recalculating them", () => {
   const select = vi.fn();
   const second = { ...frame, frameId: "frame-2", route: "second" };
@@ -45,7 +45,7 @@ test("timeline and selected-frame usage preserve unknown and incomplete returned
 });
 test("usage preserves returned values and records keep evidence actions deliberate", () => {
   const raw = vi.fn(); const payload = vi.fn(); const selectRecord = vi.fn(); const selectFailure = vi.fn();
-  render(<><TraceUsage usage={{ targetScopeId: "scope-1", attributed: { promptUnits: 1, completionUnits: 2, totalUnits: 3 }, unattributed: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, unframedAttributed: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, terminal: { promptUnits: 1, completionUnits: 2, totalUnits: 3 } }} /><TraceRecords records={[{ sequence: 1, type: "PAYLOAD", frameId: "frame-1", parentFrameId: "", frameType: "SKILL", route: "", threadName: "worker", timestampMillis: 0, representation: "logical", isChunk: false, isEnvelope: true, payloadId: "payload-1" }]} attempts={[{ retrySequenceId: "retry", attemptId: "attempt", attemptNumber: 1, usage: { promptUnits: 1, completionUnits: 0, totalUnits: 1 }, usageComplete: false }]} retries={[{ retrySequenceId: "retry", usage: { promptUnits: 1, completionUnits: 0, totalUnits: 1 }, usageComplete: false }]} failures={[{ failureId: "failure", terminal: true }]} validations={[{ status: "VALID", retrySequenceId: "retry", attemptId: "attempt", attemptNumber: 1 }]} gaps={[{ kind: "GAP", frameId: "", attemptId: "" }]} uncertainties={[{ kind: "UNKNOWN", frameId: "" }]} payloads={[{ payloadId: "payload-2", sequence: 1, contentType: "text/plain", chunkCount: 1, storeLength: 3 }]} onSelectRecord={selectRecord} onSelectFailure={selectFailure} onRaw={raw} onPayload={payload} /></>);
+  render(<><TraceUsage usage={{ targetScopeId: "scope-1", attributed: { promptUnits: 1, completionUnits: 2, totalUnits: 3 }, unattributed: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, unframedAttributed: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, terminal: { promptUnits: 1, completionUnits: 2, totalUnits: 3 } }} /><TraceRecords records={[{ sequence: 1, type: "PAYLOAD", frameId: "frame-1", parentFrameId: "", frameType: "SKILL", route: "", threadName: "worker", timestampMillis: 0, representation: "logical", isChunk: false, isEnvelope: true, payloadId: "payload-1" }]} attempts={[{ retrySequenceId: "retry", attemptId: "attempt", attemptNumber: 1, usage: { promptUnits: 1, completionUnits: 0, totalUnits: 1 }, usageComplete: false }]} retries={[{ retrySequenceId: "retry", usage: { promptUnits: 1, completionUnits: 0, totalUnits: 1 }, usageComplete: false }]} failures={[{ failureId: "failure", terminal: true, sequence: 2, timestampMillis: 0, recordType: "ERROR_RECORDED", frameId: "frame-1", route: "", attemptId: "", retrySequenceId: "", validationStatus: "" }]} validations={[{ status: "VALID", retrySequenceId: "retry", attemptId: "attempt", attemptNumber: 1 }]} gaps={[{ kind: "GAP", frameId: "", attemptId: "" }]} uncertainties={[{ kind: "UNKNOWN", frameId: "" }]} payloads={[{ payloadId: "payload-2", sequence: 1, contentType: "text/plain", chunkCount: 1, storeLength: 3 }]} onSelectRecord={selectRecord} onSelectFailure={selectFailure} onRaw={raw} onPayload={payload} /></>);
   expect(screen.getByRole("table", { name: "Usage facts" })).toHaveTextContent("3");
   fireEvent.click(screen.getByRole("button", { name: "Read raw record" })); fireEvent.click(screen.getByRole("button", { name: "Read payload" }));
   expect(raw).toHaveBeenCalled(); expect(payload).toHaveBeenCalledWith("payload-1");
@@ -61,4 +61,21 @@ test("evidence detail labels base64 without interpreting content", () => {
   render(<TraceEvidenceDetail range={{ targetScopeId: "scope-1", actualStart: 4, actualEnd: 8, totalLength: 12, contentType: "application/octet-stream", encoding: "BASE64", content: "AQIDBA==", hasMore: false, nextCursor: null }} onNext={vi.fn()} onClear={vi.fn()} />);
   expect(screen.getByText(/Base64-encoded bytes 4/)).toBeInTheDocument();
   expect(screen.getByText("AQIDBA==")).toBeInTheDocument();
+});
+
+test("usage compares only supported arithmetic facts and preserves zero and absent limit semantics", () => {
+  const summary = { targetScopeId: "scope-1", traceId: "trace-1", sessionId: "session-1", outcome: "SUCCEEDED", terminalFailureId: null, recordCount: 1, frameCount: 1, attemptCount: 1, retryCount: 0, validationCount: 0, failureCount: 0, payloadCount: 0, gapCount: 0, uncertaintyCount: 0, rootFrameIds: ["frame-1"], attributedUsage: { promptUnits: 1, completionUnits: 2, totalUnits: 3 }, terminalUsage: { promptUnits: 1, completionUnits: 2, totalUnits: 3 }, unattributedUsage: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, unframedAttributedUsage: { promptUnits: 0, completionUnits: 0, totalUnits: 0 }, usageComplete: true, configuredLimits: { maxSkillInvocations: 7, maxToolInvocations: 11, maxLinterRetries: 3, maxModelCalls: 4, maxUsageUnits: 0 } };
+  const usage = { targetScopeId: "scope-1", attributed: summary.attributedUsage, unattributed: summary.unattributedUsage, unframedAttributed: summary.unframedAttributedUsage, terminal: summary.terminalUsage };
+  const select = vi.fn();
+  const { rerender } = render(<TraceUsage usage={usage} summary={summary} contributors={[frame]} onSelectFrame={select} />);
+  expect(screen.getByRole("region", { name: "Configured limit comparison" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /Model calls 1 4 25%/ })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /Usage units 3 0 undefined/ })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /Skill invocations unavailable 7 unavailable/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "frame-1" }));
+  expect(select).toHaveBeenCalledWith("frame-1");
+  rerender(<TraceUsage usage={usage} summary={{ ...summary, configuredLimits: null }} />);
+  expect(screen.getByText("Configured limit comparison unavailable.")).toBeInTheDocument();
+  expect(screen.queryByText(/%/)).toBeNull();
+  expect(screen.getByText(/Monetary cost is not calculated/)).toBeInTheDocument();
 });

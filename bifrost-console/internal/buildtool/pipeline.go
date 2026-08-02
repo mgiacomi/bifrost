@@ -5,8 +5,10 @@ import "fmt"
 type buildMode string
 
 const (
-	modeVerify buildMode = "verify"
-	modeBuild  buildMode = "build"
+	modeVerify  buildMode = "verify"
+	modeBuild   buildMode = "build"
+	modePackage buildMode = "package"
+	modeSmoke   buildMode = "smoke"
 )
 
 type phase string
@@ -45,7 +47,7 @@ func runPipeline(mode buildMode, context pipelineContext, dependencies pipelineD
 		phaseVerifyManifest,
 		phaseGoTests,
 	}
-	if mode == modeBuild {
+	if mode == modeBuild || mode == modePackage {
 		phases = append(phases, phaseGoBuild)
 	}
 	for _, current := range phases {

@@ -27,6 +27,7 @@ type TraceSummary struct {
 	Context            TraceContext
 	Outcome            string
 	TerminalFailureID  *string
+	ConfiguredLimits   *ConfiguredLimits
 	RecordCount        int64
 	FrameCount         int
 	AttemptCount       int
@@ -69,6 +70,12 @@ type FrameSummary struct {
 	DescendantUsageComplete bool
 	InclusiveUsage          Usage
 	InclusiveUsageComplete  bool
+	SkillNames              []string
+	Outcomes                []string
+	AttemptIDs              []string
+	RetrySequenceIDs        []string
+	ValidationStatuses      []string
+	FailureIDs              []string
 }
 
 // RecordSummary is one physical or logical record's neutral descriptor. It
@@ -141,9 +148,17 @@ type ValidationSummary struct {
 
 // FailureSummary is one ERROR_RECORDED failure fact.
 type FailureSummary struct {
-	Context   TraceContext
-	FailureID string
-	Terminal  bool
+	Context          TraceContext
+	FailureID        string
+	Terminal         bool
+	Sequence         int64
+	TimestampMillis  int64
+	RecordType       string
+	FrameID          string
+	Route            string
+	AttemptID        string
+	RetrySequenceID  string
+	ValidationStatus string
 }
 
 // UsageBreakdown is the component-wise usage breakdown for a trace or frame.

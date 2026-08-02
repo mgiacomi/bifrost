@@ -5,6 +5,13 @@
   "sessionId" : "session-single-attempt-success",
   "outcome" : "SUCCEEDED",
   "terminalFailureId" : null,
+  "configuredLimits" : {
+    "maxSkillInvocations" : 7,
+    "maxToolInvocations" : 11,
+    "maxLinterRetries" : 3,
+    "maxModelCalls" : 5,
+    "maxUsageUnits" : 1234
+  },
   "attributedUsage" : {
     "promptUnits" : 10,
     "completionUnits" : 4,

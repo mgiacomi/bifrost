@@ -55,10 +55,16 @@ export function ActiveExecutionDetailView() {
     terminalActivity.details?.applicationTraceAvailability === "AVAILABLE";
   const finalizationFailed =
     terminalActivity?.kind === "EXECUTION_OBSERVATION_ENDED" &&
-    terminalActivity.details?.applicationTraceAvailability === "CORE_FINALIZATION_FAILED";
+    terminalActivity.details?.applicationTraceUnavailableReason === "CORE_FINALIZATION_FAILED";
   const traceID = selectedExecution?.traceId ?? terminalActivity?.traceId;
   const traceScopeID =
     selectedExecution?.targetScopeId ?? target.status.targetScopeId;
+  const terminalFailureID = typeof terminalActivity?.details?.terminalFailureId === "string"
+    ? terminalActivity.details.terminalFailureId
+    : null;
+  const traceInspectionPath = traceID
+    ? `${scopeBoundPath(`/traces/${encodeURIComponent(traceID)}`, traceScopeID)}${terminalFailureID ? `&failureId=${encodeURIComponent(terminalFailureID)}` : ""}`
+    : null;
   const displayedStatus = terminalActivity?.executionStatus ??
     (observationEnded ? "OBSERVATION ENDED" : selectedExecution?.status);
 
@@ -168,9 +174,9 @@ export function ActiveExecutionDetailView() {
                 availability are unknown.
               </p>
             )}
-            {artifactAvailable && traceID && (
+            {artifactAvailable && traceInspectionPath && (
               <p>
-                <Link to={scopeBoundPath(`/traces/${encodeURIComponent(traceID)}`, traceScopeID)}>
+                <Link to={traceInspectionPath}>
                   Inspect trace
                 </Link>
               </p>
@@ -196,6 +202,7 @@ export function ActiveExecutionDetailView() {
                       <div><dt>Handle</dt><dd>{acquired.artifactHandle}</dd></div>
                       <div><dt>Local bytes</dt><dd>{String(acquired.localBytes)}</dd></div>
                     </dl>
+                    {traceInspectionPath && <p><Link to={traceInspectionPath}>Open focused explorer</Link></p>}
                   </div>
                 )}
               </div>

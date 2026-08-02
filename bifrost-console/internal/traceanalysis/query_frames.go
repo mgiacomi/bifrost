@@ -245,6 +245,12 @@ func frameResultToSummary(f frameResult, ctx TraceContext) FrameSummary {
 		DescendantUsageComplete: f.DescendantUsageComplete,
 		InclusiveUsage:          f.InclusiveUsage,
 		InclusiveUsageComplete:  f.InclusiveUsageComplete,
+		SkillNames:              append([]string(nil), f.SkillNames...),
+		Outcomes:                append([]string(nil), f.Outcomes...),
+		AttemptIDs:              append([]string(nil), f.AttemptIDs...),
+		RetrySequenceIDs:        append([]string(nil), f.RetrySequenceIDs...),
+		ValidationStatuses:      append([]string(nil), f.ValidationStatuses...),
+		FailureIDs:              append([]string(nil), f.FailureIDs...),
 	}
 }
 
