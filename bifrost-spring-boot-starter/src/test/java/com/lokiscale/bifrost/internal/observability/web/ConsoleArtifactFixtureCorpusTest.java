@@ -1,5 +1,7 @@
 package com.lokiscale.bifrost.internal.observability.web;
 
+import com.fasterxml.jackson.core.util.DefaultIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -17,9 +19,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConsoleArtifactFixtureCorpusTest
 {
-    private static final ObjectMapper JSON = JsonMapper.builder().findAndAddModules()
-            .enable(SerializationFeature.INDENT_OUTPUT)
-            .build();
+    private static final ObjectMapper JSON = buildCanonicalJson();
+
+    private static ObjectMapper buildCanonicalJson()
+    {
+        DefaultPrettyPrinter printer = new DefaultPrettyPrinter();
+        DefaultIndenter indenter = new DefaultIndenter("  ", "\n");
+        printer.indentObjectsWith(indenter);
+        printer.indentArraysWith(indenter);
+        return JsonMapper.builder().findAndAddModules()
+                .enable(SerializationFeature.INDENT_OUTPUT)
+                .defaultPrettyPrinter(printer)
+                .build();
+    }
 
     @TempDir
     Path temporaryDirectory;
