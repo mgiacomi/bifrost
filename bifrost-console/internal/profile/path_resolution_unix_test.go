@@ -24,7 +24,11 @@ func TestOpenProfileCanonicalizesSymlinkedAncestor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owned.Close()
-	if want := filepath.Join(realParent, "profile"); owned.Directory != want {
+	canonicalParent, err := filepath.EvalSymlinks(realParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(canonicalParent, "profile"); owned.Directory != want {
 		t.Fatalf("profile directory = %q, want %q", owned.Directory, want)
 	}
 }

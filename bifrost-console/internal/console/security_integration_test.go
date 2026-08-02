@@ -69,8 +69,13 @@ func (writer *lineWriter) Write(content []byte) (int, error) {
 
 func TestLiveConsolePairsBootstrapsAndReleasesLocks(t *testing.T) {
 	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	configPath := filepath.Join(root, "profile", "config.yaml")
 	workPath := filepath.Join(root, "work")
+	wantWorkPath := filepath.Join(canonicalRoot, "work")
 	output := &lineWriter{lines: make(chan string, 8)}
 	context, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -130,7 +135,7 @@ func TestLiveConsolePairsBootstrapsAndReleasesLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	bootstrap.Body.Close()
-	if bootstrap.StatusCode != http.StatusOK || state["workspacePath"] != workPath ||
+	if bootstrap.StatusCode != http.StatusOK || state["workspacePath"] != wantWorkPath ||
 		state["tabId"] == "" || state["csrfToken"] == "" || state["target"] == nil {
 		t.Fatalf("bootstrap status=%d state=%v", bootstrap.StatusCode, state)
 	}
