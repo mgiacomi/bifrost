@@ -24,7 +24,11 @@ func TestOpenWorkspaceCanonicalizesSymlinkedAncestor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owned.Close()
-	if want := filepath.Join(realParent, "work"); owned.Root != want {
+	canonicalParent, err := filepath.EvalSymlinks(realParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(canonicalParent, "work"); owned.Root != want {
 		t.Fatalf("workspace root = %q, want %q", owned.Root, want)
 	}
 }
