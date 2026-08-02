@@ -39,6 +39,23 @@ func unsafePath(path string) (bool, error) {
 	return false, nil
 }
 
+func resolveSafeDirectory(path string) (string, error) {
+	if unsafe, err := unsafePath(path); err != nil {
+		return "", err
+	} else if unsafe {
+		return "", fmt.Errorf("work directory contains a reparse point")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absolute), nil
+}
+
 func protectNewDirectory(path string) error { return setWindowsProtection(path, true) }
 func protectNewFile(path string) error      { return setWindowsProtection(path, false) }
 
