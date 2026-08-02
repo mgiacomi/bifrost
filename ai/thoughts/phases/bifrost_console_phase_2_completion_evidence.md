@@ -32,7 +32,7 @@ pending until it exists.
 | Fixture regeneration twice with no second diff | Windows / 2026-08-01 | Passing; trace and expected files are LF-only |
 | `package` plus `smoke` | Windows x86-64 / 2026-08-01 | Passing; repeat archive SHA-256 `7a232df62a0d01fa3e879b286f06b6ab26627e4b285aecbbe3785ef96b5fdeca` |
 | `.github/workflows/console-ci.yml` | GitHub-hosted Linux x86-64 / 2026-08-01 | Passing; [Console CI run 30729350889](https://github.com/mgiacomi/bifrost/actions/runs/30729350889) |
-| `.github/workflows/console-release.yml` manual non-publishing validation | Windows x86-64, Linux x86-64, macOS arm64 | Pending workflow run |
+| `.github/workflows/console-release.yml` manual non-publishing validation | GitHub-hosted Windows x86-64, Linux x86-64, macOS arm64 / 2026-08-01 | Passing; [Console Release run 30735606164](https://github.com/mgiacomi/bifrost/actions/runs/30735606164): all three native package/smoke jobs and aggregate checksum verification passed; publish skipped |
 
 ## Release artifact evidence
 
@@ -42,9 +42,14 @@ only executable/`LICENSE`/runtime `README.md`, normalized metadata, deterministi
 repeat bytes, sidecars, strict extraction, and least-privilege workflow policy.
 The Windows x86-64 archive passed repeat-byte and native smoke verification with
 SHA-256 `7a232df62a0d01fa3e879b286f06b6ab26627e4b285aecbbe3785ef96b5fdeca`.
-Linux x86-64 and macOS arm64 archive hashes and workflow run links remain
-pending until the hosted runners execute. A tag release is not implementation
-evidence and must not be created merely to complete this index.
+[Console Release run 30735606164](https://github.com/mgiacomi/bifrost/actions/runs/30735606164)
+then built and smoke-tested the Windows x86-64, Linux x86-64, and macOS arm64
+packages on their native GitHub-hosted runners. Its aggregate job accepted
+exactly three archives and three sidecars, verified every sidecar, generated
+and verified the sorted `SHA256SUMS`, and retained the three platform artifacts
+plus `console-release-0.1.0-SNAPSHOT`. Manual dispatch kept publication disabled.
+A tag release is not implementation evidence and must not be created merely to
+complete this index.
 
 ## Manual evidence still required
 

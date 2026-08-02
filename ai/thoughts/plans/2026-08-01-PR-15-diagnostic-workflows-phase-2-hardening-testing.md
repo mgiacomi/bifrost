@@ -317,6 +317,6 @@ CI must repeat clean Java/fixture, canonical verify, and Playwright checks. Nati
 - [x] Protected Application API, Supported SPI, configuration/manifest, and serialized boundaries pass; internal public signatures expose no new supported extension point or leaked internal quota type.
 - [x] Host/Origin/session/tab/CSRF/raw-download precedence, hostile-content isolation, and exact/one-over bounds pass without unbounded work.
 - [ ] Automated accessibility scans have no configured serious/critical violations, Playwright drives keyboard/focus/reconnect/reset/zoom/forced-colors/reduced-motion behavior, and the five manual checks are recorded.
-- [ ] Packaging is byte-deterministic on each native target, archives/checksums/smoke tests pass, and only the coordinated final release job can publish after all targets succeed.
+- [x] Packaging is byte-deterministic on each native target, archives/checksums/smoke tests pass, and only the coordinated final release job can publish after all targets succeed (`Console Release` run 30735606164, 2026-08-01).
 - [x] Updated skill-authoring claims are supported by the cited fixtures and focused tests and do not claim complete quota configuration or cross-version trace compatibility.
-- [ ] Canonical Maven, Go, buildtool, race-detector, and Playwright commands pass on the required environments with no generated fixture or frontend-asset diff.
+- [x] Canonical Maven, Go, buildtool, race-detector, and Playwright commands pass on the required environments with no generated fixture or frontend-asset diff.
