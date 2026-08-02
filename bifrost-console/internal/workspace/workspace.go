@@ -45,8 +45,9 @@ func Open(selection string) (*Workspace, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("inspect work directory: %w", err)
 	}
-	if unsafe, err := unsafePath(root); err != nil || unsafe {
-		return nil, fmt.Errorf("work directory is unsafe")
+	root, err = resolveSafeDirectory(root)
+	if err != nil {
+		return nil, fmt.Errorf("work directory is unsafe: %w", err)
 	}
 	if err := verifyProtectedDirectory(root); err != nil {
 		return nil, fmt.Errorf("work directory protection: %w", err)

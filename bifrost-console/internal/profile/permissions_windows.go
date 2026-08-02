@@ -35,6 +35,21 @@ func rejectUnsafePath(path string) error {
 	return nil
 }
 
+func resolveSafeDirectory(path string) (string, error) {
+	if err := rejectUnsafePath(path); err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absolute), nil
+}
+
 func verifyProtectedDirectory(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {

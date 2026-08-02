@@ -58,18 +58,11 @@ func ResolveProfileDirectory(configPath string) (string, error) {
 			return "", fmt.Errorf("protect profile directory: %w", err)
 		}
 	}
-	if err := rejectUnsafePath(parent); err != nil {
+	resolved, err := resolveSafeDirectory(parent)
+	if err != nil {
 		return "", fmt.Errorf("profile directory is unsafe: %w", err)
 	}
-	resolved, err := filepath.EvalSymlinks(parent)
-	if err != nil {
-		return "", fmt.Errorf("resolve profile directory: %w", err)
-	}
-	absolute, err := filepath.Abs(resolved)
-	if err != nil {
-		return "", fmt.Errorf("resolve profile directory: %w", err)
-	}
-	return filepath.Clean(absolute), nil
+	return resolved, nil
 }
 
 func DefaultWorkspacePath(profileDirectory string) (string, error) {

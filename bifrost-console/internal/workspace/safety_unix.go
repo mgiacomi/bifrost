@@ -55,3 +55,28 @@ func unsafePath(path string) (bool, error) {
 	}
 	return false, nil
 }
+
+func resolveSafeDirectory(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if unsafeEntry(info) {
+		return "", fmt.Errorf("work directory is a symbolic link")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	absolute = filepath.Clean(absolute)
+	if unsafe, err := unsafePath(absolute); err != nil {
+		return "", err
+	} else if unsafe {
+		return "", fmt.Errorf("resolved work directory is unsafe")
+	}
+	return absolute, nil
+}
