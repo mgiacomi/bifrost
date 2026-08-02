@@ -46,9 +46,15 @@ const test = consoleTest.extend<{ targetApplication: { origin: string; close(): 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Target test server did not bind");
-    const close = () => new Promise<void>((resolve, reject) =>
-      server.close((error) => error ? reject(error) : resolve()),
-    );
+    const close = () => new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+      // Destroy every established socket, including active SSE connections the
+      // Go console may reopen over a pooled keep-alive connection during
+      // teardown. Without this, server.close()'s callback can wait
+      // indefinitely for an immortal active connection and exceed Playwright's
+      // test timeout. Safe to call right after server.close.
+      server.closeAllConnections();
+    });
     try {
       await use({ origin: `http://127.0.0.1:${address.port}`, close });
     } finally {

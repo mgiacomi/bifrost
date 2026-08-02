@@ -408,10 +408,10 @@ Extend the existing canonical buildtool into deterministic native release packag
 ### Success Criteria
 
 #### Automated Verification
-- [ ] Packaging twice from identical inputs produces byte-identical archives on each native target.
+- [x] Packaging twice from identical inputs produces byte-identical archives on each native target.
 - [x] Archive tests prove exact names, contents, permissions, safe paths, and checksums.
-- [ ] Each native runner extracts and executes `--version` and passes the isolated runtime smoke test.
-- [ ] Pull-request CI runs canonical Console verification plus Playwright with read-only permissions.
+- [x] Each native runner extracts and executes `--version` and passes the isolated runtime smoke test (`Console Release` run 30735606164, 2026-08-01).
+- [x] Pull-request CI runs canonical Console verification plus Playwright with read-only permissions (`Console CI` run 30729350889, 2026-08-01).
 - [x] Tag validation fails closed on tag/POM mismatch, missing target, unexpected artifact, or checksum mismatch.
 - [x] The final publication job is the only job with `contents: write`.
 
