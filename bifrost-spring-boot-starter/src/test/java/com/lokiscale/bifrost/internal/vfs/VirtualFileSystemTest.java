@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class VirtualFileSystemTest {
 
@@ -116,7 +118,8 @@ class VirtualFileSystemTest {
     @Test
     void rejectsSessionIdsThatEscapeTheConfiguredVfsRoot() {
         SessionLocalVirtualFileSystem vfs = new SessionLocalVirtualFileSystem(tempDir);
-        BifrostSession session = com.lokiscale.bifrost.internal.core.TestBifrostSessions.withId("../escaped-session", 2);
+        BifrostSession session = mock(BifrostSession.class);
+        when(session.getSessionId()).thenReturn("../escaped-session");
 
         assertThatThrownBy(() -> vfs.resolve(session, "ref://artifacts/secret.txt"))
                 .isInstanceOf(IllegalArgumentException.class)
