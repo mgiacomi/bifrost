@@ -392,7 +392,7 @@ public class LiveActivityProjector
                 integer(map.get("modelCalls")),
                 integer(map.get("promptUnits")),
                 integer(map.get("completionUnits")),
-                integer(map.get("usageUnits")),
+                integer(map.get("totalUnits")),
                 integer(map.get("exactModelResponses")),
                 integer(map.get("heuristicModelResponses")),
                 integer(map.get("unavailableModelResponses")));

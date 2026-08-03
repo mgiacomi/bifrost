@@ -86,9 +86,6 @@ public final class OutputSchemaCallAdvisor implements CallAdvisor
                 .prompt(promptAugmentor.augment(chatClientRequest.prompt(), schema))
                 .build();
 
-        advisorTraceRecorder.record(AdvisorTraceFact.schemaApplied(
-                new AdvisorTraceContext(getName(), skillName, 1, "schema-applied", java.util.Map.of())));
-
         CallAdvisorChain downstreamChain = callAdvisorChain.copy(this);
         int attempt = 1;
 

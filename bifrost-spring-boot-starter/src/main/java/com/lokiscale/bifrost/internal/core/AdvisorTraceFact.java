@@ -29,11 +29,6 @@ public record AdvisorTraceFact(
         return new AdvisorTraceFact(context, Direction.RESPONSE, kind, attributes);
     }
 
-    public static AdvisorTraceFact schemaApplied(AdvisorTraceContext context)
-    {
-        return request(context, Kind.SCHEMA_APPLIED, Map.of());
-    }
-
     public static AdvisorTraceFact retryRequested(AdvisorTraceContext context, String detail)
     {
         return request(context, Kind.RETRY_REQUESTED, detail == null || detail.isBlank() ? Map.of() : Map.of("detail", detail));
@@ -76,7 +71,6 @@ public record AdvisorTraceFact(
 
     public enum Kind
     {
-        SCHEMA_APPLIED,
         RETRY_REQUESTED,
         PASSED,
         EXHAUSTED

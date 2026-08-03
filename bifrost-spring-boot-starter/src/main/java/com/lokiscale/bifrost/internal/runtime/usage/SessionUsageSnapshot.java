@@ -1,5 +1,8 @@
 package com.lokiscale.bifrost.internal.runtime.usage;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 public record SessionUsageSnapshot(
@@ -92,6 +95,32 @@ public record SessionUsageSnapshot(
                 exactModelResponses + (usageRecord.precision() == UsagePrecision.EXACT ? 1 : 0),
                 heuristicModelResponses + (usageRecord.precision() == UsagePrecision.HEURISTIC ? 1 : 0),
                 unavailableModelResponses + (usageRecord.precision() == UsagePrecision.UNAVAILABLE ? 1 : 0));
+    }
+
+    /**
+     * Returns an immutable map representation using the trace contract's field
+     * names. The session usage snapshot stores the model usage total under
+     * {@code usageUnits}, but the trace contract (and the Go analysis processor)
+     * expects {@code totalUnits} in the {@code sessionUsageSnapshot} metadata of
+     * a {@code TRACE_COMPLETED} record. This method performs the rename so the
+     * serialized form matches what consumers downstream of the NDJSON expect.
+     *
+     * @return an immutable, ordered map suitable for inclusion in trace metadata
+     */
+    public Map<String, Object> toTraceMap()
+    {
+        LinkedHashMap<String, Object> map = new LinkedHashMap<>();
+        map.put("skillInvocations", skillInvocations);
+        map.put("toolInvocations", toolInvocations);
+        map.put("linterRetries", linterRetries);
+        map.put("modelCalls", modelCalls);
+        map.put("promptUnits", promptUnits);
+        map.put("completionUnits", completionUnits);
+        map.put("totalUnits", usageUnits);
+        map.put("exactModelResponses", exactModelResponses);
+        map.put("heuristicModelResponses", heuristicModelResponses);
+        map.put("unavailableModelResponses", unavailableModelResponses);
+        return Collections.unmodifiableMap(map);
     }
 
     private static void validateNonNegative(int value, String name)

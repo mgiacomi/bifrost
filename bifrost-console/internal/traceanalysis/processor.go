@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/artifact"
 	"github.com/mgiacomi/bifrost/bifrost-console/internal/consolecore"
@@ -37,9 +38,23 @@ func New() *Processor {
 // reconstructs chunked payloads, calculates shared facts, writes all derived
 // components, and returns the derived component sizes. The raw artifact size is
 // tracked separately by the service.
-func (processor *Processor) Process(req artifact.ProcessRequest) (artifact.ProcessResult, *consolecore.Error) {
+func (processor *Processor) Process(req artifact.ProcessRequest) (result artifact.ProcessResult, domain *consolecore.Error) {
 	scopeID := req.Metadata.TraceID
 	ctx := req.Context
+
+	// Log the exact invalidity category for any content rejection. The outward
+	// error message is deliberately generic (see invalidityError); this defer is
+	// the only place the operator-visible reason is recorded. Non-content errors
+	// (cancellation, local storage) carry no category and are not logged here.
+	defer func() {
+		if domain == nil {
+			return
+		}
+		if category, ok := categoryOf(domain); ok {
+			slog.Warn("trace artifact rejected by analysis processor",
+				"scopeId", scopeID, "category", string(category))
+		}
+	}()
 
 	// Open the payload store component first so chunked payloads stream directly
 	// to disk during parsing without whole-payload allocation.

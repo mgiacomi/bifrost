@@ -59,7 +59,7 @@ public record TraceCompletion(
         }
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>(details);
         metadata.put("outcome", outcome.name());
-        metadata.putIfAbsent("sessionUsageSnapshot", sessionUsageSnapshot);
+        metadata.putIfAbsent("sessionUsageSnapshot", sessionUsageSnapshot.toTraceMap());
         if (terminalFailureId != null)
         {
             metadata.put("terminalFailureId", terminalFailureId);
