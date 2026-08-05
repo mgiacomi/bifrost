@@ -1,10 +1,10 @@
-# Bifrost Framework Feature Design Lens
+# Loomspan Framework Feature Design Lens
 
 ## Purpose
 
-This document is a lens for evaluating requested Bifrost framework features. It is intended to help maintainers decide whether a feature belongs in the framework and, if it does, what shape it should take.
+This document is a lens for evaluating requested Loomspan framework features. It is intended to help maintainers decide whether a feature belongs in the framework and, if it does, what shape it should take.
 
-It is not an architecture specification, implementation guide, product roadmap, or list of immutable rules. Its purpose is to make the project's values and goals explicit so that features that initially appear helpful are evaluated against their long-term effects on Bifrost.
+It is not an architecture specification, implementation guide, product roadmap, or list of immutable rules. Its purpose is to make the project's values and goals explicit so that features that initially appear helpful are evaluated against their long-term effects on loomspan.
 
 ## Living Document
 
@@ -16,7 +16,7 @@ These principles are strong defaults, not mechanical gates. A proposed feature m
 
 ## Current Pre-1.0 Compatibility Posture
 
-Until Bifrost adopts a version 1.0 compatibility policy, classify every affected framework surface before deciding whether to preserve or change it. Deliberately supported contracts are assessed and protected according to evidence. Configuration and manifest contracts are always assessed, and current-run diagnostic usefulness and security remain protected product goals.
+Until Loomspan adopts a version 1.0 compatibility policy, classify every affected framework surface before deciding whether to preserve or change it. Deliberately supported contracts are assessed and protected according to evidence. Configuration and manifest contracts are always assessed, and current-run diagnostic usefulness and security remain protected product goals.
 
 A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, fixture, or previous implementation does not by itself establish a supported contract. These are evidence of technical exposure or existing behavior, not independent proof of a compatibility promise.
 
@@ -24,7 +24,7 @@ Use these categories consistently:
 
 1. **Application API** — deliberately supported entry points used by ordinary application developers.
 2. **Supported SPI** — deliberately supported customization or replacement points.
-3. **Configuration and manifest contracts** — documented `bifrost.*` properties, YAML skill syntax, validation, defaults, and author-facing semantics.
+3. **Configuration and manifest contracts** — documented `loomspan.*` properties, YAML skill syntax, validation, defaults, and author-facing semantics.
 4. **Persisted or serialized contracts** — formats deliberately intended for durable or cross-version use.
 5. **Ephemeral diagnostic formats** — traces and related representations intended to debug and understand executions from the current implementation.
 6. **Internal or accidentally exposed implementation** — runtime decomposition, wiring seams, implementation DTOs, constructors, beans, and behaviors not deliberately classified above.
@@ -39,7 +39,7 @@ Execution traces are current-run debugging and execution-understanding tools, no
 
 ## North Star
 
-Bifrost should make production-grade hierarchical skill development understandable and dependable without hiding important behavior or burdening developers with orchestration plumbing.
+Loomspan should make production-grade hierarchical skill development understandable and dependable without hiding important behavior or burdening developers with orchestration plumbing.
 
 We value:
 
@@ -54,7 +54,7 @@ We value:
 
 ### 1. Design for capable production models
 
-Bifrost should be designed for the capable, economical models customers are likely to use in production. Compatibility with small local models is valuable for learning and experimentation, but it is not an architectural target.
+Loomspan should be designed for the capable, economical models customers are likely to use in production. Compatibility with small local models is valuable for learning and experimentation, but it is not an architectural target.
 
 A framework feature should not be added solely to compensate for a small model's inability to follow instructions, preserve ordinary arguments, or use a clear tool contract. When model weakness exposes a problem, ask whether the problem remains with a highly capable planner. If it does not, improve examples, diagnostics, or model guidance before expanding the framework.
 
@@ -62,7 +62,7 @@ This does not mean trusting a capable model with responsibilities that belong to
 
 ### 2. Optimize for understandable developer experiences
 
-The ordinary developer running a skill should be able to understand how to call it from its entry-point contract. They should not need to understand Bifrost's internal planning or propagation mechanics to construct a valid request.
+The ordinary developer running a skill should be able to understand how to call it from its entry-point contract. They should not need to understand Loomspan's internal planning or propagation mechanics to construct a valid request.
 
 The skill developer should be able to understand a skill's inputs, dependencies, visibility, and important behavior by reading that skill's local contract. Understanding a leaf should not require reconstructing undocumented state established by distant ancestors.
 

@@ -1,0 +1,239 @@
+package browserapi
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/mgiacomi/loomspan/loomspan-console/internal/artifact"
+	"github.com/mgiacomi/loomspan/loomspan-console/internal/consolecore"
+	"github.com/mgiacomi/loomspan/loomspan-console/internal/target"
+	"github.com/mgiacomi/loomspan/loomspan-console/internal/traceanalysis"
+)
+
+type fakeTraceAnalysisService struct {
+	summary           traceanalysis.TraceSummary
+	summaryErr        *consolecore.Error
+	frameQuery        traceanalysis.FrameQuery
+	framePage         traceanalysis.Page[traceanalysis.FrameSummary]
+	failurePage       traceanalysis.Page[traceanalysis.FailureSummary]
+	searchQuery       traceanalysis.SearchQuery
+	payloadRangeQuery traceanalysis.RangeRequest
+	rawRangeQuery     traceanalysis.RangeRequest
+	rangeResult       traceanalysis.ByteRangeResult
+}
+
+func (f *fakeTraceAnalysisService) GetSummary(_ context.Context, _ target.ScopeID, _ traceanalysis.SummaryRequest) (traceanalysis.TraceSummary, *consolecore.Error) {
+	return f.summary, f.summaryErr
+}
+func (f *fakeTraceAnalysisService) QueryFrames(_ context.Context, _ target.ScopeID, q traceanalysis.FrameQuery) (traceanalysis.Page[traceanalysis.FrameSummary], *consolecore.Error) {
+	f.frameQuery = q
+	if f.framePage.Items != nil {
+		return f.framePage, nil
+	}
+	return traceanalysis.Page[traceanalysis.FrameSummary]{Items: []traceanalysis.FrameSummary{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryRecords(context.Context, target.ScopeID, traceanalysis.RecordQuery) (traceanalysis.Page[traceanalysis.RecordSummary], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.RecordSummary]{Items: []traceanalysis.RecordSummary{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryAttempts(context.Context, target.ScopeID, traceanalysis.AttemptQuery) (traceanalysis.Page[traceanalysis.AttemptSummary], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.AttemptSummary]{Items: []traceanalysis.AttemptSummary{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryRetries(context.Context, target.ScopeID, traceanalysis.RetryQuery) (traceanalysis.Page[traceanalysis.RetrySummary], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.RetrySummary]{Items: []traceanalysis.RetrySummary{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryValidationLinks(context.Context, target.ScopeID, traceanalysis.ValidationQuery) (traceanalysis.Page[traceanalysis.ValidationSummary], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.ValidationSummary]{Items: []traceanalysis.ValidationSummary{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryFailures(context.Context, target.ScopeID, traceanalysis.FailureQuery) (traceanalysis.Page[traceanalysis.FailureSummary], *consolecore.Error) {
+	if f.failurePage.Items != nil {
+		return f.failurePage, nil
+	}
+	return traceanalysis.Page[traceanalysis.FailureSummary]{Items: []traceanalysis.FailureSummary{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryPayloads(context.Context, target.ScopeID, traceanalysis.PayloadQuery) (traceanalysis.Page[traceanalysis.PayloadDescriptor], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.PayloadDescriptor]{Items: []traceanalysis.PayloadDescriptor{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryGaps(context.Context, target.ScopeID, traceanalysis.GapQuery) (traceanalysis.Page[traceanalysis.Gap], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.Gap]{Items: []traceanalysis.Gap{}}, nil
+}
+func (f *fakeTraceAnalysisService) QueryUncertainties(context.Context, target.ScopeID, traceanalysis.UncertaintyQuery) (traceanalysis.Page[traceanalysis.Uncertainty], *consolecore.Error) {
+	return traceanalysis.Page[traceanalysis.Uncertainty]{Items: []traceanalysis.Uncertainty{}}, nil
+}
+func (f *fakeTraceAnalysisService) GetUsageBreakdown(context.Context, target.ScopeID, artifact.Handle) (traceanalysis.UsageBreakdown, *consolecore.Error) {
+	return traceanalysis.UsageBreakdown{}, nil
+}
+func (f *fakeTraceAnalysisService) Search(_ context.Context, _ target.ScopeID, q traceanalysis.SearchQuery) (traceanalysis.Page[traceanalysis.SearchResult], *consolecore.Error) {
+	f.searchQuery = q
+	return traceanalysis.Page[traceanalysis.SearchResult]{Items: []traceanalysis.SearchResult{}}, nil
+}
+func (f *fakeTraceAnalysisService) ReadPayloadRange(_ context.Context, _ target.ScopeID, q traceanalysis.RangeRequest) (traceanalysis.ByteRangeResult, *consolecore.Error) {
+	f.payloadRangeQuery = q
+	return f.rangeResult, nil
+}
+func (f *fakeTraceAnalysisService) ReadRawRecordRange(_ context.Context, _ target.ScopeID, q traceanalysis.RangeRequest) (traceanalysis.ByteRangeResult, *consolecore.Error) {
+	f.rawRangeQuery = q
+	return f.rangeResult, nil
+}
+
+func traceAnalysisRouter(t *testing.T) (*Router, string, *http.Cookie, *fakeTraceAnalysisService) {
+	t.Helper()
+	fake := &fakeTraceAnalysisService{summary: traceanalysis.TraceSummary{Context: traceanalysis.TraceContext{TraceID: "trace-1", SessionID: "session-1"}, Outcome: "FAILED", RootFrameIDs: []string{}, UsageComplete: true}}
+	router, tab, cookie := artifactTestRouter(t, &fakeArtifactService{lookupResult: artifact.LookupResult{Handle: "opaque-handle", LocalAvailable: true}})
+	router.options.TraceAnalysis = fake
+	return router, tab, cookie, fake
+}
+func traceAnalysisRequest(router *Router, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:7943"+path, strings.NewReader(body))
+	r.Host = "127.0.0.1:7943"
+	r.Header.Set("Origin", "http://127.0.0.1:7943")
+	if cookie != nil {
+		r.AddCookie(cookie)
+	}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	return w
+}
+
+func TestTraceAnalysisSummaryReturnsScopedProjectionForInstalledArtifact(t *testing.T) {
+	router, _, cookie, _ := traceAnalysisRouter(t)
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, forbidden := range []string{"opaque-handle", "artifactHandle", "installedDir"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("response leaked %q: %s", forbidden, body)
+		}
+	}
+	if !strings.Contains(body, `"targetScopeId":"scope-1"`) {
+		t.Errorf("missing scope: %s", body)
+	}
+}
+func TestTraceAnalysisRoutesRequireSessionButNotCSRF(t *testing.T) {
+	router, _, cookie, _ := traceAnalysisRouter(t)
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("read route status=%d", w.Code)
+	}
+	unauth := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, nil)
+	if unauth.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d", unauth.Code)
+	}
+}
+func TestTraceAnalysisFramesForwardCursorAndRejectMalformedBody(t *testing.T) {
+	router, _, cookie, fake := traceAnalysisRouter(t)
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/frames", `{"traceId":"trace-1","pageSize":25,"cursor":"cursor-1","order":"CANONICAL"}`, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	if fake.frameQuery.Cursor != "cursor-1" || fake.frameQuery.PageSize != 25 {
+		t.Fatalf("query=%+v", fake.frameQuery)
+	}
+	bad := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/frames", `{"traceId":"trace-1","unknown":true}`, cookie)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("malformed status=%d", bad.Code)
+	}
+}
+func TestTraceAnalysisDoesNotRegisterRawArtifactRange(t *testing.T) {
+	router, _, cookie, _ := traceAnalysisRouter(t)
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/raw-artifact-range", `{"traceId":"trace-1"}`, cookie)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d", w.Code)
+	}
+}
+
+func TestTraceAnalysisRejectsUnavailableLocalArtifact(t *testing.T) {
+	fake := &fakeArtifactService{lookupResult: artifact.LookupResult{LocalAvailable: false}}
+	router, _, cookie := artifactTestRouter(t, fake)
+	router.options.TraceAnalysis = &fakeTraceAnalysisService{}
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, cookie)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestTraceAnalysisFramesPreserveTimingUsageAndUnknownValues(t *testing.T) {
+	router, _, cookie, fake := traceAnalysisRouter(t)
+	opened, closed, duration := int64(100), int64(112), int64(12)
+	fake.framePage = traceanalysis.Page[traceanalysis.FrameSummary]{Items: []traceanalysis.FrameSummary{{
+		FrameID: "frame-1", ChildFrameIDs: []string{}, FrameType: "SKILL", OpenedTimestampMillis: opened,
+		ClosedTimestampMillis: &closed, InclusiveDurationMillis: &duration, SelfDurationMillis: nil,
+		DirectUsage: traceanalysis.Usage{PromptUnits: 3, CompletionUnits: 2, TotalUnits: 5}, DirectUsageComplete: false,
+		InclusiveUsage: traceanalysis.Usage{PromptUnits: 3, CompletionUnits: 2, TotalUnits: 5}, InclusiveUsageComplete: false,
+		SkillNames: []string{"registered.skill"}, Outcomes: []string{"FAILED"}, AttemptIDs: []string{"attempt-1"},
+		RetrySequenceIDs: []string{"retry-1"}, ValidationStatuses: []string{"exhausted"}, FailureIDs: []string{"failure-1"},
+	}}}
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/frames", `{"traceId":"trace-1","pageSize":10}`, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	for _, expected := range []string{`"openedTimestampMillis":100`, `"closedTimestampMillis":112`, `"selfDurationMillis":null`, `"directUsage":{"promptUnits":3,"completionUnits":2,"totalUnits":5}`, `"directUsageComplete":false`, `"skillNames":["registered.skill"]`, `"attemptIds":["attempt-1"]`, `"failureIds":["failure-1"]`} {
+		if !strings.Contains(w.Body.String(), expected) {
+			t.Errorf("missing %s in %s", expected, w.Body.String())
+		}
+	}
+}
+
+func TestTraceAnalysisMapsConfiguredLimitsAndDirectFailureRelationships(t *testing.T) {
+	router, _, cookie, fake := traceAnalysisRouter(t)
+	fake.summary.ConfiguredLimits = &traceanalysis.ConfiguredLimits{MaxSkillInvocations: 7, MaxToolInvocations: 11, MaxLinterRetries: 3, MaxModelCalls: 5, MaxUsageUnits: 1234}
+	fake.failurePage = traceanalysis.Page[traceanalysis.FailureSummary]{Items: []traceanalysis.FailureSummary{{
+		FailureID: "failure-1", Terminal: true, Sequence: 42, TimestampMillis: 1000,
+		RecordType: "ERROR_RECORDED", FrameID: "frame-1", Route: "root.child",
+		AttemptID: "attempt-1", RetrySequenceID: "retry-1", ValidationStatus: "exhausted",
+	}}}
+	summary := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, cookie)
+	if summary.Code != http.StatusOK || !strings.Contains(summary.Body.String(), `"configuredLimits":{"maxSkillInvocations":7,"maxToolInvocations":11,"maxLinterRetries":3,"maxModelCalls":5,"maxUsageUnits":1234}`) {
+		t.Fatalf("summary=%s", summary.Body.String())
+	}
+	failures := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/failures", `{"traceId":"trace-1"}`, cookie)
+	for _, expected := range []string{`"sequence":42`, `"recordType":"ERROR_RECORDED"`, `"frameId":"frame-1"`, `"attemptId":"attempt-1"`, `"validationStatus":"exhausted"`} {
+		if !strings.Contains(failures.Body.String(), expected) {
+			t.Errorf("missing %s in %s", expected, failures.Body.String())
+		}
+	}
+}
+
+func TestTraceAnalysisRangeAndSearchPreserveOpaqueContinuations(t *testing.T) {
+	router, _, cookie, fake := traceAnalysisRouter(t)
+	next := "next-range"
+	fake.rangeResult = traceanalysis.ByteRangeResult{ActualStart: 4, ActualEnd: 8, TotalLength: 12, ContentType: "application/octet-stream", Encoding: traceanalysis.RangeEncodingBase64, Content: []byte("AQIDBA=="), HasMore: true, NextCursor: next}
+	w := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/payload-range", `{"traceId":"trace-1","payloadId":"payload-1","maxBytes":64,"continueCursor":"range-cursor"}`, cookie)
+	if w.Code != http.StatusOK || fake.payloadRangeQuery.ContinueCursor != "range-cursor" || fake.payloadRangeQuery.PayloadID != "payload-1" {
+		t.Fatalf("payload range status=%d query=%+v body=%s", w.Code, fake.payloadRangeQuery, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"encoding":"BASE64"`) || !strings.Contains(w.Body.String(), `"nextCursor":"next-range"`) {
+		t.Fatalf("range projection=%s", w.Body.String())
+	}
+	badSource := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/raw-record-range", `{"traceId":"trace-1","recordSequence":2,"payloadId":"payload-1"}`, cookie)
+	if badSource.Code != http.StatusBadRequest {
+		t.Fatalf("mixed range source status=%d", badSource.Code)
+	}
+	search := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/search", `{"traceId":"trace-1","text":"needle","pageSize":5,"cursor":"search-cursor"}`, cookie)
+	if search.Code != http.StatusOK || fake.searchQuery.Cursor != "search-cursor" || fake.searchQuery.Text != "needle" {
+		t.Fatalf("search status=%d query=%+v", search.Code, fake.searchQuery)
+	}
+}
+
+func TestTraceAnalysisRejectsMissingExpiredAndOversizedRequests(t *testing.T) {
+	router, _, cookie, _ := traceAnalysisRouter(t)
+	missing := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{}`, cookie)
+	if missing.Code != http.StatusBadRequest {
+		t.Fatalf("missing trace status=%d", missing.Code)
+	}
+	oversized := traceAnalysisRequest(router, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1","padding":"`+strings.Repeat("x", maxTraceAnalysisJSONBody)+`"}`, cookie)
+	if oversized.Code != http.StatusBadRequest {
+		t.Fatalf("oversized status=%d", oversized.Code)
+	}
+	expiredArtifacts := &fakeArtifactService{lookupErr: consolecore.NewError(consolecore.CodeArtifactExpired, "The local artifact expired.", "scope-1", consolecore.Details{}, nil)}
+	expiredRouter, _, expiredCookie := artifactTestRouter(t, expiredArtifacts)
+	expiredRouter.options.TraceAnalysis = &fakeTraceAnalysisService{}
+	expired := traceAnalysisRequest(expiredRouter, "/api/console/v1/traces/analysis/summary", `{"traceId":"trace-1"}`, expiredCookie)
+	if expired.Code != http.StatusConflict || !strings.Contains(expired.Body.String(), `"ARTIFACT_EXPIRED"`) {
+		t.Fatalf("expired status=%d body=%s", expired.Code, expired.Body.String())
+	}
+}

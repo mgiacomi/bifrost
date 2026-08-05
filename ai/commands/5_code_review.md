@@ -72,8 +72,8 @@ Do not review only the diff hunks. Read enough surrounding code and connected ca
    - trust boundaries and failure boundaries;
    - assumptions the implementation relies on.
 5. Use the ticket and plans to understand intent, but record discrepancies between those documents and executable behavior rather than silently choosing one.
-6. For Bifrost framework changes, read the canonical policy in `ai/thoughts/framework-feature-design-lens.md`. Inventory exposure and evidence, then classify each affected surface as Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, or Internal or accidentally exposed implementation before evaluating compatibility.
-7. When a change affects the Bifrost Console application-adapter REST/SSE, acquisition, problem, or consumed NDJSON boundary, verify the declared Java-to-Go boundary-coordination scope against observable semantics, executable fixtures, and exact release-string rejection behavior.
+6. For Loomspan framework changes, read the canonical policy in `ai/thoughts/framework-feature-design-lens.md`. Inventory exposure and evidence, then classify each affected surface as Application API, Supported SPI, Configuration and manifest contracts, Persisted or serialized contracts, Ephemeral diagnostic formats, or Internal or accidentally exposed implementation before evaluating compatibility.
+7. When a change affects the Loomspan Console application-adapter REST/SSE, acquisition, problem, or consumed NDJSON boundary, verify the declared Java-to-Go boundary-coordination scope against observable semantics, executable fixtures, and exact release-string rejection behavior.
 
 ### Step 3: Perform an independent defect review
 
@@ -181,9 +181,9 @@ After the independent review:
 4. Do not report harmless naming or mechanical differences as defects. Put non-defective deviations in the conformance summary.
 5. A plan-conformant implementation can still receive blocking findings.
 
-### Step 6: Validate Bifrost skill-authoring documentation impact
+### Step 6: Validate Loomspan skill-authoring documentation impact
 
-Review the actual diff for changes a Bifrost skill author needs to know about. Do not rely only on the plan's conclusion or changed directory names.
+Review the actual diff for changes a Loomspan skill author needs to know about. Do not rely only on the plan's conclusion or changed directory names.
 
 Consider changes to:
 

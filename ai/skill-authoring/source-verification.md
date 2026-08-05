@@ -1,5 +1,5 @@
 ---
-audience: bifrost-skill-builder
+audience: loomspan-skill-builder
 status: development
 applies_to: current-repository-checkout
 coverage: initial
@@ -11,13 +11,13 @@ coverage: initial
 
 Use this protocol when the AI skill-authoring guide does not cover a question, when an edge case matters, or when documentation and observed behavior appear inconsistent.
 
-Open source access gives a SkillBuilder the ability to verify Bifrost rather than relying on prose alone. Source inspection should be focused and evidence-driven; it should not replace the guide's explanation of intent and recommended design.
+Open source access gives a SkillBuilder the ability to verify Loomspan rather than relying on prose alone. Source inspection should be focused and evidence-driven; it should not replace the guide's explanation of intent and recommended design.
 
 ## Repository Alignment
 
 This project has no production release yet. Use the guide, tests, samples, and source from the same repository checkout.
 
-Do not mix current-checkout documentation with source from another branch, stale clone, fork, or remote default branch without stating the mismatch. When releases exist, inspect the tag that corresponds to the developer's Bifrost dependency.
+Do not mix current-checkout documentation with source from another branch, stale clone, fork, or remote default branch without stating the mismatch. When releases exist, inspect the tag that corresponds to the developer's Loomspan dependency.
 
 ## Evidence Order
 
@@ -97,7 +97,7 @@ Source code alone does not reliably establish:
 - whether an awkward behavior is intentional or transitional;
 - which of several supported patterns is recommended;
 - what future compatibility the project intends;
-- whether a convenience conflicts with Bifrost's design values.
+- whether a convenience conflicts with Loomspan's design values.
 
 Use the authoring guide and the [Framework Feature Design Lens](../thoughts/framework-feature-design-lens.md) for that reasoning.
 
@@ -138,5 +138,5 @@ Example:
 
 ## Safety and Scope
 
-Treat source browsing as read-only investigation unless the developer separately requests changes. Do not execute untrusted repository scripts merely to understand authoring semantics. Prefer official Bifrost repository content over forks unless the developer explicitly works from a fork.
+Treat source browsing as read-only investigation unless the developer separately requests changes. Do not execute untrusted repository scripts merely to understand authoring semantics. Prefer official Loomspan repository content over forks unless the developer explicitly works from a fork.
 

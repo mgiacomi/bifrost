@@ -10,7 +10,7 @@ Revisit the concern after representative nested skill trees have produced succes
 
 ## Potential Concern
 
-Bifrost records a detailed hierarchical execution trace, projects a smaller linear journal, and provides a CLI that reconstructs a technical frame tree from persisted trace records. Each surface is useful, but they do not currently provide one canonical, developer-facing explanation of a composed skill execution.
+Loomspan records a detailed hierarchical execution trace, projects a smaller linear journal, and provides a CLI that reconstructs a technical frame tree from persisted trace records. Each surface is useful, but they do not currently provide one canonical, developer-facing explanation of a composed skill execution.
 
 A skill or run developer may want to answer a narrower set of questions than a forensic trace is designed to answer:
 
@@ -114,7 +114,7 @@ This observation does not currently justify:
 
 This concern is related to [Possible Future Improvement: Nested Execution Observability](possible-nested-execution-observability.md), but it has a different primary question.
 
-Nested execution observability asks whether a run developer can diagnose failure location, execution phase, and resource use across a composed run. This note asks whether Bifrost should expose one stable semantic explanation of the skill path for development, teaching, and tooling. A future canonical projection might support both concerns, but the evidence should be preserved separately until research establishes the appropriate implementation boundary.
+Nested execution observability asks whether a run developer can diagnose failure location, execution phase, and resource use across a composed run. This note asks whether Loomspan should expose one stable semantic explanation of the skill path for development, teaching, and tooling. A future canonical projection might support both concerns, but the evidence should be preserved separately until research establishes the appropriate implementation boundary.
 
 ## Signals That Should Trigger Reconsideration
 
@@ -154,13 +154,13 @@ The sample should become operational before the projection is designed, but the 
 
 ## Implementation Anchors for Research
 
-- [`TraceRecord.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/TraceRecord.java) defines the canonical trace record relationships and payloads.
-- [`TraceRecordType.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/TraceRecordType.java) defines the recorded event vocabulary.
-- [`TraceFrameType.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/TraceFrameType.java) defines the technical frame taxonomy.
-- [`DefaultExecutionStateService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/state/DefaultExecutionStateService.java) opens mission frames and records execution state events.
-- [`ExecutionJournalProjector.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/trace/ExecutionJournalProjector.java) defines the current linear developer journal projection.
-- [`DefaultSkillTemplate.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skillapi/DefaultSkillTemplate.java) defines the supported invocation observer surface.
-- [`main.go`](../../../bifrost-cli/main.go) reconstructs and renders the current CLI technical frame tree.
+- [`TraceRecord.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/TraceRecord.java) defines the canonical trace record relationships and payloads.
+- [`TraceRecordType.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/TraceRecordType.java) defines the recorded event vocabulary.
+- [`TraceFrameType.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/TraceFrameType.java) defines the technical frame taxonomy.
+- [`DefaultExecutionStateService.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/state/DefaultExecutionStateService.java) opens mission frames and records execution state events.
+- [`ExecutionJournalProjector.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/trace/ExecutionJournalProjector.java) defines the current linear developer journal projection.
+- [`DefaultSkillTemplate.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skillapi/DefaultSkillTemplate.java) defines the supported invocation observer surface.
+- [`main.go`](../../../loomspan-cli/main.go) reconstructs and renders the current CLI technical frame tree.
 
 These anchors identify current research starting points; they are not proposed change locations.
 

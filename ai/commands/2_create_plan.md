@@ -50,7 +50,7 @@ Then wait for the user's input.
    - **IMPORTANT**: Use your file-reading tool WITHOUT limit/offset parameters to read entire files
    - **CRITICAL**: DO NOT start broader research steps before reading these files yourself in the main context
    - **NEVER** read files partially - if a file is mentioned, read it completely
-   - For Bifrost framework work, read `ai/thoughts/framework-feature-design-lens.md` completely before forming compatibility conclusions
+   - For Loomspan framework work, read `ai/thoughts/framework-feature-design-lens.md` completely before forming compatibility conclusions
 
 2. **Read all files identified by research steps**:
    - After research steps complete, read ALL files they identified as relevant
@@ -127,7 +127,7 @@ After getting initial clarifications:
    For framework options, compare the protected consumers, intended breaks, atomic repository updates, public-surface delta, and shim/no-shim decision. A public modifier, interface, constructor, Spring bean, `@ConditionalOnMissingBean`, existing test, or previous implementation does not by itself establish a supported contract. Use the canonical policy in the design lens rather than inferring protection from technical exposure.
 
 6. **Assess skill-authoring documentation impact**:
-   - Determine whether the proposed work changes anything a Bifrost skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance
+   - Determine whether the proposed work changes anything a Loomspan skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance
    - Do not decide this from changed directory names alone; trace the behavior to its author-facing effects
    - Read `ai/skill-authoring/README.md` and use its routing guidance to read only the relevant topic documents. Follow `ai/skill-authoring/source-verification.md` when source-level verification is required
    - Identify the focused tests, fixtures, samples, and production code that will support any new or changed guidance
@@ -212,7 +212,7 @@ If the impact is `Affected`, include each documentation change in the appropriat
 
 ## Contract and Compatibility Impact
 
-Required for Bifrost framework work. Cover every category, including categories with no impact:
+Required for Loomspan framework work. Cover every category, including categories with no impact:
 
 | Surface | Classification and supporting evidence | Planned compatibility treatment |
 | --- | --- | --- |

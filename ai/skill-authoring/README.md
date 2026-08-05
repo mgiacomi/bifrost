@@ -1,19 +1,19 @@
 ---
-audience: bifrost-skill-builder
+audience: loomspan-skill-builder
 status: development
 applies_to: current-repository-checkout
 coverage: initial
 ---
 
-# Bifrost Skill Authoring Knowledge Base
+# Loomspan Skill Authoring Knowledge Base
 
 ## Purpose
 
-This directory is the AI-first knowledge base for an LLM that collaborates with a developer to design, build, review, and diagnose Bifrost skill trees.
+This directory is the AI-first knowledge base for an LLM that collaborates with a developer to design, build, review, and diagnose Loomspan skill trees.
 
-Bifrost is under active development and has no production release yet. These documents describe the current repository checkout. They are deliberately incomplete: a missing topic must not be treated as either unsupported or fully understood.
+Loomspan is under active development and has no production release yet. These documents describe the current repository checkout. They are deliberately incomplete: a missing topic must not be treated as either unsupported or fully understood.
 
-The intended future consumer is a SkillBuilder application, potentially built with Bifrost itself. Until then, an LLM can use these documents directly while working in the repository.
+The intended future consumer is a SkillBuilder application, potentially built with Loomspan itself. Until then, an LLM can use these documents directly while working in the repository.
 
 ## Authority and Verification
 
@@ -33,7 +33,7 @@ Read [source-verification.md](source-verification.md) before performing a source
 
 | Developer need | Read first | Then read |
 | --- | --- | --- |
-| Understand Bifrost skill trees | [mental-model.md](mental-model.md) | Relevant topic documents below |
+| Understand Loomspan skill trees | [mental-model.md](mental-model.md) | Relevant topic documents below |
 | Design or review a new tree | [checklists/evaluate-a-skill-design.md](checklists/evaluate-a-skill-design.md) | [mental-model.md](mental-model.md) |
 | Add evidence-backed output claims | [evidence-contracts.md](evidence-contracts.md) | [mental-model.md](mental-model.md) |
 | Select a model or configure its connection | [model-selection-and-connections.md](model-selection-and-connections.md) | [mental-model.md](mental-model.md) |
@@ -68,7 +68,7 @@ Do not load every document by default. Start with the routing entry most relevan
 These documents use:
 
 - **MUST / MUST NOT** for behavior required by current framework validation, execution semantics, security, or an explicitly stated authoring invariant.
-- **SHOULD / SHOULD NOT** for the recommended Bifrost authoring default.
+- **SHOULD / SHOULD NOT** for the recommended Loomspan authoring default.
 - **MAY** for an optional supported choice.
 
 Each document should distinguish enforced behavior from design guidance and known limitations. Do not present a recommendation as a runtime requirement.

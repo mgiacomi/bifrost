@@ -1,11 +1,11 @@
 ---
-audience: bifrost-skill-builder
+audience: loomspan-skill-builder
 status: development
 applies_to: current-repository-checkout
 coverage: initial
 ---
 
-# Evaluate a Bifrost Skill Design
+# Evaluate a Loomspan Skill Design
 
 ## Purpose
 
@@ -115,7 +115,7 @@ If the current knowledge base does not document the safeguard, verify it through
 
 ## 9. Apply the Framework Feature Lens
 
-When authoring friction suggests a framework change, stop treating the workaround as an automatic requirement. Evaluate the request through the [Bifrost Framework Feature Design Lens](../../thoughts/framework-feature-design-lens.md).
+When authoring friction suggests a framework change, stop treating the workaround as an automatic requirement. Evaluate the request through the [loomspan Framework Feature Design Lens](../../thoughts/framework-feature-design-lens.md).
 
 Ask especially:
 

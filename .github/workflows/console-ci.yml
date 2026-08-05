@@ -26,31 +26,31 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: 1.26.5
-          cache-dependency-path: bifrost-console/go.sum
+          cache-dependency-path: loomspan-console/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.18.0
           cache: npm
-          cache-dependency-path: bifrost-console/web/package-lock.json
+          cache-dependency-path: loomspan-console/web/package-lock.json
       - name: Pin npm
         run: npm install --global npm@12.0.2
       - name: Verify Java fixture writer and adapters
-        run: ./mvnw -pl bifrost-spring-boot-starter -Dtest=ConsoleTraceFixtureCorpusTest test && ./mvnw -pl bifrost-sample -am test
+        run: ./mvnw -pl loomspan-spring-boot-starter -Dtest=ConsoleTraceFixtureCorpusTest test && ./mvnw -pl loomspan-sample -am test
       - name: Verify Console
-        working-directory: bifrost-console
+        working-directory: loomspan-console
         run: go run ./internal/buildtool verify
       - name: Build E2E executable from verified assets
-        working-directory: bifrost-console
+        working-directory: loomspan-console
         shell: bash
         run: |
           VERSION=$(../mvnw -q -f ../pom.xml help:evaluate -Dexpression=project.version -DforceStdout)
           mkdir -p build
-          go build -trimpath -ldflags "-X=github.com/mgiacomi/bifrost/bifrost-console/internal/release.productVersion=${VERSION}" -o build/bifrost-console ./cmd/bifrost-console
+          go build -trimpath -ldflags "-X=github.com/mgiacomi/loomspan/loomspan-console/internal/release.productVersion=${VERSION}" -o build/loomspan-console ./cmd/loomspan-console
       - name: Install Chromium
-        working-directory: bifrost-console/web
+        working-directory: loomspan-console/web
         run: npx playwright install --with-deps chromium
       - name: Run browser E2E
-        working-directory: bifrost-console
+        working-directory: loomspan-console
         run: npm --prefix web run test:e2e
       - name: Upload failing Playwright evidence
         if: failure()
@@ -58,7 +58,7 @@ jobs:
         with:
           name: console-playwright-failure
           path: |
-            bifrost-console/web/test-results
-            bifrost-console/web/playwright-report
+            loomspan-console/web/test-results
+            loomspan-console/web/playwright-report
           if-no-files-found: ignore
           retention-days: 7

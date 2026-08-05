@@ -54,29 +54,29 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: 1.26.5
-          cache-dependency-path: bifrost-console/go.sum
+          cache-dependency-path: loomspan-console/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.18.0
           cache: npm
-          cache-dependency-path: bifrost-console/web/package-lock.json
+          cache-dependency-path: loomspan-console/web/package-lock.json
       - name: Pin npm
         run: npm install --global npm@12.0.2
       - name: Build deterministic native package
-        working-directory: bifrost-console
+        working-directory: loomspan-console
         run: go run ./internal/buildtool package --expected-version "${{ needs.validate.outputs.version }}"
       - name: Extract and smoke native package
-        working-directory: bifrost-console
+        working-directory: loomspan-console
         shell: bash
-        run: go run ./internal/buildtool smoke --expected-version "${{ needs.validate.outputs.version }}" --archive "dist/bifrost-console-${{ needs.validate.outputs.version }}-${{ matrix.target }}${{ matrix.target == 'windows-x86_64' && '.zip' || '.tar.gz' }}"
+        run: go run ./internal/buildtool smoke --expected-version "${{ needs.validate.outputs.version }}" --archive "dist/loomspan-console-${{ needs.validate.outputs.version }}-${{ matrix.target }}${{ matrix.target == 'windows-x86_64' && '.zip' || '.tar.gz' }}"
       - name: Upload archive and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: console-${{ matrix.target }}
           path: |
-            bifrost-console/dist/*.zip
-            bifrost-console/dist/*.tar.gz
-            bifrost-console/dist/*.sha256
+            loomspan-console/dist/*.zip
+            loomspan-console/dist/*.tar.gz
+            loomspan-console/dist/*.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -103,7 +103,7 @@ jobs:
           mapfile -t SIDECARS < <(find release-input -type f -name '*.sha256' | sort)
           test "${#SIDECARS[@]}" -eq 3
           test -z "$(printf '%s\n' "${ARCHIVES[@]}" | xargs -n1 basename | sort | uniq -d)"
-          for expected in "bifrost-console-$VERSION-windows-x86_64.zip" "bifrost-console-$VERSION-linux-x86_64.tar.gz" "bifrost-console-$VERSION-macos-arm64.tar.gz"; do
+          for expected in "loomspan-console-$VERSION-windows-x86_64.zip" "loomspan-console-$VERSION-linux-x86_64.tar.gz" "loomspan-console-$VERSION-macos-arm64.tar.gz"; do
             archive=$(find release-input -type f -name "$expected")
             test -n "$archive"
             sidecar="$archive.sha256"
@@ -140,4 +140,4 @@ jobs:
         run: |
           PRERELEASE=()
           [[ "$VERSION" == *-* ]] && PRERELEASE=(--prerelease)
-          gh release create "$GITHUB_REF_NAME" release-output/* --verify-tag --title "Bifrost $VERSION" "${PRERELEASE[@]}"
+          gh release create "$GITHUB_REF_NAME" release-output/* --verify-tag --title "loomspan $VERSION" "${PRERELEASE[@]}"

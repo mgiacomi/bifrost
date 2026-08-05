@@ -1,13 +1,13 @@
 # Maven
 target/
-!bifrost-console/internal/target/
-!bifrost-console/internal/target/**
-!bifrost-console/web/src/target/
-!bifrost-console/web/src/target/**
-!bifrost-console/browser-fixtures/target/
-!bifrost-console/browser-fixtures/target/**
+!loomspan-console/internal/target/
+!loomspan-console/internal/target/**
+!loomspan-console/web/src/target/
+!loomspan-console/web/src/target/**
+!loomspan-console/browser-fixtures/target/
+!loomspan-console/browser-fixtures/target/**
 biforst-sample/target/
-bifrost-spring-boot-starter/target/
+loomspan-spring-boot-starter/target/
 *.jar
 *.war
 *.zip
@@ -54,15 +54,15 @@ logs/
 *.bak
 *~
 
-# Bifrost Console build outputs
-bifrost-console/web/node_modules/
-bifrost-console/web/coverage/
-bifrost-console/web/test-results/
-bifrost-console/web/playwright-report/
-bifrost-console/internal/webassets/generated/*
-!bifrost-console/internal/webassets/generated/embed-placeholder.txt
-bifrost-console/build/
-bifrost-console/dist/
+# loomspan Console build outputs
+loomspan-console/web/node_modules/
+loomspan-console/web/coverage/
+loomspan-console/web/test-results/
+loomspan-console/web/playwright-report/
+loomspan-console/internal/webassets/generated/*
+!loomspan-console/internal/webassets/generated/embed-placeholder.txt
+loomspan-console/build/
+loomspan-console/dist/
 
 # Go test binaries
 *.test.exe

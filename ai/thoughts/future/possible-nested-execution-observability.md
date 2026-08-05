@@ -12,7 +12,7 @@ Revisit the concern when representative skill trees show that developers cannot 
 
 A planning-enabled YAML skill can require model interactions to create a plan, select and validate steps, retry rejected output, and synthesize a final response. A selected step may invoke another YAML skill, whose own manifest independently chooses direct or planning execution. Consequently, model calls, latency, retries, and failure locations can grow across a composed tree.
 
-Bifrost currently has session quotas, aggregate session usage, skill-tagged usage metrics, hierarchical trace frames, and several skill-specific terminal messages. These provide important safeguards and diagnostic evidence. The possible gap is whether the developer-facing result makes that evidence sufficiently easy to interpret for one failed or unexpectedly expensive run.
+Loomspan currently has session quotas, aggregate session usage, skill-tagged usage metrics, hierarchical trace frames, and several skill-specific terminal messages. These provide important safeguards and diagnostic evidence. The possible gap is whether the developer-facing result makes that evidence sufficiently easy to interpret for one failed or unexpectedly expensive run.
 
 A run developer should ideally be able to answer:
 
@@ -82,7 +82,7 @@ This observation does not currently justify:
 - a new single-shot nested-skill execution mode;
 - silently simplifying, skipping, or repairing a plan as budget runs low;
 - weakening evidence, authorization, timeout, retry, or validation safeguards;
-- redesigning Bifrost around the limitations of very small local models;
+- redesigning Loomspan around the limitations of very small local models;
 - declaring a universal minimum model size from one sample.
 
 Depth is not a reliable cost boundary. A direct skill deep in a tree may use less model capacity than a retry-heavy root planner, and model/provider usage units may differ. Any enforceable subtree budget would need a demonstrated production ownership or isolation requirement beyond convenient accounting.
@@ -103,7 +103,7 @@ The goal is diagnosis and production efficiency, not accommodation of tiny model
 
 ## Constraints on Any Future Direction
 
-Evaluate a future proposal through the [Bifrost Framework Feature Design Lens](../framework-feature-design-lens.md). In particular:
+Evaluate a future proposal through the [loomspan Framework Feature Design Lens](../framework-feature-design-lens.md). In particular:
 
 - keep the normal `SkillTemplate` call understandable without exposing internal planner mechanics;
 - make failure categories and usage attribution locally comprehensible to skill and run developers;
@@ -143,13 +143,13 @@ Small-model unreliability alone is not a trigger unless the same investigation r
 
 ## Implementation Anchors for Research
 
-- [`ExecutionCoordinator.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/ExecutionCoordinator.java) selects direct or step-based execution and creates mission frames.
-- [`DefaultMissionExecutionEngine.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/DefaultMissionExecutionEngine.java) implements direct mission execution.
-- [`StepLoopMissionExecutionEngine.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/step/StepLoopMissionExecutionEngine.java) implements planning-step execution and records several terminal failures.
-- [`DefaultPlanningService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/planning/DefaultPlanningService.java) performs plan generation and quality checks.
-- [`SessionUsageSnapshot.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/usage/SessionUsageSnapshot.java) defines current aggregate session usage.
-- [`DefaultSessionUsageService.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/usage/DefaultSessionUsageService.java) records usage and enforces session quotas.
-- [`ExecutionJournalProjector.java`](../../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/trace/ExecutionJournalProjector.java) defines the current developer-facing journal projection.
+- [`ExecutionCoordinator.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/ExecutionCoordinator.java) selects direct or step-based execution and creates mission frames.
+- [`DefaultMissionExecutionEngine.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/DefaultMissionExecutionEngine.java) implements direct mission execution.
+- [`StepLoopMissionExecutionEngine.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/step/StepLoopMissionExecutionEngine.java) implements planning-step execution and records several terminal failures.
+- [`DefaultPlanningService.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/planning/DefaultPlanningService.java) performs plan generation and quality checks.
+- [`SessionUsageSnapshot.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/usage/SessionUsageSnapshot.java) defines current aggregate session usage.
+- [`DefaultSessionUsageService.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/usage/DefaultSessionUsageService.java) records usage and enforces session quotas.
+- [`ExecutionJournalProjector.java`](../../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/trace/ExecutionJournalProjector.java) defines the current developer-facing journal projection.
 
 These anchors identify current research starting points; they are not proposed change locations.
 

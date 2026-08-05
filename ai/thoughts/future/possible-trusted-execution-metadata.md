@@ -6,7 +6,7 @@
 
 This document preserves a possible future framework concern so that later reports can be compared with it. It is not an approved feature, implementation plan, backlog commitment, or proposed API.
 
-Revisit the concern only when additional, independent use cases show that Bifrost lacks a coherent way to carry trusted execution metadata through a mission.
+Revisit the concern only when additional, independent use cases show that Loomspan lacks a coherent way to carry trusted execution metadata through a mission.
 
 ## Potential Concern
 
@@ -21,7 +21,7 @@ Some information belongs to the execution environment rather than to the model's
 
 If nested skills or deterministic Java capabilities require this information, asking the model to copy it through ordinary tool arguments may give the model control over values it should not choose or modify. Independently reading it from unrelated global or thread-local application state can instead create hidden dependencies and unclear lifecycle behavior.
 
-The possible gap is therefore not general argument forwarding. It is whether Bifrost eventually needs a narrow, production-grade mechanism for making authoritative execution metadata available across a run without making that metadata model-controlled or globally mutable.
+The possible gap is therefore not general argument forwarding. It is whether Loomspan eventually needs a narrow, production-grade mechanism for making authoritative execution metadata available across a run without making that metadata model-controlled or globally mutable.
 
 ## What This Does Not Cover
 
@@ -40,7 +40,7 @@ Values such as scenario names, ticket identifiers, hostnames, requested dates, a
 
 This concern would remain even with a perfectly capable planner. Model capability does not make the model an authoritative source for tenant identity, authorization, deadlines, or correlation state.
 
-A framework-level facility may eventually be appropriate when Bifrost itself owns the execution lifecycle and nested routing, and therefore is the layer capable of preserving:
+A framework-level facility may eventually be appropriate when Loomspan itself owns the execution lifecycle and nested routing, and therefore is the layer capable of preserving:
 
 - authoritative sourcing;
 - immutability for the duration of the run;
@@ -53,7 +53,7 @@ Those properties are more difficult for each application or skill author to repr
 
 ## Constraints on Any Future Direction
 
-If recurring evidence supports a feature, evaluate it through the [Bifrost Framework Feature Design Lens](../framework-feature-design-lens.md). At minimum, a future design should satisfy or explicitly address the following constraints.
+If recurring evidence supports a feature, evaluate it through the [loomspan Framework Feature Design Lens](../framework-feature-design-lens.md). At minimum, a future design should satisfy or explicitly address the following constraints.
 
 ### Developer model
 
@@ -99,12 +99,12 @@ These are evaluation constraints, not a commitment to any particular syntax, ann
 Compare future requests with this document when one or more of the following occurs:
 
 - multiple unrelated skill trees need the same trusted value at several nesting levels;
-- application developers independently create similar propagation infrastructure around Bifrost;
+- application developers independently create similar propagation infrastructure around loomspan;
 - a customer must place tenant, identity, correlation, deadline, or provenance values in model-generated arguments;
 - nested execution loses or inconsistently observes runtime-owned metadata;
 - current behavior creates a concrete security, isolation, audit, cancellation, or operability problem;
 - framework integrations need a consistent way to contribute authoritative per-run metadata;
-- an existing Bifrost runtime concept cannot represent the requirement without misuse.
+- an existing Loomspan runtime concept cannot represent the requirement without misuse.
 
 Repeated ordinary business-argument forwarding should be recorded separately unless the value is demonstrably runtime-owned and trusted.
 
@@ -119,7 +119,7 @@ If the concern recurs, research should answer these questions before proposing a
 5. How will nested YAML skills, mapped YAML skills, and Java capabilities observe it consistently?
 6. What must appear in traces, and what must be redacted?
 7. How will the mechanism behave across virtual threads, asynchronous execution, cancellation, and replay?
-8. Can the requirement be met by extending an existing typed Bifrost concept rather than adding a general context abstraction?
+8. Can the requirement be met by extending an existing typed Loomspan concept rather than adding a general context abstraction?
 9. Is the evidence broad enough to justify a public framework API?
 
 ## Occurrence Log

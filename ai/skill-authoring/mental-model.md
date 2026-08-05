@@ -1,19 +1,19 @@
 ---
-audience: bifrost-skill-builder
+audience: loomspan-skill-builder
 status: development
 applies_to: current-repository-checkout
 coverage: initial
 ---
 
-# Bifrost Skill-Tree Mental Model
+# Loomspan Skill-Tree Mental Model
 
 ## Purpose
 
-Use this document to establish shared vocabulary and choose the broad shape of a Bifrost skill tree. It is not a complete YAML manifest reference.
+Use this document to establish shared vocabulary and choose the broad shape of a Loomspan skill tree. It is not a complete YAML manifest reference.
 
 ## Core Model
 
-Bifrost combines public model-driven YAML skills with internal deterministic Spring implementation targets. A skill tree is a hierarchy of YAML capability boundaries, not a static rule tree: an LLM-backed skill reasons about its mission and can invoke only the child YAML capabilities exposed to it.
+Loomspan combines public model-driven YAML skills with internal deterministic Spring implementation targets. A skill tree is a hierarchy of YAML capability boundaries, not a static rule tree: an LLM-backed skill reasons about its mission and can invoke only the child YAML capabilities exposed to it.
 
 The normal shape is:
 
@@ -30,7 +30,7 @@ Not every tree needs every level. A simple skill may be one LLM-backed YAML skil
 
 ## Public YAML Skill Identity
 
-The YAML manifest `name` is the single public identity for both LLM-backed and mapped skills. It MUST match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: 1-64 characters, beginning with an ASCII letter or underscore, followed only by ASCII letters, digits, or underscores. Names are case-sensitive. Bifrost validates the exact parsed value during catalog loading and does not trim, sanitize, normalize, truncate, alias, or translate it.
+The YAML manifest `name` is the single public identity for both LLM-backed and mapped skills. It MUST match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: 1-64 characters, beginning with an ASCII letter or underscore, followed only by ASCII letters, digits, or underscores. Names are case-sensitive. Loomspan validates the exact parsed value during catalog loading and does not trim, sanitize, normalize, truncate, alias, or translate it.
 
 Descriptive lowerCamelCase, such as `expenseLookup`, is the recommended repository style, not an additional runtime restriction. Valid alternatives include `expense_lookup`, `_internalStyleAllowed`, and `Skill2`.
 
@@ -48,7 +48,7 @@ Current behavior:
 
 - `SkillTemplate` accepts a YAML skill name and an object or map input.
 - The root input is normalized and validated against the skill's effective input contract before execution.
-- Every invocation receives a new Bifrost session.
+- Every invocation receives a new Loomspan session.
 - `SkillTemplate` does not provide the supported public entry path for a raw Java capability; expose Java behavior through a mapped YAML skill when it must be an entry skill.
 
 The application developer SHOULD be able to determine how to invoke an entry skill from that skill's input contract without understanding the tree below it.
@@ -89,11 +89,11 @@ Use a mapped YAML skill when deterministic Java behavior must participate in the
 
 #### Prefer reflected input-contract inheritance for mapped skills
 
-Omitting `input_schema` from a mapped YAML skill is an explicit authoring choice, not an absence of validation. Bifrost derives the effective public input contract from the mapped Java target's reflected tool schema. The generated tool descriptor and entry-input validation use that inherited contract.
+Omitting `input_schema` from a mapped YAML skill is an explicit authoring choice, not an absence of validation. Loomspan derives the effective public input contract from the mapped Java target's reflected tool schema. The generated tool descriptor and entry-input validation use that inherited contract.
 
 The Java method signature and parameter metadata therefore MUST describe the input that callers and parent planners are allowed to supply. Verify requiredness, field names, types, descriptions, nested shapes, and runtime markers at the Java boundary rather than assuming reflection will express the intended public contract.
 
-A mapped skill MUST omit `input_schema` and `output_schema`. Do not copy a schema into a mapped wrapper merely to repeat reflected fields. Bifrost rejects those declarations so Java remains the single authoritative contract source.
+A mapped skill MUST omit `input_schema` and `output_schema`. Do not copy a schema into a mapped wrapper merely to repeat reflected fields. Loomspan rejects those declarations so Java remains the single authoritative contract source.
 
 If two public mapped capabilities need genuinely different input shapes, use separate deterministic Java adapter targets so transformation and validation remain explicit and testable.
 
@@ -157,7 +157,7 @@ Do not assume that a global planning default turns an undeclared skill into a st
 
 An LLM-backed YAML skill without `planning_mode: true` uses direct mission execution. This remains true when the skill is nested. A nested specialist therefore does not need to become a planner merely because it is part of a deeper tree.
 
-Use direct mission execution when one focused model-directed mission interaction is appropriate and the skill does not need Bifrost's explicit plan-and-step lifecycle. The direct executor still receives the skill's visible tools, so direct execution does not mean that the skill must have no children. It means Bifrost does not first create a task plan and then ask the model for one bounded step action at a time.
+Use direct mission execution when one focused model-directed mission interaction is appropriate and the skill does not need Loomspan's explicit plan-and-step lifecycle. The direct executor still receives the skill's visible tools, so direct execution does not mean that the skill must have no children. It means Loomspan does not first create a task plan and then ask the model for one bounded step action at a time.
 
 Direct execution is the normal choice for a focused specialist that does not benefit from an explicit plan. Do not interpret "direct" as a guarantee of exactly one physical provider request: tool-calling protocols, advisors, and provider behavior may involve additional internal interactions.
 
@@ -183,7 +183,7 @@ A direct specialist SHOULD have:
 - explicit input and output contracts when callers depend on structured behavior;
 - model and validation settings appropriate to that responsibility.
 
-Sample claims about model compatibility MUST be scoped to the sample and configuration actually tested. Success on a shallow direct skill does not establish that the same model can reliably execute a multi-level planning tree. Bifrost skill architecture SHOULD target capable production models; small local models may be useful for experimentation but are not a reason to weaken planning semantics or runtime safeguards.
+Sample claims about model compatibility MUST be scoped to the sample and configuration actually tested. Success on a shallow direct skill does not establish that the same model can reliably execute a multi-level planning tree. Loomspan skill architecture SHOULD target capable production models; small local models may be useful for experimentation but are not a reason to weaken planning semantics or runtime safeguards.
 
 ## Inputs, Runtime Metadata, and Evolving State
 
@@ -211,24 +211,24 @@ Do not automatically treat repeated business inputs as runtime metadata. Explici
 
 Use these only when current behavior or an edge case needs verification:
 
-- [`SkillTemplate.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/api/SkillTemplate.java) defines the public invocation surface.
-- [`DefaultSkillTemplate.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skillapi/DefaultSkillTemplate.java) validates YAML-only entry invocation and creates sessions.
-- [`SkillMethod.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/api/SkillMethod.java) defines the deterministic Java target annotation.
-- [`YamlSkillManifest.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillManifest.java) defines the accepted manifest object shape.
-- [`YamlSkillCatalog.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillCatalog.java) validates the exact public YAML name before other manifest-specific validation and stores definitions by that identity.
-- [`YamlSkillDefinition.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillDefinition.java) exposes normalized YAML skill settings.
-- [`YamlSkillCapabilityRegistrar.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillCapabilityRegistrar.java) registers pure and mapped YAML capabilities.
-- [`SkillImplementationTarget.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/SkillImplementationTarget.java) defines internal Java target metadata without provider-facing tool identity.
-- [`SkillImplementationTargetRegistry.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/SkillImplementationTargetRegistry.java) defines the internal `beanName#methodName` registry boundary.
-- [`SkillMethodBeanPostProcessor.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/SkillMethodBeanPostProcessor.java) discovers canonical annotated methods and builds proxy-safe target invokers.
-- [`YamlSkillCapabilityRegistrarTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/skill/YamlSkillCapabilityRegistrarTests.java) covers equal YAML/Java names, shared targets, contract inheritance, advice, errors, and public metadata.
-- [`YamlSkillCatalogTests.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/skill/YamlSkillCatalogTests.java) covers `acceptsProviderPortablePublicSkillNames`, `rejectsNonPortablePublicSkillNames`, required-field ordering, and mapped-manifest validation ordering.
-- [`SkillInputContractResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/input/SkillInputContractResolver.java) selects explicit YAML, inherited Java, or generic input contracts.
-- [`DefaultSkillVisibilityResolver.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/DefaultSkillVisibilityResolver.java) defines the current local YAML child surface and access filtering.
-- [`CapabilityExecutionRouter.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouter.java) distinguishes nested LLM-backed YAML execution from mapped/Java invocation and preserves parent state.
-- [`ExecutionCoordinator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/ExecutionCoordinator.java) selects the execution engine and constructs each YAML mission boundary.
-- [`CapabilityExecutionRouterTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/core/CapabilityExecutionRouterTest.java) covers nested routing, authorization fallback, plan restoration, successful-skill isolation, and canonical mission input.
-- [`SupportedSurfaceIntegrationTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/integration/SupportedSurfaceIntegrationTest.java) proves that an LLM-backed YAML entry skill can be configured and invoked through `SkillTemplate` without replacing internal Bifrost infrastructure.
+- [`SkillTemplate.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/api/SkillTemplate.java) defines the public invocation surface.
+- [`DefaultSkillTemplate.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skillapi/DefaultSkillTemplate.java) validates YAML-only entry invocation and creates sessions.
+- [`SkillMethod.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/api/SkillMethod.java) defines the deterministic Java target annotation.
+- [`YamlSkillManifest.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skill/YamlSkillManifest.java) defines the accepted manifest object shape.
+- [`YamlSkillCatalog.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skill/YamlSkillCatalog.java) validates the exact public YAML name before other manifest-specific validation and stores definitions by that identity.
+- [`YamlSkillDefinition.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skill/YamlSkillDefinition.java) exposes normalized YAML skill settings.
+- [`YamlSkillCapabilityRegistrar.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skill/YamlSkillCapabilityRegistrar.java) registers pure and mapped YAML capabilities.
+- [`SkillImplementationTarget.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/SkillImplementationTarget.java) defines internal Java target metadata without provider-facing tool identity.
+- [`SkillImplementationTargetRegistry.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/SkillImplementationTargetRegistry.java) defines the internal `beanName#methodName` registry boundary.
+- [`SkillMethodBeanPostProcessor.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/SkillMethodBeanPostProcessor.java) discovers canonical annotated methods and builds proxy-safe target invokers.
+- [`YamlSkillCapabilityRegistrarTests.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/skill/YamlSkillCapabilityRegistrarTests.java) covers equal YAML/Java names, shared targets, contract inheritance, advice, errors, and public metadata.
+- [`YamlSkillCatalogTests.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/skill/YamlSkillCatalogTests.java) covers `acceptsProviderPortablePublicSkillNames`, `rejectsNonPortablePublicSkillNames`, required-field ordering, and mapped-manifest validation ordering.
+- [`SkillInputContractResolver.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/input/SkillInputContractResolver.java) selects explicit YAML, inherited Java, or generic input contracts.
+- [`DefaultSkillVisibilityResolver.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skill/DefaultSkillVisibilityResolver.java) defines the current local YAML child surface and access filtering.
+- [`CapabilityExecutionRouter.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/CapabilityExecutionRouter.java) distinguishes nested LLM-backed YAML execution from mapped/Java invocation and preserves parent state.
+- [`ExecutionCoordinator.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/ExecutionCoordinator.java) selects the execution engine and constructs each YAML mission boundary.
+- [`CapabilityExecutionRouterTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/core/CapabilityExecutionRouterTest.java) covers nested routing, authorization fallback, plan restoration, successful-skill isolation, and canonical mission input.
+- [`SupportedSurfaceIntegrationTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/integration/SupportedSurfaceIntegrationTest.java) proves that an LLM-backed YAML entry skill can be configured and invoked through `SkillTemplate` without replacing internal Loomspan infrastructure.
 
 ## Coverage Boundary
 

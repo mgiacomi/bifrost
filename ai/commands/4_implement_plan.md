@@ -12,8 +12,8 @@ When given a plan path:
 - Read the plan completely and check for any existing checkmarks (- [x])
 - Read the original ticket and all files mentioned in the plan
 - If a testing plan exists for this work (for example, `ai/thoughts/plans/*-testing.md`), read it completely and follow it during implementation
-- For Bifrost framework work, read and follow the plan's `Contract and Compatibility Impact` section and the canonical policy in `ai/thoughts/framework-feature-design-lens.md` before editing code
-- When the plan affects the Bifrost Console application-adapter REST/SSE, acquisition, problem, or consumed NDJSON boundary, treat the plan's Java-to-Go boundary-coordination scope as an implementation constraint
+- For Loomspan framework work, read and follow the plan's `Contract and Compatibility Impact` section and the canonical policy in `ai/thoughts/framework-feature-design-lens.md` before editing code
+- When the plan affects the Loomspan Console application-adapter REST/SSE, acquisition, problem, or consumed NDJSON boundary, treat the plan's Java-to-Go boundary-coordination scope as an implementation constraint
 - Read the plan's `Skill-Authoring Documentation Impact` section. If it is missing (for example, in an older plan), perform the assessment described below before implementation
 - When skill-authoring impact is `Affected`, read `ai/skill-authoring/README.md`, the relevant routed topic documents, and `ai/skill-authoring/source-verification.md` before editing the knowledge base
 - **Read files fully when practical** - avoid partial reads unless a file is very large; if you must read in chunks, capture sufficient surrounding context
@@ -54,7 +54,7 @@ If you encounter a mismatch:
 
 The plan's documentation assessment is a starting point, not a permanent conclusion. Reassess it against the behavior actually implemented and the final diff.
 
-A change has skill-authoring impact when it changes anything a Bifrost skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance. Do not infer impact solely from file paths, and do not update the knowledge base for a purely internal refactor that leaves author-facing behavior unchanged.
+A change has skill-authoring impact when it changes anything a Loomspan skill author needs to know, including manifest syntax or validation, defaults, mappings, execution or planning semantics, evidence, input/output contracts, capability visibility or RBAC, attachments or virtual files, model selection, limits or quotas, traces, debugging, or testing guidance. Do not infer impact solely from file paths, and do not update the knowledge base for a purely internal refactor that leaves author-facing behavior unchanged.
 
 When impact is present:
 - Update the relevant `ai/skill-authoring/` documents in the same phase as the behavior change; do not defer them to an unspecified follow-up

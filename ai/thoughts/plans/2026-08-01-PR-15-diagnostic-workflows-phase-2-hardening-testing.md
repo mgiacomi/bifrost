@@ -8,12 +8,12 @@
 - Prove degraded lifecycle behavior, hostile-content isolation, authority ordering, bounded responses, keyboard/accessibility behavior, deterministic native packaging, and release CI.
 - Update skill-authoring guidance only where focused fixtures and tests establish the described run-start-limit and registered-name semantics.
 
-The authoritative unfamiliar-skill-path IDs are `WF-SP-R1` through `WF-SP-R14` in `ai/thoughts/phases/bifrost_console_workflows.md`. Tests and completion evidence must use only those canonical IDs; `WF-US-*` is not an alias.
+The authoritative unfamiliar-skill-path IDs are `WF-SP-R1` through `WF-SP-R14` in `ai/thoughts/phases/LOOMSPAN_console_workflows.md`. Tests and completion evidence must use only those canonical IDs; `WF-US-*` is not an alias.
 
 ## Impacted Areas
 
-- Java trace production and fixtures: `DefaultExecutionTraceHandle`, session-runner/factory wiring, `ConsoleTraceFixtureCorpusTest`, and `bifrost-console-fixtures`.
-- Go trace analysis: parser/model/processor, frame/failure projection, neutral DTOs, continuations, limits, and fixture-corpus tests under `bifrost-console/internal/traceanalysis`.
+- Java trace production and fixtures: `DefaultExecutionTraceHandle`, session-runner/factory wiring, `ConsoleTraceFixtureCorpusTest`, and `loomspan-console-fixtures`.
+- Go trace analysis: parser/model/processor, frame/failure projection, neutral DTOs, continuations, limits, and fixture-corpus tests under `loomspan-console/internal/traceanalysis`.
 - Go browser and lifecycle boundaries: `internal/browserapi`, `internal/target`, `internal/live`, `internal/artifact`, and stable domain-error mapping.
 - React contracts and presentation: active execution detail, trace detail/explorer/state, hierarchy, usage, records/evidence, skill detail, scope reset, and API contracts/client.
 - Browser E2E: live execution, artifact/trace workflows, pairing/error states, reconnect/restart, accessibility-critical interaction, and hostile content.
@@ -61,7 +61,7 @@ Protected Java-to-Go behavior includes exact application release rejection, appl
 ### 1. Canonical core-finalization fields
 
 - Type: component unit, then E2E regression.
-- Location: `bifrost-console/web/src/observability/ActiveExecutionDetail.test.tsx`; `bifrost-console/web/e2e/live-executions.spec.ts`.
+- Location: `loomspan-console/web/src/observability/ActiveExecutionDetail.test.tsx`; `loomspan-console/web/e2e/live-executions.spec.ts`.
 - Arrange/Act/Assert outline: provide `EXECUTION_OBSERVATION_ENDED` with `applicationTraceAvailability: "UNAVAILABLE"`, `applicationTraceUnavailableReason: "CORE_FINALIZATION_FAILED"`, and no outcome; render the selected execution; assert incomplete observation and unavailable trace are separate, while outcome and Inspect trace are absent.
 - Expected failure (pre-fix): the browser does not enter the finalization-failed branch because it checks the availability field for the reason code.
 - Requirements: `WF-FE-R1`, `WF-FE-R3`, `WF-FE-R8`, `WF-SE-R8`.
@@ -89,7 +89,7 @@ These are the first red tests. The remaining workflow, security, packaging, and 
 ### 1. Trace quota contract and fixture corpus
 
 - Type: Java unit/integration and Go integration.
-- Location: trace creation/wiring tests; `ConsoleTraceFixtureCorpusTest.java`; `bifrost-console-fixtures`; `internal/traceanalysis/{parser,fixture_corpus,continuation}_test.go`.
+- Location: trace creation/wiring tests; `ConsoleTraceFixtureCorpusTest.java`; `loomspan-console-fixtures`; `internal/traceanalysis/{parser,fixture_corpus,continuation}_test.go`.
 - What it proves: immutable five-value creation-time snapshot for Spring-created traces; valid absent-object semantics for standalone/internal traces; exact current NDJSON names and `0..2147483647` integer domain; LF/idempotent fixture generation; valid summary projection; rejection as `INVALID_ARTIFACT` for a present object with a missing/unknown member, float/string/null, negative, above-max, duplicate, or structurally invalid metadata; no historical compatibility reader.
 - Fixtures/data: one non-default valid trace plus generated invalid mutations at exact max/one-over boundaries.
 - Mocks: none across the corpus; use mutable test configuration only to prove snapshot isolation.
@@ -266,20 +266,20 @@ Every surfaced workflow requirement is assigned below. `A#` refers to the automa
 From the repository root unless noted:
 
 ```powershell
-.\mvnw.cmd -pl bifrost-spring-boot-starter test -Dtest=ConsoleTraceFixtureCorpusTest -DfailIfNoTests=false
-.\mvnw.cmd -pl bifrost-spring-boot-starter test
-.\mvnw.cmd -pl bifrost-sample -am test
+.\mvnw.cmd -pl loomspan-spring-boot-starter test -Dtest=ConsoleTraceFixtureCorpusTest -DfailIfNoTests=false
+.\mvnw.cmd -pl loomspan-spring-boot-starter test
+.\mvnw.cmd -pl loomspan-sample -am test
 .\mvnw.cmd verify
 ```
 
 Regenerate the intentional current-release corpus once, then rerun generation and require no second diff:
 
 ```powershell
-.\mvnw.cmd -pl bifrost-spring-boot-starter test -Dtest=ConsoleTraceFixtureCorpusTest -Dbifrost.console.fixtures.regenerate=true -DfailIfNoTests=false
-git diff --exit-code -- bifrost-console-fixtures
+.\mvnw.cmd -pl loomspan-spring-boot-starter test -Dtest=ConsoleTraceFixtureCorpusTest -Dloomspan.console.fixtures.regenerate=true -DfailIfNoTests=false
+git diff --exit-code -- loomspan-console-fixtures
 ```
 
-From `bifrost-console`:
+From `loomspan-console`:
 
 ```powershell
 go test ./...

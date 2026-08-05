@@ -1,5 +1,5 @@
 ---
-audience: bifrost-skill-builder
+audience: loomspan-skill-builder
 status: development
 applies_to: current-repository-checkout
 coverage: source-verified
@@ -26,7 +26,7 @@ output_schema:
   additionalProperties: false
 ```
 
-`evidence` is Bifrost orchestration metadata. It does not become a candidate JSON field or a provider schema keyword.
+`evidence` is Loomspan orchestration metadata. It does not become a candidate JSON field or a provider schema keyword.
 
 ## Placement and shape
 
@@ -74,7 +74,7 @@ Evidence correction can still make additional physical model attempts and consum
 
 ## Direct-child and nested boundaries
 
-A reference MUST name a direct child of the declaring skill and MUST NOT name a grandchild or internal probe. During a nested YAML mission, Bifrost isolates the child's successful-skill set from its parent. Child internals never bubble upward; after a nested child succeeds, only that child's public direct name is credited at the parent boundary.
+A reference MUST name a direct child of the declaring skill and MUST NOT name a grandchild or internal probe. During a nested YAML mission, Loomspan isolates the child's successful-skill set from its parent. Child internals never bubble upward; after a nested child succeeds, only that child's public direct name is credited at the parent boundary.
 
 ## Authoring procedure
 
@@ -95,9 +95,9 @@ Evidence expressions are monotonic and name-only. They do not inspect tool outpu
 
 ## Implementation and test anchors
 
-- [`YamlSkillCatalog.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/skill/YamlSkillCatalog.java) validates placement, compiles expressions once, and validates exact direct children.
-- [`EvidenceExpressionParser.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceExpressionParser.java) defines parsing, while [`EvidenceExpression.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceExpression.java) defines canonical rendering, evaluation, and structured unsatisfied requirements.
-- [`EvidenceCoverageValidator.java`](../../bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/evidence/EvidenceCoverageValidator.java) defines plan and final truth sets.
-- [`YamlSkillEvidencePropertyCatalogTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/skill/YamlSkillEvidencePropertyCatalogTest.java) and [`YamlSkillEvidenceExpressionCatalogAdditionalTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/skill/YamlSkillEvidenceExpressionCatalogAdditionalTest.java) protect placement, scalar shape, exact identity, and diagnostics.
-- [`OutputSchemaCallAdvisorTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/outputschema/OutputSchemaCallAdvisorTest.java) and [`StepPromptBuilderTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/step/StepPromptBuilderTest.java) protect metadata non-leakage.
-- [`NestedSuccessfulSkillBoundaryTest.java`](../../bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/tool/NestedSuccessfulSkillBoundaryTest.java) protects nested boundary credit.
+- [`YamlSkillCatalog.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/skill/YamlSkillCatalog.java) validates placement, compiles expressions once, and validates exact direct children.
+- [`EvidenceExpressionParser.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/evidence/EvidenceExpressionParser.java) defines parsing, while [`EvidenceExpression.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/evidence/EvidenceExpression.java) defines canonical rendering, evaluation, and structured unsatisfied requirements.
+- [`EvidenceCoverageValidator.java`](../../loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/evidence/EvidenceCoverageValidator.java) defines plan and final truth sets.
+- [`YamlSkillEvidencePropertyCatalogTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/skill/YamlSkillEvidencePropertyCatalogTest.java) and [`YamlSkillEvidenceExpressionCatalogAdditionalTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/skill/YamlSkillEvidenceExpressionCatalogAdditionalTest.java) protect placement, scalar shape, exact identity, and diagnostics.
+- [`OutputSchemaCallAdvisorTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/outputschema/OutputSchemaCallAdvisorTest.java) and [`StepPromptBuilderTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/runtime/step/StepPromptBuilderTest.java) protect metadata non-leakage.
+- [`NestedSuccessfulSkillBoundaryTest.java`](../../loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/runtime/tool/NestedSuccessfulSkillBoundaryTest.java) protects nested boundary credit.

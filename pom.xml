@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.lokiscale.bifrost</groupId>
-  <artifactId>bifrost-parent</artifactId>
+  <groupId>com.lokiscale.loomspan</groupId>
+  <artifactId>loomspan-parent</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
-  <name>Bifrost Parent</name>
-  <description>Aggregator parent POM for the Bifrost project.</description>
-  <url>https://github.com/mgiacomi/bifrost</url>
+  <name>Loomspan Parent</name>
+  <description>Aggregator parent POM for the Loomspan project.</description>
+  <url>https://github.com/mgiacomi/loomspan</url>
 
   <licenses>
     <license>
@@ -30,15 +30,15 @@
   </developers>
 
   <scm>
-    <connection>scm:git:https://github.com/mgiacomi/bifrost.git</connection>
-    <developerConnection>scm:git:ssh://git@github.com/mgiacomi/bifrost.git</developerConnection>
-    <url>https://github.com/mgiacomi/bifrost</url>
+    <connection>scm:git:https://github.com/mgiacomi/loomspan.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/mgiacomi/loomspan.git</developerConnection>
+    <url>https://github.com/mgiacomi/loomspan</url>
     <tag>HEAD</tag>
   </scm>
 
   <modules>
-    <module>bifrost-spring-boot-starter</module>
-    <module>bifrost-sample</module>
+    <module>loomspan-spring-boot-starter</module>
+    <module>loomspan-sample</module>
   </modules>
 
   <properties>
@@ -125,11 +125,11 @@
                 <rules>
                   <requireJavaVersion>
                     <version>[21,)</version>
-                    <message>Java 21 or newer is required to build Bifrost.</message>
+                    <message>Java 21 or newer is required to build Loomspan.</message>
                   </requireJavaVersion>
                   <requireMavenVersion>
                     <version>[${minimum.maven.version},)</version>
-                    <message>Maven ${minimum.maven.version}+ is required to build Bifrost.</message>
+                    <message>Maven ${minimum.maven.version}+ is required to build Loomspan.</message>
                   </requireMavenVersion>
                 </rules>
               </configuration>

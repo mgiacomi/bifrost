@@ -2,7 +2,7 @@
 
 ## Overview
 
-Complete the four approved Bifrost Console workflows over the shared live, artifact, and trace-analysis foundations delivered by PRs 10–14, close known lifecycle and presentation defects in their owning layers, and produce the security, accessibility, browser, packaging, and completion evidence required to finish Phase 2. The work preserves one live-execution experience and one hierarchy-first trace explorer; workflow-specific entry states coordinate existing facts rather than creating separate parsers, stores, or diagnostic engines.
+Complete the four approved Loomspan Console workflows over the shared live, artifact, and trace-analysis foundations delivered by PRs 10–14, close known lifecycle and presentation defects in their owning layers, and produce the security, accessibility, browser, packaging, and completion evidence required to finish Phase 2. The work preserves one live-execution experience and one hierarchy-first trace explorer; workflow-specific entry states coordinate existing facts rather than creating separate parsers, stores, or diagnostic engines.
 
 This plan incorporates the following planning decisions:
 
@@ -19,17 +19,17 @@ Before implementation, create the dedicated test plan with `ai/commands/3_testin
 
 ## Current State Analysis
 
-PRs 10–14 already provide the application shell, operational views, bounded live activity, deliberate artifact acquisition, transport-neutral trace analysis, and hierarchy-first trace explorer (`bifrost-console/web/src/app/routes.tsx:14-32`, `bifrost-console/internal/browserapi/router.go:20-47`). Existing Playwright scenarios exercise terminal transition and the three finalized workflows, but several scenarios prove generic explorer behavior rather than the complete approved workflow (`bifrost-console/web/e2e/live-executions.spec.ts:248-356`, `bifrost-console/web/e2e/artifact-storage.spec.ts:353-420`).
+PRs 10–14 already provide the application shell, operational views, bounded live activity, deliberate artifact acquisition, transport-neutral trace analysis, and hierarchy-first trace explorer (`loomspan-console/web/src/app/routes.tsx:14-32`, `loomspan-console/internal/browserapi/router.go:20-47`). Existing Playwright scenarios exercise terminal transition and the three finalized workflows, but several scenarios prove generic explorer behavior rather than the complete approved workflow (`loomspan-console/web/e2e/live-executions.spec.ts:248-356`, `loomspan-console/web/e2e/artifact-storage.spec.ts:353-420`).
 
 Known gaps are concrete:
 
-- The browser detects core finalization failure from `applicationTraceAvailability`, while Java emits `UNAVAILABLE` there and places `CORE_FINALIZATION_FAILED` in `applicationTraceUnavailableReason` (`bifrost-console/web/src/observability/ActiveExecutionDetail.tsx:53-58`, `bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/observation/DefaultExecutionObservationHandle.java:176-187`).
-- `TraceExplorer` has hierarchy, timeline, usage, and records views, but no coordinated failure-focused entry summary (`bifrost-console/web/src/observability/traceExplorerState.ts:1-17`, `bifrost-console/web/src/observability/TraceExplorer.tsx:301-315`).
-- Go already indexes exact frame `skillNames`, outcomes, attempts, retries, validation statuses, and failure IDs, but `FrameSummary` and the browser frame DTO discard those relationships (`bifrost-console/internal/traceanalysis/frames.go:281-303`, `bifrost-console/internal/traceanalysis/dto.go:47-72`, `bifrost-console/internal/browserapi/trace_analysis.go:84-88`).
-- Registered skill YAML is available on the Skills route, but selected trace frames cannot navigate to a matching registered skill (`bifrost-console/web/src/observability/SkillDetail.tsx:64-79`, `bifrost-console/web/src/api/contracts.ts:231-239`).
-- Active execution responses carry the five configured quota limits, while finalized trace usage does not (`bifrost-console/web/src/api/contracts.ts:130-155`, `bifrost-console/web/src/observability/TraceUsage.tsx:7-17`).
-- Application YAML and evidence are already rendered as inert React text, and Go has fixed body, page, range, search, line, and JSON-depth bounds. Coverage is not yet organized as the complete PR 15 authority-boundary and response-bound matrix (`bifrost-console/internal/traceanalysis/limits.go:8-48`).
-- The canonical build verifies frontend, assets, and Go tests and builds only the host executable. It does not run Playwright, create release packages/checksums, or provide repository CI (`bifrost-console/internal/buildtool/pipeline.go:36-56`, `bifrost-console/internal/buildtool/runner.go:31-64`).
+- The browser detects core finalization failure from `applicationTraceAvailability`, while Java emits `UNAVAILABLE` there and places `CORE_FINALIZATION_FAILED` in `applicationTraceUnavailableReason` (`loomspan-console/web/src/observability/ActiveExecutionDetail.tsx:53-58`, `loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/observation/DefaultExecutionObservationHandle.java:176-187`).
+- `TraceExplorer` has hierarchy, timeline, usage, and records views, but no coordinated failure-focused entry summary (`loomspan-console/web/src/observability/traceExplorerState.ts:1-17`, `loomspan-console/web/src/observability/TraceExplorer.tsx:301-315`).
+- Go already indexes exact frame `skillNames`, outcomes, attempts, retries, validation statuses, and failure IDs, but `FrameSummary` and the browser frame DTO discard those relationships (`loomspan-console/internal/traceanalysis/frames.go:281-303`, `loomspan-console/internal/traceanalysis/dto.go:47-72`, `loomspan-console/internal/browserapi/trace_analysis.go:84-88`).
+- Registered skill YAML is available on the Skills route, but selected trace frames cannot navigate to a matching registered skill (`loomspan-console/web/src/observability/SkillDetail.tsx:64-79`, `loomspan-console/web/src/api/contracts.ts:231-239`).
+- Active execution responses carry the five configured quota limits, while finalized trace usage does not (`loomspan-console/web/src/api/contracts.ts:130-155`, `loomspan-console/web/src/observability/TraceUsage.tsx:7-17`).
+- Application YAML and evidence are already rendered as inert React text, and Go has fixed body, page, range, search, line, and JSON-depth bounds. Coverage is not yet organized as the complete PR 15 authority-boundary and response-bound matrix (`loomspan-console/internal/traceanalysis/limits.go:8-48`).
+- The canonical build verifies frontend, assets, and Go tests and builds only the host executable. It does not run Playwright, create release packages/checksums, or provide repository CI (`loomspan-console/internal/buildtool/pipeline.go:36-56`, `loomspan-console/internal/buildtool/runner.go:31-64`).
 - The repository declares MPL 2.0 in `pom.xml` but has no committed license text, package-specific runtime README, release archive layout, or Phase 2 completion-evidence index (`pom.xml:16-22`).
 
 ## Desired End State
@@ -49,11 +49,11 @@ After this plan is complete:
 
 ### Key Discoveries
 
-- The approved workflow set explicitly requires coordinated perspectives over one explorer, not four product areas (`ai/thoughts/phases/bifrost_console_workflows.md:51-76`).
-- Configured-limit comparison is a settled arithmetic presentation, while cost judgment and provider pricing remain prohibited (`ai/thoughts/phases/bifrost_console_workflows.md:352-399`, `:424-495`).
-- `sourcePath` is display-only; registered name is the valid coordination key for YAML (`ai/thoughts/phases/bifrost_console_workflows.md:509-654`).
-- Phase 3 PR 18 will adapt the same artifact and trace-query services, so limits and workflow relationships must be transport-neutral rather than browser calculations (`ai/thoughts/tickets/bifrost-console-pr-18-mcp-trace-inspection.md:9-38`).
-- PR 19 reuses the same four workflow IDs and uncertainty rules; PR 15's fixtures and completion evidence become the canonical browser-side scenario catalog (`ai/thoughts/tickets/bifrost-console-pr-19-debugging-skill.md:13-24`).
+- The approved workflow set explicitly requires coordinated perspectives over one explorer, not four product areas (`ai/thoughts/phases/LOOMSPAN_console_workflows.md:51-76`).
+- Configured-limit comparison is a settled arithmetic presentation, while cost judgment and provider pricing remain prohibited (`ai/thoughts/phases/LOOMSPAN_console_workflows.md:352-399`, `:424-495`).
+- `sourcePath` is display-only; registered name is the valid coordination key for YAML (`ai/thoughts/phases/LOOMSPAN_console_workflows.md:509-654`).
+- Phase 3 PR 18 will adapt the same artifact and trace-query services, so limits and workflow relationships must be transport-neutral rather than browser calculations (`ai/thoughts/tickets/loomspan-console-pr-18-mcp-trace-inspection.md:9-38`).
+- PR 19 reuses the same four workflow IDs and uncertainty rules; PR 15's fixtures and completion evidence become the canonical browser-side scenario catalog (`ai/thoughts/tickets/loomspan-console-pr-19-debugging-skill.md:13-24`).
 - GitHub Actions supports native OS matrix jobs and job-level least-privilege permissions. Pull-request jobs must use `pull_request`, not a privileged `pull_request_target` checkout of untrusted code.
 
 ## What We're NOT Doing
@@ -84,15 +84,15 @@ After this plan is complete:
 | --- | --- | --- |
 | Application API | No application-facing Java API changes. Existing quota properties and runtime entry points retain their names and behavior. | Preserve. |
 | Supported SPI | No supported SPI changes. Go service interfaces and Java trace-handle factories involved here are internal seams. | Preserve supported SPIs; update internal collaborators atomically. |
-| Configuration and manifest contracts | Existing five `bifrost.session.quotas` values are read as the run-start snapshot; YAML skill syntax, validation, defaults, and Console YAML schema do not change. | Preserve configuration and manifest behavior; document diagnostic interpretation only. |
+| Configuration and manifest contracts | Existing five `loomspan.session.quotas` values are read as the run-start snapshot; YAML skill syntax, validation, defaults, and Console YAML schema do not change. | Preserve configuration and manifest behavior; document diagnostic interpretation only. |
 | Persisted or serialized contracts | Java application REST/SSE/problem fixtures remain coordinated serialized boundaries. Go browser JSON gains additive current-version fields for limits, frame relationships, and failure focus. These have only in-repository consumers. | Update Java fixtures, Go decoders/adapters, React contracts, and E2E fixtures atomically in the same release. No version bridge. |
 | Ephemeral diagnostic formats | `TRACE_STARTED` gains an optional bounded `configuredLimits` metadata object. Spring-created traces emit it. Standalone/internal construction paths may omit it. When present, all five values are required integers in `0..2147483647`. Current Java writer, Java fixture corpus, Go parser/indexes, and debugging docs consume it. | Intentional current-run format update; regenerate valid fixtures and add incomplete-object/overflow/type-invalid cases. Object absence is a current semantic meaning “limit comparison unavailable,” not a legacy reader or cross-version migration. |
 | Internal or accidentally exposed implementation | Trace index rows, neutral DTOs, browser query state, buildtool packaging commands, generated archives, and GitHub workflow composition change. | One coherent implementation; no duplicate DTOs, fallback fields, aliases, or compatibility shims. |
 
-- **Evidence of supported contracts**: `BifrostProperties.Session.Quotas`, approved Phase 2/workflow documents, application fixture corpora, Go application client, browser API/React consumers, and current-run trace corpus.
+- **Evidence of supported contracts**: `LoomspanProperties.Session.Quotas`, approved Phase 2/workflow documents, application fixture corpora, Go application client, browser API/React consumers, and current-run trace corpus.
 - **Intended breaks**: Spring-produced current-checkout trace fixtures are regenerated with the run-start quota snapshot. A present but incomplete or invalid object is rejected; complete object absence remains valid only to represent a current standalone/internal producer with unavailable limit comparison. Because traces are current-run ephemeral diagnostics, this is not an old-trace compatibility reader. The Phase 2 manual accessibility evidence requirement is intentionally narrowed by an explicit design-document update.
-- **In-repository consumers to update**: Java trace creation/tests and fixture corpus; `bifrost-console-fixtures`; Go parser/manifest/DTO/query/browser tests; React API contracts/components/tests; Playwright fixture server/scenarios; skill-authoring guidance; Phase 2 design/completion evidence.
-- **Public-surface delta**: One additive constructor/parameter path may be needed on the technically public but explicitly internal `com.lokiscale.bifrost.internal.core.BifrostSessionRunner` so Spring wiring can provide an immutable quota snapshot; existing standalone constructors remain and omit limits. Go treats object absence as current “limit comparison unavailable” semantics, while rejecting any present incomplete object. No supported application API, SPI, Spring bean, or extension point changes. Record the exact constructor delta in the implementation review rather than treating its public modifier as a compatibility promise.
+- **In-repository consumers to update**: Java trace creation/tests and fixture corpus; `loomspan-console-fixtures`; Go parser/manifest/DTO/query/browser tests; React API contracts/components/tests; Playwright fixture server/scenarios; skill-authoring guidance; Phase 2 design/completion evidence.
+- **Public-surface delta**: One additive constructor/parameter path may be needed on the technically public but explicitly internal `com.lokiscale.loomspan.internal.core.LoomspanSessionRunner` so Spring wiring can provide an immutable quota snapshot; existing standalone constructors remain and omit limits. Go treats object absence as current “limit comparison unavailable” semantics, while rejecting any present incomplete object. No supported application API, SPI, Spring bean, or extension point changes. Record the exact constructor delta in the implementation review rather than treating its public modifier as a compatibility promise.
 - **Shim decision**: **No shim.** No protected cross-version trace contract exists, and all current-checkout producers and consumers can change atomically.
 - **Java-to-Go boundary coordination**: **Required.** The consumed NDJSON trace boundary changes. Java writer and fixture generation, Go parsing/indexing, browser DTOs, React contracts, fixtures, tests, and authoring guidance must ship together.
 
@@ -117,9 +117,9 @@ Fix the finalization mismatch and make run-start limits plus already-indexed fra
 
 #### 1. Core-finalization browser interpretation
 **Files**:
-- `bifrost-console/web/src/observability/ActiveExecutionDetail.tsx`
-- `bifrost-console/web/src/observability/ActiveExecutionDetail.test.tsx`
-- `bifrost-console/web/e2e/live-executions.spec.ts`
+- `loomspan-console/web/src/observability/ActiveExecutionDetail.tsx`
+- `loomspan-console/web/src/observability/ActiveExecutionDetail.test.tsx`
+- `loomspan-console/web/e2e/live-executions.spec.ts`
 
 **Changes**:
 - Detect `EXECUTION_OBSERVATION_ENDED` with `applicationTraceUnavailableReason === "CORE_FINALIZATION_FAILED"`; retain `applicationTraceAvailability === "UNAVAILABLE"` as the separate availability fact.
@@ -128,13 +128,13 @@ Fix the finalization mismatch and make run-start limits plus already-indexed fra
 
 #### 2. Run-start quota snapshot in canonical traces
 **Files**:
-- `bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/runtime/trace/DefaultExecutionTraceHandle.java`
-- `bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/BifrostSessionRunner.java`
-- `bifrost-spring-boot-starter/src/main/java/com/lokiscale/bifrost/internal/core/InternalExecutionTraceHandleFactory.java`
+- `loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/runtime/trace/DefaultExecutionTraceHandle.java`
+- `loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/LoomspanSessionRunner.java`
+- `loomspan-spring-boot-starter/src/main/java/com/lokiscale/loomspan/internal/core/InternalExecutionTraceHandleFactory.java`
 - relevant Spring runtime wiring and focused Java tests found through constructor/call-site tracing
-- `bifrost-spring-boot-starter/src/test/java/com/lokiscale/bifrost/internal/runtime/trace/ConsoleTraceFixtureCorpusTest.java`
-- `bifrost-console-fixtures/traces/*.ndjson`
-- `bifrost-console-fixtures/expected/*.json`
+- `loomspan-spring-boot-starter/src/test/java/com/lokiscale/loomspan/internal/runtime/trace/ConsoleTraceFixtureCorpusTest.java`
+- `loomspan-console-fixtures/traces/*.ndjson`
+- `loomspan-console-fixtures/expected/*.json`
 
 **Changes**:
 - Capture an immutable value object containing max skill invocations, tool invocations, linter retries, model calls, and usage units when the execution trace is created.
@@ -144,12 +144,12 @@ Fix the finalization mismatch and make run-start limits plus already-indexed fra
 
 #### 3. Go parser, manifest, and neutral DTOs
 **Files**:
-- `bifrost-console/internal/traceanalysis/parser.go` and validation collaborators
-- `bifrost-console/internal/traceanalysis/model.go`
-- `bifrost-console/internal/traceanalysis/processor.go`
-- `bifrost-console/internal/traceanalysis/dto.go`
-- `bifrost-console/internal/traceanalysis/query_facts.go`
-- `bifrost-console/internal/traceanalysis/query_frames.go`
+- `loomspan-console/internal/traceanalysis/parser.go` and validation collaborators
+- `loomspan-console/internal/traceanalysis/model.go`
+- `loomspan-console/internal/traceanalysis/processor.go`
+- `loomspan-console/internal/traceanalysis/dto.go`
+- `loomspan-console/internal/traceanalysis/query_facts.go`
+- `loomspan-console/internal/traceanalysis/query_frames.go`
 - focused parser, calculation, service, continuation, and fixture-corpus tests
 
 **Changes**:
@@ -161,10 +161,10 @@ Fix the finalization mismatch and make run-start limits plus already-indexed fra
 
 #### 4. Browser adapter and React contracts
 **Files**:
-- `bifrost-console/internal/browserapi/trace_analysis.go`
-- `bifrost-console/internal/browserapi/trace_analysis_test.go`
-- `bifrost-console/web/src/api/contracts.ts`
-- `bifrost-console/web/src/api/client.ts`
+- `loomspan-console/internal/browserapi/trace_analysis.go`
+- `loomspan-console/internal/browserapi/trace_analysis_test.go`
+- `loomspan-console/web/src/api/contracts.ts`
+- `loomspan-console/web/src/api/client.ts`
 
 **Changes**:
 - Map configured limits and enriched frame/failure relationships directly from transport-neutral DTOs.
@@ -175,7 +175,7 @@ Fix the finalization mismatch and make run-start limits plus already-indexed fra
 
 #### Automated Verification
 - [x] Java focused tests fail before and pass after the quota snapshot and finalization fixture corrections.
-- [x] `ConsoleTraceFixtureCorpusTest` regeneration is idempotent and `git diff -- bifrost-console-fixtures` is empty on the second run.
+- [x] `ConsoleTraceFixtureCorpusTest` regeneration is idempotent and `git diff -- loomspan-console-fixtures` is empty on the second run.
 - [x] Go fixture-corpus tests reject malformed quota metadata as `INVALID_ARTIFACT` and return exact valid values.
 - [x] Browser adapter tests prove limits and recorded frame/failure links are mapped without recomputation.
 - [x] `ActiveExecutionDetail` tests use the canonical two-field finalization representation.
@@ -196,10 +196,10 @@ Add workflow-specific entry states and navigation within the existing live detai
 
 #### 1. Failure-focused trace entry (`WF-FE-R1`–`WF-FE-R10`)
 **Files**:
-- `bifrost-console/web/src/observability/ActiveExecutionDetail.tsx`
-- `bifrost-console/web/src/observability/TraceDetail.tsx`
-- `bifrost-console/web/src/observability/TraceExplorer.tsx`
-- `bifrost-console/web/src/observability/traceExplorerState.ts`
+- `loomspan-console/web/src/observability/ActiveExecutionDetail.tsx`
+- `loomspan-console/web/src/observability/TraceDetail.tsx`
+- `loomspan-console/web/src/observability/TraceExplorer.tsx`
+- `loomspan-console/web/src/observability/traceExplorerState.ts`
 - new focused presentation component beside existing `TraceUsage`, `TraceRecords`, and `TraceEvidenceDetail` components only if separation is needed
 - corresponding component tests
 
@@ -213,8 +213,8 @@ Add workflow-specific entry states and navigation within the existing live detai
 
 #### 2. Usage attribution and configured-limit comparison (`WF-UE-R1`–`WF-UE-R13`)
 **Files**:
-- `bifrost-console/web/src/observability/TraceUsage.tsx`
-- `bifrost-console/web/src/observability/TraceExplorer.tsx`
+- `loomspan-console/web/src/observability/TraceUsage.tsx`
+- `loomspan-console/web/src/observability/TraceExplorer.tsx`
 - focused usage component tests
 
 **Changes**:
@@ -227,9 +227,9 @@ Add workflow-specific entry states and navigation within the existing live detai
 
 #### 3. Registered YAML coordination (`WF-SP-R1`–`WF-SP-R14`)
 **Files**:
-- `bifrost-console/web/src/observability/TraceExplorer.tsx`
-- `bifrost-console/web/src/observability/TraceHierarchy.tsx`
-- `bifrost-console/web/src/observability/SkillDetail.tsx`
+- `loomspan-console/web/src/observability/TraceExplorer.tsx`
+- `loomspan-console/web/src/observability/TraceHierarchy.tsx`
+- `loomspan-console/web/src/observability/SkillDetail.tsx`
 - API client use of the existing skill catalog/detail routes
 - focused component tests
 
@@ -275,9 +275,9 @@ Turn the settled lifecycle, authority, content, and resource rules into a tracea
 
 #### 1. Degraded-path ownership matrix
 **Files**:
-- focused tests in `bifrost-console/internal/target`, `internal/live`, `internal/artifact`, `internal/traceanalysis`, and `internal/browserapi`
-- React component/provider tests under `bifrost-console/web/src`
-- `bifrost-console/web/e2e/*.spec.ts`
+- focused tests in `loomspan-console/internal/target`, `internal/live`, `internal/artifact`, `internal/traceanalysis`, and `internal/browserapi`
+- React component/provider tests under `loomspan-console/web/src`
+- `loomspan-console/web/e2e/*.spec.ts`
 
 **Changes**:
 - Map each workflow/requirement ID to unavailable live monitoring, trace not retained, upstream expiry, local artifact expiry, invalid/malformed artifact, gap/uncertainty, replay/subscriber overflow, application restart, target scope change, authentication rejection, core finalization failure, and incomplete timing/usage.
@@ -288,9 +288,9 @@ Turn the settled lifecycle, authority, content, and resource rules into a tracea
 
 #### 2. Application-content and authority-boundary tests
 **Files**:
-- `bifrost-console/internal/browserapi/*_test.go`
-- `bifrost-console/web/src/observability/TraceViews.test.tsx`
-- `bifrost-console/web/e2e/artifact-storage.spec.ts`
+- `loomspan-console/internal/browserapi/*_test.go`
+- `loomspan-console/web/src/observability/TraceViews.test.tsx`
+- `loomspan-console/web/e2e/artifact-storage.spec.ts`
 - skill/live/trace fixtures used by those tests
 
 **Changes**:
@@ -301,8 +301,8 @@ Turn the settled lifecycle, authority, content, and resource rules into a tracea
 
 #### 3. Response and representative trace bounds
 **Files**:
-- `bifrost-console/internal/traceanalysis/limits.go` and tests
-- `bifrost-console/internal/browserapi/trace_analysis_test.go`
+- `loomspan-console/internal/traceanalysis/limits.go` and tests
+- `loomspan-console/internal/browserapi/trace_analysis_test.go`
 - fixture corpus and E2E synthetic trace server
 
 **Changes**:
@@ -313,8 +313,8 @@ Turn the settled lifecycle, authority, content, and resource rules into a tracea
 #### 4. Accessibility-critical browser behavior
 **Files**:
 - existing shell, live, trace, hierarchy, and dialog component tests
-- `bifrost-console/web/e2e/*.spec.ts`
-- `bifrost-console/web/package.json` and lockfile for a compatible pinned `@axe-core/playwright` version verified against the current Playwright package
+- `loomspan-console/web/e2e/*.spec.ts`
+- `loomspan-console/web/package.json` and lockfile for a compatible pinned `@axe-core/playwright` version verified against the current Playwright package
 
 **Changes**:
 - Drive tree Home/End/Arrow navigation and tab Arrow/Home/End behavior in Playwright, not only component tests.
@@ -350,8 +350,8 @@ Extend the existing canonical buildtool into deterministic native release packag
 #### 1. License and short runtime package document
 **Files**:
 - `LICENSE` (canonical MPL 2.0 text)
-- `bifrost-console/release/README.md` (new short runtime-only document)
-- `bifrost-console/README.md`
+- `loomspan-console/release/README.md` (new short runtime-only document)
+- `loomspan-console/README.md`
 
 **Changes**:
 - Commit the exact MPL 2.0 license text declared by the root POM.
@@ -360,15 +360,15 @@ Extend the existing canonical buildtool into deterministic native release packag
 
 #### 2. Buildtool package mode
 **Files**:
-- `bifrost-console/internal/buildtool/main.go`
+- `loomspan-console/internal/buildtool/main.go`
 - `pipeline.go`, `runner.go`, `paths.go`, and new focused packaging implementation/tests under the same package
 
 **Changes**:
 - Add a native-only `package` mode that runs the full clean build, verifies `--expected-version`, identifies the actual `GOOS/GOARCH`, rejects unsupported release targets, and never accepts arbitrary output content.
 - Produce exact names:
-  - `bifrost-console-VERSION-windows-x86_64.zip`
-  - `bifrost-console-VERSION-linux-x86_64.tar.gz`
-  - `bifrost-console-VERSION-macos-arm64.tar.gz`
+  - `loomspan-console-VERSION-windows-x86_64.zip`
+  - `loomspan-console-VERSION-linux-x86_64.tar.gz`
+  - `loomspan-console-VERSION-macos-arm64.tar.gz`
 - Each archive contains one top-level directory with only the native executable (`.exe` on Windows), `LICENSE`, and `README.md`.
 - Normalize archive paths, permissions, ordering, timestamps, gzip headers, and ZIP/TAR metadata for deterministic output. Reject symlinks and unexpected files.
 - Generate a per-run archive SHA-256 sidecar for CI collection; the release aggregation job writes sorted `SHA256SUMS` entries for all three archives and verifies them before publication.
@@ -379,7 +379,7 @@ Extend the existing canonical buildtool into deterministic native release packag
 - buildtool tests/commands and GitHub workflow steps
 
 **Changes**:
-- On each native runner, extract the archive into a fresh temporary directory and run `bifrost-console --version`.
+- On each native runner, extract the archive into a fresh temporary directory and run `loomspan-console --version`.
 - Start the packaged executable with an isolated temporary profile/workspace and `--no-open-browser`, verify loopback startup/static bootstrap without Java, Node, database, or application filesystem access, then shut it down cleanly.
 - On macOS, build/run arm64 on an arm64 hosted runner; do not treat cross-compilation alone as representative validation.
 
@@ -431,7 +431,7 @@ Align authoritative design wording with the approved scope correction and record
 ### Changes Required
 
 #### 1. Accessibility design correction
-**File**: `ai/thoughts/phases/bifrost_console_phase_2_ui_console.md`
+**File**: `ai/thoughts/phases/LOOMSPAN_console_phase_2_ui_console.md`
 
 **Changes**:
 - Remove representative assistive-technology verification from the accessibility acceptance wording.
@@ -439,7 +439,7 @@ Align authoritative design wording with the approved scope correction and record
 - State explicitly that Phase 2 does not require a manual screen-reader/assistive-technology acceptance pass so review does not treat it as deferred evidence.
 
 #### 2. Phase 2 completion-evidence index
-**File**: `ai/thoughts/phases/bifrost_console_phase_2_completion_evidence.md` (new)
+**File**: `ai/thoughts/phases/LOOMSPAN_console_phase_2_completion_evidence.md` (new)
 
 **Changes**:
 - Follow the Phase 1 evidence-index pattern: reference authoritative Phase 2/workflow criteria rather than restating them.
@@ -449,8 +449,8 @@ Align authoritative design wording with the approved scope correction and record
 
 #### 3. Runtime/release and fixture documentation
 **Files**:
-- `bifrost-console/README.md`
-- `bifrost-console-fixtures/README.md`
+- `loomspan-console/README.md`
+- `loomspan-console-fixtures/README.md`
 - relevant roadmap/ticket links only where implementation paths now exist
 
 **Changes**:
@@ -492,20 +492,20 @@ Create a separate PR 15 testing plan with `3_testing_plan.md`. At a high level:
 From the repository root or indicated module:
 
 ```powershell
-.\mvnw.cmd -pl bifrost-spring-boot-starter test
-.\mvnw.cmd -pl bifrost-sample -am test
+.\mvnw.cmd -pl loomspan-spring-boot-starter test
+.\mvnw.cmd -pl loomspan-sample -am test
 .\mvnw.cmd verify
 ```
 
 ```powershell
-cd bifrost-console
+cd loomspan-console
 npm --prefix web run test:e2e
 go test ./...
 go run ./internal/buildtool verify
 go run ./internal/buildtool package --expected-version VERSION
 ```
 
-Run the documented race-detector command from `bifrost-console/AGENTS.md`. Run fixture regeneration twice and require no second diff. CI additionally executes the same checks on clean hosted runners.
+Run the documented race-detector command from `loomspan-console/AGENTS.md`. Run fixture regeneration twice and require no second diff. CI additionally executes the same checks on clean hosted runners.
 
 ### Manual Testing Steps
 
@@ -533,14 +533,14 @@ Run the documented race-detector command from `bifrost-console/AGENTS.md`. Run f
 
 ## References
 
-- Ticket: `ai/thoughts/tickets/bifrost-console-pr-15-diagnostic-workflows.md`
+- Ticket: `ai/thoughts/tickets/loomspan-console-pr-15-diagnostic-workflows.md`
 - Research: `ai/thoughts/research/2026-08-01-diagnostic-workflows-phase-2-hardening.md`
-- Roadmap: `ai/thoughts/phases/2026-07-23-bifrost-console-implementation-roadmap.md:108-129`
-- Phase 2 design: `ai/thoughts/phases/bifrost_console_phase_2_ui_console.md`
-- Approved workflows: `ai/thoughts/phases/bifrost_console_workflows.md`
-- Phase 1 completion evidence pattern: `ai/thoughts/phases/bifrost_console_phase_1_completion_evidence.md`
-- Future MCP trace consumer: `ai/thoughts/tickets/bifrost-console-pr-18-mcp-trace-inspection.md`
-- Future workflow/skill consumer: `ai/thoughts/tickets/bifrost-console-pr-19-debugging-skill.md`
+- Roadmap: `ai/thoughts/phases/2026-07-23-loomspan-console-implementation-roadmap.md:108-129`
+- Phase 2 design: `ai/thoughts/phases/LOOMSPAN_console_phase_2_ui_console.md`
+- Approved workflows: `ai/thoughts/phases/LOOMSPAN_console_workflows.md`
+- Phase 1 completion evidence pattern: `ai/thoughts/phases/LOOMSPAN_console_phase_1_completion_evidence.md`
+- Future MCP trace consumer: `ai/thoughts/tickets/loomspan-console-pr-18-mcp-trace-inspection.md`
+- Future workflow/skill consumer: `ai/thoughts/tickets/loomspan-console-pr-19-debugging-skill.md`
 - Framework compatibility policy: `ai/thoughts/framework-feature-design-lens.md`
 - Skill-authoring guidance: `ai/skill-authoring/traces-and-debugging.md`
 - GitHub Actions documentation consulted through Context7: matrix jobs, hosted OS runners, job-level permissions, and secure pull-request workflow guidance.

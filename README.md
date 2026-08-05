@@ -1,14 +1,14 @@
-# Bifrost
+# Loomspan
 
 A Java Spring Boot–based, agentic AI framework that uses LLM‑driven skills within a Hierarchical Task Network (HTN) architecture.
 
-Bifrost while still an HTN is fundamentally different from traditional HTNs. Instead of relying on rigid, rule‑based planners, Bifrost blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows. 
+Loomspan while still an HTN is fundamentally different from traditional HTNs. Instead of relying on rigid, rule‑based planners, Loomspan blends classical HTN structure with LLM‑powered reasoning, allowing agents to dynamically decompose missions, select skills, and orchestrate complex workflows. 
 
-At its core, Bifrost treats skills as the fundamental building blocks of capability. YAML manifests define every public skill: an LLM-backed skill can reason and call other visible YAML skills, while a mapped YAML skill exposes deterministic application logic implemented by a Java `@SkillMethod`. This creates a flexible planning system that combines LLM reasoning with explicit contracts and ordinary Spring services.
+At its core, Loomspan treats skills as the fundamental building blocks of capability. YAML manifests define every public skill: an LLM-backed skill can reason and call other visible YAML skills, while a mapped YAML skill exposes deterministic application logic implemented by a Java `@SkillMethod`. This creates a flexible planning system that combines LLM reasoning with explicit contracts and ordinary Spring services.
 
 
-## Why Bifrost?
-Most HTN planners (like JSHOP2 or PANDA) rely on static, hand‑coded methods. They’re powerful, but brittle. Bifrost takes a different approach:
+## Why Loomspan?
+Most HTN planners (like JSHOP2 or PANDA) rely on static, hand‑coded methods. They’re powerful, but brittle. Loomspan takes a different approach:
 - LLM‑driven decomposition
 The agent decides how to break down a mission in real time.
 - Skill‑based execution
@@ -24,18 +24,18 @@ The result is a hybrid system that combines the structure of HTNs with the adapt
 
 - Java 21 or newer
 - Maven 3.9 or newer (the included Maven wrapper is recommended)
-- At least one named Bifrost AI connection using the Ollama, OpenAI, Anthropic, or Gemini driver
+- At least one named Loomspan AI connection using the Ollama, OpenAI, Anthropic, or Gemini driver
 
 ## Project Structure
 
-Bifrost currently contains three projects:
+Loomspan currently contains three projects:
 
-- `bifrost-spring-boot-starter`: the core starter.
-- `bifrost-sample`: a sample Spring Boot application.
-- `bifrost-console`: an independent Go module with an embedded React application. Its explicit build uses pinned Go, Node.js, and npm toolchains and is not part of the Maven reactor.
+- `loomspan-spring-boot-starter`: the core starter.
+- `loomspan-sample`: a sample Spring Boot application.
+- `loomspan-console`: an independent Go module with an embedded React application. Its explicit build uses pinned Go, Node.js, and npm toolchains and is not part of the Maven reactor.
 
 Ordinary Java development and `mvn test` do not invoke Console tooling. See
-[`bifrost-console/README.md`](bifrost-console/README.md) for the Console build
+[`loomspan-console/README.md`](loomspan-console/README.md) for the Console build
 and local hot-reload workflow.
 
 ## Getting Started
@@ -44,13 +44,13 @@ Add the starter to your application:
 
 ```xml
 <dependency>
-    <groupId>com.lokiscale.bifrost</groupId>
-    <artifactId>bifrost-spring-boot-starter</artifactId>
+    <groupId>com.lokiscale.loomspan</groupId>
+    <artifactId>loomspan-spring-boot-starter</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
-Configure application-owned AI connections, skill locations, and named Bifrost model aliases in `application.yml`:
+Configure application-owned AI connections, skill locations, and named Loomspan model aliases in `application.yml`:
 
 ```yaml
 server:
@@ -58,9 +58,9 @@ server:
 
 logging:
   level:
-    com.lokiscale.bifrost.sample: INFO
+    com.lokiscale.loomspan.sample: INFO
 
-bifrost:
+loomspan:
   connections:
     ollama-main:
       driver: ollama
@@ -86,16 +86,16 @@ execution-trace:
   persistence: ALWAYS
 ```
 
-Every LLM-backed YAML skill must name one of the entries under `bifrost.models`. Mapped YAML skills do not declare a model. `default-model` is an ordinary model key; it is not selected automatically.
+Every LLM-backed YAML skill must name one of the entries under `loomspan.models`. Mapped YAML skills do not declare a model. `default-model` is an ordinary model key; it is not selected automatically.
 
-A connection is a concrete endpoint/account and chooses a built-in `driver`; a model is a framework alias that chooses a connection and the request-level `provider-model`. Multiple connections may use the same driver. Bifrost does not merge or inherit `spring.ai.*` settings. Keep credentials in environment variables or an external secret store.
+A connection is a concrete endpoint/account and chooses a built-in `driver`; a model is a framework alias that chooses a connection and the request-level `provider-model`. Multiple connections may use the same driver. Loomspan does not merge or inherit `spring.ai.*` settings. Keep credentials in environment variables or an external secret store.
 
 The `openai` driver uses the OpenAI chat-completions protocol and supports custom `base-url`, static `headers`, organization/project IDs, and a custom chat-completions path. Use it only for compatible services. A `base-url` that already ends in `/v1` is combined with `/chat/completions`; an unversioned base URL uses `/v1/chat/completions`. Set `openai.chat-completions-path` for a different route. The `ollama` driver uses Ollama's native `/api/chat` protocol. Anthropic supports its native base URL and version/path options. Gemini supports either API-key mode or Vertex AI mode (`project-id` and `location`, with optional credentials resource), but not both on one connection.
 
 Several model aliases can share one connection while choosing different provider model IDs. An OpenAI-compatible gateway is another named connection using `driver: openai`; it does not need a vendor-specific driver:
 
 ```yaml
-bifrost:
+loomspan:
   connections:
     openrouter:
       driver: openai
@@ -117,14 +117,14 @@ bifrost:
 
 Endpoint compatibility is feature-specific: verify tools, media, structured output, reasoning fields, and usage reporting against the selected service.
 
-By default, Bifrost discovers `classpath:/skills/**/*.yaml`. Add the `.yml` pattern, as above, when your application uses that extension.
+By default, Loomspan discovers `classpath:/skills/**/*.yaml`. Add the `.yml` pattern, as above, when your application uses that extension.
 
 ### Invoking a skill
 
 Inject `SkillTemplate` and invoke a YAML skill with a map (or an object that can be converted to a map). The result is returned as text; use an `output_schema` when the caller needs a predictable JSON shape.
 
 ```java
-import com.lokiscale.bifrost.api.SkillTemplate;
+import com.lokiscale.loomspan.api.SkillTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -143,9 +143,9 @@ public class InvoiceWorkflow {
 }
 ```
 
-The supported starter API is closed to these seven types in `com.lokiscale.bifrost.api`: `SkillTemplate`, `SkillExecutionView`, `SkillExecutionEvent`, `SkillMethod`, `SkillException`, `SkillInputValidationException`, and `SkillInputValidationIssue`. `SkillTemplate` is injectable and easy to mock in application tests, but replacing its framework bean or implementing Bifrost internals is unsupported. There are currently no supported Bifrost-specific SPIs or bean overrides; other starter types are internal before 1.0.
+The supported starter API is closed to these seven types in `com.lokiscale.loomspan.api`: `SkillTemplate`, `SkillExecutionView`, `SkillExecutionEvent`, `SkillMethod`, `SkillException`, `SkillInputValidationException`, and `SkillInputValidationIssue`. `SkillTemplate` is injectable and easy to mock in application tests, but replacing its framework bean or implementing Loomspan internals is unsupported. There are currently no supported Loomspan-specific SPIs or bean overrides; other starter types are internal before 1.0.
 
-For integration testing, configure a real or local protocol-compatible named connection and invoke the YAML skill through `SkillTemplate`. Bifrost's supported-surface integration test follows this pattern: it supplies a local OpenAI-compatible endpoint through `bifrost.connections`, invokes an LLM-backed YAML skill through the public facade, and observes only `SkillExecutionView` values. Tests should not replace internal resolvers, coordinators, chat-client factories, registries, or virtual-file-system beans.
+For integration testing, configure a real or local protocol-compatible named connection and invoke the YAML skill through `SkillTemplate`. Loomspan's supported-surface integration test follows this pattern: it supplies a local OpenAI-compatible endpoint through `loomspan.connections`, invokes an LLM-backed YAML skill through the public facade, and observes only `SkillExecutionView` values. Tests should not replace internal resolvers, coordinators, chat-client factories, registries, or virtual-file-system beans.
 
 Successful observers receive a session ID and immutable, current-version `SkillExecutionEvent` values. These events are intended for trusted development and debugging, may contain application business data, and are not a durable or comprehensively sanitized trace contract. Invalid caller input raises `SkillInputValidationException`, authorization failures remain Spring Security `AccessDeniedException`, and other runtime failures crossing the facade become a safe `SkillException`.
 
@@ -155,7 +155,7 @@ Successful observers receive a session ID and immutable, current-version `SkillE
 
 An LLM-backed YAML skill omits `mapping`, declares a configured `model`, and may use model execution settings. `prompt` supplies private instructions in addition to the public `description`.
 
-The YAML `name` is the skill's single public identity and must match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: use 1-64 characters, start with an ASCII letter or underscore, and then use only ASCII letters, digits, or underscores. Names are case-sensitive and Bifrost does not trim, sanitize, normalize, truncate, or alias them. Descriptive lowerCamelCase names such as `duplicateInvoiceChecker` and `expenseLookup` are the recommended authoring style, though underscores and uppercase starts are also valid. Use the exact YAML name in `SkillTemplate`, `allowed_skills`, and property-level `evidence` expressions.
+The YAML `name` is the skill's single public identity and must match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`: use 1-64 characters, start with an ASCII letter or underscore, and then use only ASCII letters, digits, or underscores. Names are case-sensitive and Loomspan does not trim, sanitize, normalize, truncate, or alias them. Descriptive lowerCamelCase names such as `duplicateInvoiceChecker` and `expenseLookup` are the recommended authoring style, though underscores and uppercase starts are also valid. Use the exact YAML name in `SkillTemplate`, `allowed_skills`, and property-level `evidence` expressions.
 
 This public-name rule does not apply to `mapping.target_id`. That field is internal mapping metadata and intentionally uses separate `beanName#methodName` syntax.
 
@@ -215,9 +215,9 @@ For attachment inputs, declare `type: attachment`, a `media_type` (`image`, `pdf
 
 ### Mapping a YAML skill to Java
 
-YAML manifest `name` is the only public Bifrost skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped wrapper must declare `name`, `description`, and a nonblank `mapping.target_id`; its only optional field is `rbac_roles`.
+YAML manifest `name` is the only public Loomspan skill identity. Use `mapping.target_id` to connect that public YAML skill to an internal Java implementation target identified by `beanName#methodName`. A mapped wrapper must declare `name`, `description`, and a nonblank `mapping.target_id`; its only optional field is `rbac_roles`.
 
-Declaring `mapping`, even as `null` or an empty block, selects mapped validation and requires a nonblank target. Mapped input and output behavior is owned by the Java target: Bifrost publishes its reflected input contract, and a different public shape requires a separate Java adapter target. Model/runtime fields such as `model`, `prompt`, schemas, planning, tool allowlists, linting, retries, and evidence annotations are rejected on the mapped child. An LLM parent may still list the child in its own `allowed_skills` and property-level `evidence` expressions.
+Declaring `mapping`, even as `null` or an empty block, selects mapped validation and requires a nonblank target. Mapped input and output behavior is owned by the Java target: Loomspan publishes its reflected input contract, and a different public shape requires a separate Java adapter target. Model/runtime fields such as `model`, `prompt`, schemas, planning, tool allowlists, linting, retries, and evidence annotations are rejected on the mapped child. An LLM parent may still list the child in its own `allowed_skills` and property-level `evidence` expressions.
 
 The public YAML name may equal the Java method name because public skills and implementation targets use separate namespaces. Multiple mapped YAML skills may also share one Java target. Within a single Spring bean, however, annotated method names must be unique: overloaded `@SkillMethod`s would produce the same `beanName#methodName` target ID and fail startup.
 
@@ -233,7 +233,7 @@ mapping:
 Use `@SkillMethod` when the implementation should run deterministic Java logic. It registers an internal target, not a public capability or alias. Expose it through a mapped YAML manifest before application code can invoke it or another YAML skill can list it in `allowed_skills`; both surfaces accept YAML names only.
 
 ```java
-import com.lokiscale.bifrost.api.SkillMethod;
+import com.lokiscale.loomspan.api.SkillMethod;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -253,10 +253,10 @@ public class ExpenseService {
 
 ## Operations and limits
 
-`bifrost.session` provides execution safeguards. Defaults are a 60-second mission timeout, maximum depth 32, 64 skill invocations, 128 tool invocations, 32 linter retries, 64 model calls, and 200,000 usage units. Attachments default to a 20 MB maximum size.
+`loomspan.session` provides execution safeguards. Defaults are a 60-second mission timeout, maximum depth 32, 64 skill invocations, 128 tool invocations, 32 linter retries, 64 model calls, and 200,000 usage units. Attachments default to a 20 MB maximum size.
 
 ```yaml
-bifrost:
+loomspan:
   session:
     mission-timeout: 60s
     max-depth: 32
@@ -273,31 +273,31 @@ execution-trace:
   persistence: ONERROR # NEVER, ONERROR, or ALWAYS
 ```
 
-When Micrometer is on the application classpath, Bifrost records usage metrics automatically. Execution traces and the `SkillTemplate` observer callback can be used to inspect a completed skill execution.
+When Micrometer is on the application classpath, Loomspan records usage metrics automatically. Execution traces and the `SkillTemplate` observer callback can be used to inspect a completed skill execution.
 
 ### Opt-in Console observability REST API
 
 Servlet applications can expose the read-only operator API under
-`/_bifrost/observability/v1/**`. It is disabled by default and is not exposed
+`/_loomspan/observability/v1/**`. It is disabled by default and is not exposed
 through Actuator or CORS. Use HTTPS whenever the listener is reachable beyond a
 trusted local boundary, generate at least 32 random bytes, encode them as
 unpadded base64url, and keep the resulting key in external configuration:
 
 ```yaml
-bifrost:
+loomspan:
   observability:
     enabled: true
     auth:
-      api-key: ${BIFROST_OBSERVABILITY_API_KEY}
+      api-key: ${LOOMSPAN_OBSERVABILITY_API_KEY}
     completion-grace-ttl: 15m
     trace-catalog-metadata-ttl: 24h
 ```
 
 The key must be 32–512 printable, non-whitespace ASCII characters and is loaded
 at startup; rotate it by restarting the application. Every request must present
-exactly one `X-Bifrost-Api-Key` header. Authenticated responses use
+exactly one `X-loomspan-Api-Key` header. Authenticated responses use
 `Cache-Control: no-store` and identify the current process with
-`X-Bifrost-Instance-Id`.
+`X-loomspan-Instance-Id`.
 
 The current routes are `instance`, `skills`, `skills/{registeredName}`,
 `active-executions`, `active-executions/{sessionId}`, `activity`, `traces`,
@@ -306,16 +306,16 @@ artifact route accepts only GET with no query, range, or conditional headers
 and an absent, wildcard, or NDJSON-compatible `Accept` header:
 
 ```bash
-curl -H "X-Bifrost-Api-Key: $BIFROST_OBSERVABILITY_API_KEY" \
+curl -H "X-loomspan-Api-Key: $LOOMSPAN_OBSERVABILITY_API_KEY" \
   -H "Accept: application/x-ndjson" \
-  -OJ "http://localhost:8081/_bifrost/observability/v1/traces/$TRACE_ID/artifact"
+  -OJ "http://localhost:8081/_loomspan/observability/v1/traces/$TRACE_ID/artifact"
 ```
 
 A successful download is
 `application/x-ndjson; charset=utf-8`, has the exact cataloged
 `Content-Length`, and uses a standards-encoded attachment disposition whose
 `filename`/`filename*` values represent
-`bifrost-trace-<traceId>.ndjson`. Clients should use the decoded attachment
+`loomspan-trace-<traceId>.ndjson`. Clients should use the decoded attachment
 filename rather than comparing the serialized header text.
 The process admits eight downloads independently from the 16 SSE subscriptions;
 a ninth receives `429/LIMIT_EXCEEDED` without queuing. Transfers time out after
@@ -323,29 +323,29 @@ five minutes. A transfer admitted before expiration may finish, but new
 requests for unknown, expired, deleted, or raced resources receive
 `404/NOT_FOUND`.
 
-The body is the exact finalized diagnostic file: Bifrost does not parse,
+The body is the exact finalized diagnostic file: Loomspan does not parse,
 rewrite, normalize, redact, compress, or buffer it in full. Authenticated traces
 may contain application business data and paths already recorded by canonical
 diagnostics. Ordinary DTOs, lookup identifiers, response headers, and safe
 download filenames never expose or derive from the internal artifact path.
 
 Applications using Spring Security must let the reserved namespace reach
-Bifrost's filter while retaining their normal rules elsewhere. Bifrost does not
+loomspan's filter while retaining their normal rules elsewhere. Loomspan does not
 create or reorder the application's `SecurityFilterChain`:
 
 ```java
 @Bean
 SecurityFilterChain applicationSecurity(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(requests -> requests
-            .requestMatchers("/_bifrost/observability/v1/**").permitAll()
+            .requestMatchers("/_loomspan/observability/v1/**").permitAll()
             .anyRequest().authenticated())
         .build();
 }
 ```
 
-The `permitAll` rule does not make the API unauthenticated; the Bifrost key is
+The `permitAll` rule does not make the API unauthenticated; the Loomspan key is
 still mandatory. A generic proxy or host-security `401`/`403` occurs before the
-adapter and is distinct from the adapter's `BIFROST_API_KEY_REJECTED` problem.
+adapter and is distinct from the adapter's `LOOMSPAN_API_KEY_REJECTED` problem.
 The normal servlet context path applies to every route. If startup detects an
 invalid configuration or an overlapping application mapping, it logs a
 sanitized diagnostic and leaves the entire optional adapter, observation, and
@@ -375,13 +375,13 @@ setx OPENAI_API_KEY "sk-..."
 From the repository root:
 
 ```bash
-./mvnw -pl bifrost-sample spring-boot:run
+./mvnw -pl loomspan-sample spring-boot:run
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\mvnw.cmd -pl bifrost-sample spring-boot:run
+.\mvnw.cmd -pl loomspan-sample spring-boot:run
 ```
 
-The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures named Ollama and OpenAI connections in [application.yml](/C:/opendev/code/bifrost/bifrost-sample/src/main/resources/application.yml).
+The sample app loads skills from `classpath:/skills/**/*.yml` and `classpath:/skills/**/*.yaml` and configures named Ollama and OpenAI connections in [application.yml](/C:/opendev/code/loomspan/loomspan-sample/src/main/resources/application.yml).
