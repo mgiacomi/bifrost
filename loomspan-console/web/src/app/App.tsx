@@ -13,34 +13,54 @@ export function App({ metadata }: { metadata: BuildMetadata }) {
   const session = useBrowserSession();
   return (
     <div className="app-frame">
-      <header className="shell-header">
-        <div>
-          <p className="eyebrow">Local developer tools</p>
-          <h1>loomspan Console</h1>
+      <header className="app-bar">
+        <div className="app-bar-inner">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true">ls</span>
+            <span className="brand-titles">
+              <h1>loomspan Console</h1>
+              <span className="brand-tagline">Local developer tools</span>
+            </span>
+          </div>
+          {session.status === "paired" && (
+            <nav className="global-nav" aria-label="Console">
+              <NavLink to="/" end>Overview</NavLink>
+              <NavLink to="/target">Target</NavLink>
+              <NavLink to="/skills">Skills</NavLink>
+              <NavLink to="/active-executions">Active Executions</NavLink>
+              <NavLink to="/traces">Traces</NavLink>
+              <NavLink to="/trace-storage">Trace Storage</NavLink>
+            </nav>
+          )}
+          <div className="app-bar-actions">
+            <ThemeSelect />
+          </div>
         </div>
-        <ThemeSelect />
       </header>
       <main className="shell-main" id="main-content">
         {session.status === "paired" ? (
-          <>
-            <p className="workspace-path">
-              Verified workspace <code>{session.bootstrap.workspacePath}</code>
-            </p>
-            <TargetProvider initial={session.bootstrap.target}>
-              <ObservabilityProvider>
-                <ActivityProvider>
-                  <ConsoleWorkspace />
-                </ActivityProvider>
-              </ObservabilityProvider>
-            </TargetProvider>
-          </>
+          <TargetProvider initial={session.bootstrap.target}>
+            <ObservabilityProvider>
+              <ActivityProvider>
+                <ConsoleWorkspace />
+              </ActivityProvider>
+            </ObservabilityProvider>
+          </TargetProvider>
         ) : (
           <PairingPage />
         )}
       </main>
       <footer className="shell-footer">
-        <span>Build version</span>
-        <code data-testid="build-version">{metadata.version}</code>
+        {session.status === "paired" ? (
+          <span className="workspace-path">
+            Verified workspace <code>{session.bootstrap.workspacePath}</code>
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className="build-meta">
+          Build <code data-testid="build-version">{metadata.version}</code>
+        </span>
       </footer>
     </div>
   );
@@ -61,27 +81,47 @@ function ConsoleWorkspace() {
   return (
     <>
       <aside className="global-context" aria-label="Current target and live context">
-        <strong>{target.address ?? "No target selected"}</strong>
-        <span>Connection: {target.status.targetConnection}</span>
-        <span>Authentication: {target.status.targetAuthentication}</span>
-        <span>Compatibility: {target.status.javaGoCompatibility}</span>
-        <span>Runtime: {target.status.runtimeIdentity}</span>
-        <span>Instance: {status?.instanceId ?? target.status.instanceId ?? "Not established"}</span>
-        {target.unencrypted && <strong>Unencrypted target connection</strong>}
-        <NavLink to="/active-executions">
+        <strong className="context-address">{target.address ?? "No target selected"}</strong>
+        <ContextChip label="Connection" value={target.status.targetConnection} />
+        <ContextChip label="Authentication" value={target.status.targetAuthentication} />
+        <ContextChip label="Compatibility" value={target.status.javaGoCompatibility} />
+        <ContextChip label="Runtime" value={target.status.runtimeIdentity} />
+        <ContextChip
+          label="Instance"
+          value={status?.instanceId ?? target.status.instanceId ?? "Not established"}
+        />
+        {target.unencrypted && (
+          <strong className="context-warning">Unencrypted target connection</strong>
+        )}
+        <NavLink className="context-link" to="/active-executions">
           Active executions: {status?.activeExecutionCount ?? "Unavailable"}
         </NavLink>
       </aside>
-      <nav className="global-nav" aria-label="Console">
-        <NavLink to="/" end>Overview</NavLink>
-        <NavLink to="/target">Target</NavLink>
-        <NavLink to="/skills">Skills</NavLink>
-        <NavLink to="/active-executions">Active Executions</NavLink>
-        <NavLink to="/traces">Traces</NavLink>
-        <NavLink to="/trace-storage">Trace Storage</NavLink>
-      </nav>
       <Outlet />
     </>
+  );
+}
+
+const chipTones: Record<string, string> = {
+  ESTABLISHED: "positive",
+  COMPATIBLE: "positive",
+  REACHABLE: "positive",
+  AVAILABLE: "positive",
+  SELECTED: "positive",
+  INCOMPATIBLE: "negative",
+  BLOCKED: "negative",
+  UNAVAILABLE: "negative",
+  REQUIRED: "caution",
+  UNKNOWN: "caution",
+  NOT_CHECKED: "caution",
+};
+
+function ContextChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="context-chip" data-tone={chipTones[value] ?? "neutral"}>
+      <span className="context-chip-label">{label}</span>
+      {value}
+    </span>
   );
 }
 

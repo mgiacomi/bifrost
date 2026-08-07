@@ -34,8 +34,13 @@ func TestProfileLockExcludesUntilRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(path); err == nil {
+	_, err = Open(path)
+	if err == nil {
 		t.Fatal("second profile lock was admitted")
+	}
+	if !strings.Contains(err.Error(), first.Directory) ||
+		!strings.Contains(err.Error(), filepath.Join(first.Directory, LockFileName)) {
+		t.Fatalf("contention error omits the contended paths: %v", err)
 	}
 	if err := first.Close(); err != nil {
 		t.Fatal(err)

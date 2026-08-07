@@ -150,7 +150,8 @@ func TestWorkLockExcludesAnotherProcessUntilRelease(t *testing.T) {
 	if err != nil || line != "locked\n" {
 		t.Fatalf("helper readiness=%q err=%v", line, err)
 	}
-	if _, err := Open(path); err == nil {
+	_, contention := Open(path)
+	if contention == nil {
 		t.Fatal("work lock admitted another process")
 	}
 	_ = stdin.Close()
@@ -161,7 +162,11 @@ func TestWorkLockExcludesAnotherProcessUntilRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened.Close()
+	defer reopened.Close()
+	if !strings.Contains(contention.Error(), reopened.Root) ||
+		!strings.Contains(contention.Error(), filepath.Join(reopened.Root, LockName)) {
+		t.Fatalf("contention error omits the contended paths: %v", contention)
+	}
 }
 
 func TestWorkLockHelperProcess(t *testing.T) {

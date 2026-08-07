@@ -36,9 +36,10 @@ func Open(configSelection string) (*Profile, error) {
 	if err := verifyProtectedDirectory(directory); err != nil {
 		return nil, fmt.Errorf("profile protection: %w", err)
 	}
-	lock, err := acquireFileLock(filepath.Join(directory, LockFileName))
+	lockPath := filepath.Join(directory, LockFileName)
+	lock, err := acquireFileLock(lockPath)
 	if err != nil {
-		return nil, fmt.Errorf("profile is already owned or cannot be locked: %w", err)
+		return nil, fmt.Errorf("profile is already owned by another loomspan Console process or cannot be locked: profile directory %s: lock file %s: %w", directory, lockPath, err)
 	}
 	profile := &Profile{Directory: directory, ConfigPath: configPath, lock: lock}
 	if err := profile.loadOrCreateConfig(); err != nil {

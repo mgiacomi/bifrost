@@ -63,9 +63,10 @@ func Open(selection string) (*Workspace, error) {
 	} else if err := verifyMarker(root); err != nil {
 		return nil, err
 	}
-	lock, err := acquireFileLock(filepath.Join(root, LockName))
+	lockPath := filepath.Join(root, LockName)
+	lock, err := acquireFileLock(lockPath)
 	if err != nil {
-		return nil, fmt.Errorf("work directory is already owned or cannot be locked: %w", err)
+		return nil, fmt.Errorf("work directory is already owned by another loomspan Console process or cannot be locked: work directory %s: lock file %s: %w", root, lockPath, err)
 	}
 	workspace := &Workspace{Root: root, Transient: filepath.Join(root, TransientName), lock: lock}
 	if err := workspace.cleanAndCapture(); err != nil {
