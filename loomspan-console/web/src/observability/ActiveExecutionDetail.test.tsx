@@ -107,6 +107,107 @@ test("active execution detail renders facts when loaded", async () => {
   expect(screen.getAllByText("EXECUTING").length).toBeGreaterThan(0);
 });
 
+test("usage states each observed counter beside its configured limit and proportion", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue(execution);
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(
+      screen.getByRole("table", { name: "Observed usage against configured limits" }),
+    ).toBeInTheDocument();
+  });
+  expect(screen.getByRole("row", { name: "Skill invocations 1 10 10%" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: "Tool invocations 2 20 10%" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: "Model calls 3 30 10%" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: "Usage units 150 1000 15%" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: "Prompt units 100" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: "Completion units 50" })).toBeInTheDocument();
+});
+
+test("usage tables adopt the shared data-table presentation and scroll region", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue(execution);
+  render(<ActiveExecutionDetailView />);
+  const limits = await vi.waitFor(() =>
+    screen.getByRole("table", { name: "Observed usage against configured limits" }),
+  );
+  const units = screen.getByRole("table", { name: "Observed usage units" });
+  for (const table of [limits, units]) {
+    expect(table).toHaveClass("observability-table");
+    expect(table).toHaveClass("usage-table");
+    expect(table.closest(".observability-table-region")).not.toBeNull();
+  }
+  expect(screen.getByRole("region", { name: "Usage against configured limits" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Usage unit totals" })).toBeInTheDocument();
+});
+
+test("usage reports an undefined proportion rather than dividing by a zero limit", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue({
+    ...execution,
+    configuredLimits: { ...execution.configuredLimits, maxLinterRetries: 0 },
+  });
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getByRole("row", { name: "Linter retries 0 0 undefined" })).toBeInTheDocument();
+  });
+  expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
+});
+
+test("usage keeps inexact measurement visible instead of listing response counters as facts", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue(execution);
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(
+      screen.getByText(
+        "These counts are not exact. Model responses measured: 3; heuristic: 1; usage unavailable: 0.",
+      ),
+    ).toBeVisible();
+  });
+});
+
+test("usage confirms exact measurement without claiming responses that were never measured", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue({
+    ...execution,
+    usage: { ...execution.usage, exactModelResponses: 3, heuristicModelResponses: 0 },
+  });
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(
+      screen.getByText("All model responses reported exact usage (3 measured)."),
+    ).toBeVisible();
+  });
+});
+
+test("usage does not assert measurement quality before any response is measured", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue({
+    ...execution,
+    usage: {
+      ...execution.usage,
+      exactModelResponses: 0,
+      heuristicModelResponses: 0,
+      unavailableModelResponses: 0,
+    },
+  });
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getByText("No model responses have been measured yet.")).toBeVisible();
+  });
+  expect(screen.queryByText(/reported exact usage/)).toBeNull();
+  expect(screen.queryByText(/not exact/)).toBeNull();
+});
+
+test("active execution detail states elapsed and identity once and collapses diagnostics", async () => {
+  vi.mocked(getActiveExecutionDetail).mockResolvedValue(execution);
+  render(<ActiveExecutionDetailView />);
+  await vi.waitFor(() => {
+    expect(screen.getAllByText("session-1").length).toBeGreaterThan(0);
+  });
+  expect(screen.getAllByText("session-1")).toHaveLength(1);
+  expect(screen.getAllByText("trace-1")).toHaveLength(1);
+  expect(screen.getByText("5m 0s")).toBeVisible();
+  expect(screen.queryByText("300000")).toBeNull();
+  expect(screen.getByText("Snapshot diagnostics")).toBeVisible();
+  expect(screen.getByText("42")).not.toBeVisible();
+});
+
 test("active execution detail renders loading state", () => {
   vi.mocked(getActiveExecutionDetail).mockReturnValue(new Promise(() => {}));
   render(<ActiveExecutionDetailView />);

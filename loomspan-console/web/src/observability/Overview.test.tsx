@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { InstanceStatus, SkillSummary } from "../api/contracts";
@@ -60,8 +60,8 @@ vi.mock("../activity/ActivityProvider", () => ({
 }));
 
 vi.mock("react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
+  Link: ({ children, to, ...rest }: { children: ReactNode; to: string }) => (
+    <a href={to} {...rest}>{children}</a>
   ),
   useLocation: () => ({ state: routerView.state }),
 }));
@@ -94,25 +94,55 @@ beforeEach(() => {
   };
 });
 
-test("overview renders instance facts when status is available", () => {
+test("overview does not repeat facts the global context banner already states", () => {
   observabilityView.current.instance.status = instanceStatus;
   render(<ObservabilityOverview />);
-  expect(screen.getByText("11111111-1111-4111-8111-111111111111")).toBeInTheDocument();
-  expect(screen.getByText("3")).toBeInTheDocument();
-  expect(screen.getByText("1")).toBeInTheDocument();
-  expect(screen.getByText("5")).toBeInTheDocument();
-  expect(screen.getByText("PERSISTENT")).toBeInTheDocument();
-  expect(screen.getByText("PT2M")).toBeInTheDocument();
-  expect(screen.getByText("PT168H")).toBeInTheDocument();
-  expect(screen.getByText("https://application.example")).toBeInTheDocument();
+  expect(screen.queryByText("11111111-1111-4111-8111-111111111111")).not.toBeInTheDocument();
+  expect(screen.queryByText("https://application.example")).not.toBeInTheDocument();
+  expect(screen.queryByText("REACHABLE")).not.toBeInTheDocument();
+  expect(screen.queryByText("ESTABLISHED")).not.toBeInTheDocument();
 });
 
-test("overview renders navigation links to catalog views", () => {
+test("overview reports instance observation time with the control that refreshes it", () => {
   observabilityView.current.instance.status = instanceStatus;
   render(<ObservabilityOverview />);
-  expect(screen.getByText("Skill Catalog")).toBeInTheDocument();
-  expect(screen.getByText("Active Executions")).toBeInTheDocument();
-  expect(screen.getByText("Trace Catalog")).toBeInTheDocument();
+  expect(screen.getByText("Observed 2026-07-27T00:00:00Z")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Refresh" })).toBeVisible();
+});
+
+test("overview states catalog counts on the links that navigate to them", () => {
+  observabilityView.current.instance.status = instanceStatus;
+  render(<ObservabilityOverview />);
+  expect(screen.getByRole("link", { name: "Skill Catalog, 3 registered skills" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Active Executions, 1 active execution" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Trace Catalog, 5 cataloged traces" })).toBeVisible();
+});
+
+test("overview collapses static configuration facts behind a disclosure", () => {
+  observabilityView.current.instance.status = instanceStatus;
+  render(<ObservabilityOverview />);
+  const disclosure = screen.getByText("Instance configuration");
+  expect(disclosure).toBeVisible();
+  for (const value of ["0.1.0-SNAPSHOT", "PERSISTENT", "PT2M", "PT168H"]) {
+    expect(screen.getByText(value)).not.toBeVisible();
+  }
+  expect(
+    screen.getByText(
+      "Catalog metadata TTL and core file retention are independent. Neither provides cross-restart history.",
+    ),
+  ).not.toBeVisible();
+
+  fireEvent.click(disclosure);
+
+  for (const value of ["0.1.0-SNAPSHOT", "PERSISTENT", "PT2M", "PT168H"]) {
+    expect(screen.getByText(value)).toBeVisible();
+  }
+});
+
+test("overview keeps unavailable live monitoring visible rather than collapsed", () => {
+  observabilityView.current.instance.status = { ...instanceStatus, liveMonitoringAvailable: false };
+  render(<ObservabilityOverview />);
+  expect(screen.getByText("Live monitoring is unavailable for this instance.")).toBeVisible();
 });
 
 test("overview renders error message when instance load fails", () => {

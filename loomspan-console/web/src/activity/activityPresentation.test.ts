@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { presentActivity, formatTimestamp, formatElapsed } from "./activityPresentation";
+import { presentActivity, formatDateTime, formatTimestamp, formatElapsed } from "./activityPresentation";
 import type { Activity, ActivityKind } from "../api/contracts";
 import { ACTIVITY_KIND_LABELS } from "../api/contracts";
 
@@ -104,6 +104,22 @@ describe("formatTimestamp", () => {
 
   it("returns input on invalid timestamp", () => {
     expect(formatTimestamp("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("formats a local calendar date and time with zero padding", () => {
+    const local = new Date(2026, 7, 8, 5, 43, 25);
+    expect(formatDateTime(local.toISOString())).toBe("08/08/2026 05:43:25");
+  });
+
+  it("pads a single-digit month, day, and time", () => {
+    const local = new Date(2026, 0, 2, 3, 4, 5);
+    expect(formatDateTime(local.toISOString())).toBe("01/02/2026 03:04:05");
+  });
+
+  it("returns input on invalid timestamp", () => {
+    expect(formatDateTime("not-a-date")).toBe("not-a-date");
   });
 });
 

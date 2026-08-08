@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ActiveExecution, Activity } from "../api/contracts";
-import { presentActivity } from "./activityPresentation";
+import { formatDateTime, presentActivity } from "./activityPresentation";
 
 type CurrentExecutionSummaryProps = {
   execution: ActiveExecution | null;
@@ -81,23 +81,27 @@ export function CurrentExecutionSummary({
         )}
       </div>
       <dl className="summary-facts">
-        <div className="summary-fact">
+        <div className="summary-fact identifier">
           <dt>Session</dt>
           <dd>{sessionId}</dd>
         </div>
-        <div className="summary-fact">
+        <div className="summary-fact identifier">
           <dt>Trace</dt>
           <dd>{traceId}</dd>
         </div>
         {execution && (
           <>
             <div className="summary-fact">
+              <dt>Entry skill</dt>
+              <dd>{execution.entrySkill}</dd>
+            </div>
+            <div className="summary-fact">
               <dt>Phase</dt>
               <dd>{execution.phase}</dd>
             </div>
             <div className="summary-fact">
               <dt>Started</dt>
-              <dd>{execution.startedAt}</dd>
+              <dd>{formatDateTime(execution.startedAt)}</dd>
             </div>
             <div className="summary-fact">
               <dt>Elapsed</dt>
@@ -122,11 +126,12 @@ export function CurrentExecutionSummary({
         {observedAt
           ? `Snapshot observed at ${observedAt}.`
           : "Snapshot observation time is unavailable."}
+        {execution ? ` Execution updated at ${execution.updatedAt}.` : ""}
         {" "}
         Live updates are {connected ? "connected" : "disconnected"}.
       </p>
       {execution && <p className="summary-latest-summary">{execution.summary}</p>}
-      {latest && (
+      {latest && latest.summary !== execution?.summary && (
         <p className="summary-latest-summary" aria-label="Latest activity summary">
           Latest activity: {latest.summary}
         </p>

@@ -16,6 +16,7 @@ import { useOptionalActivity } from "../activity/ActivityProvider";
 import { ActivityNarrative } from "../activity/ActivityNarrative";
 import { ActivePath } from "../activity/ActivePath";
 import { CurrentExecutionSummary } from "../activity/CurrentExecutionSummary";
+import { ActiveExecutionUsage } from "./ActiveExecutionUsage";
 import { scopeBoundPath } from "./scope";
 import { useOptionalObservability } from "./ObservabilityProvider";
 import { useBrowserSession } from "../security/BrowserSessionProvider";
@@ -65,9 +66,6 @@ export function ActiveExecutionDetailView() {
   const traceInspectionPath = traceID
     ? `${scopeBoundPath(`/traces/${encodeURIComponent(traceID)}`, traceScopeID)}${terminalFailureID ? `&failureId=${encodeURIComponent(terminalFailureID)}` : ""}`
     : null;
-  const displayedStatus = terminalActivity?.executionStatus ??
-    (observationEnded ? "OBSERVATION ENDED" : selectedExecution?.status);
-
   useEffect(() => {
     heading.current?.focus();
   }, []);
@@ -222,45 +220,18 @@ export function ActiveExecutionDetailView() {
 
           {selectedExecution && (
             <>
-          <h3>{observationEnded ? "Last active snapshot" : "Active snapshot"}</h3>
-          <dl className="status-grid">
-            <div><dt>Session ID</dt><dd>{selectedExecution.sessionId}</dd></div>
-            <div><dt>Trace ID</dt><dd>{selectedExecution.traceId}</dd></div>
-            <div><dt>Entry skill</dt><dd>{selectedExecution.entrySkill}</dd></div>
-            <div><dt>Status</dt><dd>{displayedStatus}</dd></div>
-            <div><dt>Phase</dt><dd>{selectedExecution.phase}</dd></div>
-            <div><dt>Summary</dt><dd>{selectedExecution.summary}</dd></div>
-            <div><dt>Started at</dt><dd>{selectedExecution.startedAt}</dd></div>
-            <div><dt>Updated at</dt><dd>{selectedExecution.updatedAt}</dd></div>
-            <div><dt>Elapsed (ms)</dt><dd>{String(selectedExecution.elapsedMillis)}</dd></div>
-            <div><dt>Last canonical sequence</dt><dd>{String(selectedExecution.lastCanonicalSequence)}</dd></div>
-            <div><dt>Total frame depth</dt><dd>{String(selectedExecution.totalFrameDepth)}</dd></div>
-            <div><dt>Active path truncated</dt><dd>{String(selectedExecution.activePathTruncated)}</dd></div>
-          </dl>
+              <ActiveExecutionUsage
+                usage={selectedExecution.usage}
+                limits={selectedExecution.configuredLimits}
+              />
 
-          <h3>Usage</h3>
-          <dl className="status-grid">
-            <div><dt>Skill invocations</dt><dd>{String(selectedExecution.usage.skillInvocations)}</dd></div>
-            <div><dt>Tool invocations</dt><dd>{String(selectedExecution.usage.toolInvocations)}</dd></div>
-            <div><dt>Linter retries</dt><dd>{String(selectedExecution.usage.linterRetries)}</dd></div>
-            <div><dt>Model calls</dt><dd>{String(selectedExecution.usage.modelCalls)}</dd></div>
-            <div><dt>Prompt units</dt><dd>{String(selectedExecution.usage.promptUnits)}</dd></div>
-            <div><dt>Completion units</dt><dd>{String(selectedExecution.usage.completionUnits)}</dd></div>
-            <div><dt>Usage units</dt><dd>{String(selectedExecution.usage.usageUnits)}</dd></div>
-            <div><dt>Exact model responses</dt><dd>{String(selectedExecution.usage.exactModelResponses)}</dd></div>
-            <div><dt>Heuristic model responses</dt><dd>{String(selectedExecution.usage.heuristicModelResponses)}</dd></div>
-            <div><dt>Unavailable model responses</dt><dd>{String(selectedExecution.usage.unavailableModelResponses)}</dd></div>
-          </dl>
-
-          <h3>Configured Limits</h3>
-          <dl className="status-grid">
-            <div><dt>Max skill invocations</dt><dd>{String(selectedExecution.configuredLimits.maxSkillInvocations)}</dd></div>
-            <div><dt>Max tool invocations</dt><dd>{String(selectedExecution.configuredLimits.maxToolInvocations)}</dd></div>
-            <div><dt>Max linter retries</dt><dd>{String(selectedExecution.configuredLimits.maxLinterRetries)}</dd></div>
-            <div><dt>Max model calls</dt><dd>{String(selectedExecution.configuredLimits.maxModelCalls)}</dd></div>
-            <div><dt>Max usage units</dt><dd>{String(selectedExecution.configuredLimits.maxUsageUnits)}</dd></div>
-          </dl>
-
+              <details className="fact-disclosure">
+                <summary>Snapshot diagnostics</summary>
+                <dl className="status-grid" aria-label="Snapshot diagnostics">
+                  <div><dt>Last canonical sequence</dt><dd>{String(selectedExecution.lastCanonicalSequence)}</dd></div>
+                  <div><dt>Total frame depth</dt><dd>{String(selectedExecution.totalFrameDepth)}</dd></div>
+                </dl>
+              </details>
             </>
           )}
         </>

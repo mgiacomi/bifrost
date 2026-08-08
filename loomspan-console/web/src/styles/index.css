@@ -313,6 +313,46 @@ input,
   font-size: 0.8125rem;
 }
 
+.overview-refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.overview-observed {
+  color: var(--bf-muted);
+  font-family: var(--bf-mono);
+  font-size: 0.75rem;
+}
+
+.fact-disclosure {
+  margin-top: 1rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--bf-border);
+  border-radius: var(--bf-radius);
+  background: var(--bf-surface);
+  font-size: 0.8125rem;
+}
+
+.fact-disclosure summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fact-disclosure .status-grid {
+  margin-bottom: 0;
+}
+
+.usage-quality-notice {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--bf-warning) 45%, var(--bf-border));
+  border-left: 0.2rem solid var(--bf-warning);
+  border-radius: var(--bf-radius);
+  font-size: 0.8125rem;
+}
+
 .target-form {
   display: grid;
   gap: 0.75rem;
@@ -724,6 +764,9 @@ input,
 }
 
 .observability-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   padding: 0.4rem 0.7rem;
   border: 1px solid var(--bf-border);
   border-radius: var(--bf-radius);
@@ -732,6 +775,16 @@ input,
   text-decoration: none;
   font-size: 0.8125rem;
   font-weight: 600;
+}
+
+.observability-nav-count {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--bf-border);
+  border-radius: 999px;
+  background: var(--bf-sunken);
+  color: var(--bf-muted);
+  font-family: var(--bf-mono);
+  font-size: 0.75rem;
 }
 
 .observability-nav a:hover {
@@ -786,6 +839,20 @@ input,
   letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.observability-table tbody th {
+  background: var(--bf-surface);
+  color: var(--bf-text);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.usage-table td {
+  font-family: var(--bf-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .observability-table a {
@@ -1144,14 +1211,23 @@ input,
 
 .summary-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
-  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.4rem 0.9rem;
   margin: 0;
 }
 
 .summary-fact {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.summary-fact.identifier {
+  grid-column: span 2;
+}
+
+.summary-fact.identifier dd {
+  overflow-wrap: anywhere;
 }
 
 .summary-fact dt {

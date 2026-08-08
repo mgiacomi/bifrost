@@ -35,18 +35,13 @@ export function ObservabilityOverview() {
       )}
       {!established && <TargetOverview />}
       {established && (
-        <button type="button" disabled={loading} onClick={() => void loadInstance()}>
-          Refresh
-        </button>
+        <div className="overview-refresh">
+          <button type="button" disabled={loading} onClick={() => void loadInstance()}>
+            Refresh
+          </button>
+          {status && <span className="overview-observed">Observed {status.observedAt}</span>}
+        </div>
       )}
-
-      <dl className="status-grid" aria-label="Selected target context">
-        <Fact name="Target" value={target.address ?? "Not selected"} />
-        <Fact name="Connection" value={target.status.targetConnection} />
-        <Fact name="Authentication" value={target.status.targetAuthentication} />
-        <Fact name="Java/Go compatibility" value={target.status.javaGoCompatibility} />
-        <Fact name="Live monitoring" value={target.status.liveMonitoring} />
-      </dl>
 
       {error && (
         <div className="target-error" role="alert">
@@ -58,33 +53,42 @@ export function ObservabilityOverview() {
 
       {status && (
         <>
-          <dl className="status-grid" aria-label="Instance facts">
-            <Fact name="Instance ID" value={status.instanceId} />
-            <Fact name="Compatibility" value={status.consoleCompatibilityVersion} />
-            <Fact name="Observed at" value={status.observedAt} />
-            <Fact name="Live monitoring" value={status.liveMonitoringAvailable ? "Available" : "Unavailable"} />
-            <Fact name="Registered skills" value={String(status.registeredSkillCount)} />
-            <Fact name="Active executions" value={String(status.activeExecutionCount)} />
-            <Fact name="Cataloged traces" value={String(status.catalogedTraceCount)} />
-            <Fact name="Trace persistence" value={status.tracePersistencePolicy} />
-            <Fact name="Completion grace TTL" value={status.completionGraceTtl} />
-            <Fact name="Trace catalog metadata TTL" value={status.traceCatalogMetadataTtl} />
-          </dl>
-
-          <p className="observability-note">
-            Catalog metadata TTL and core file retention are independent. Neither provides cross-restart history.
-          </p>
-
           <nav className="observability-nav" aria-label="Operational views">
-            <Link to="/skills">Skill Catalog</Link>
-            <Link to="/active-executions">Active Executions</Link>
-            <Link to="/traces">Trace Catalog</Link>
+            <CatalogLink to="/skills" label="Skill Catalog" count={status.registeredSkillCount} noun="registered skill" />
+            <CatalogLink to="/active-executions" label="Active Executions" count={status.activeExecutionCount} noun="active execution" />
+            <CatalogLink to="/traces" label="Trace Catalog" count={status.catalogedTraceCount} noun="cataloged trace" />
           </nav>
+
+          {!status.liveMonitoringAvailable && (
+            <p className="observability-note">Live monitoring is unavailable for this instance.</p>
+          )}
+
+          <details className="fact-disclosure">
+            <summary>Instance configuration</summary>
+            <dl className="status-grid" aria-label="Instance configuration">
+              <Fact name="Compatibility" value={status.consoleCompatibilityVersion} />
+              <Fact name="Trace persistence" value={status.tracePersistencePolicy} />
+              <Fact name="Completion grace TTL" value={status.completionGraceTtl} />
+              <Fact name="Trace catalog metadata TTL" value={status.traceCatalogMetadataTtl} />
+            </dl>
+            <p className="observability-note">
+              Catalog metadata TTL and core file retention are independent. Neither provides cross-restart history.
+            </p>
+          </details>
 
           <LiveActivity />
         </>
       )}
     </section>
+  );
+}
+
+function CatalogLink({ to, label, count, noun }: { to: string; label: string; count: number; noun: string }) {
+  return (
+    <Link to={to} aria-label={`${label}, ${count} ${noun}${count === 1 ? "" : "s"}`}>
+      <span>{label}</span>
+      <span className="observability-nav-count">{count}</span>
+    </Link>
   );
 }
 

@@ -39,6 +39,16 @@ describe("ActivityNarrative", () => {
     expect(screen.getByText("2 events")).toBeInTheDocument();
   });
 
+  it("states a summary that merely repeats the kind label only once", () => {
+    const activities = [
+      makeActivity("1", "TRACE_STARTED", "Execution started"),
+      makeActivity("2", "MODEL_REQUEST_SENT", "Model request sent"),
+    ];
+    render(<ActivityNarrative activities={activities} isLive={true} />);
+    expect(screen.getAllByText("Execution started")).toHaveLength(1);
+    expect(screen.getAllByText("Model request sent")).toHaveLength(1);
+  });
+
   it("follows newest item initially (follow button shows pause)", () => {
     render(<ActivityNarrative activities={[makeActivity("1", "TRACE_STARTED", "Started")]} isLive={true} />);
     const toggle = screen.getByRole("button", { name: "Pause auto-scroll" });

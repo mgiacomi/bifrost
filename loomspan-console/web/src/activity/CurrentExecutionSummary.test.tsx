@@ -103,6 +103,29 @@ describe("CurrentExecutionSummary", () => {
     );
   });
 
+  it("does not restate the latest activity when it repeats the snapshot summary", () => {
+    const repeated = { ...activity(), summary: execution.summary };
+    render(<CurrentExecutionSummary execution={execution} activities={[repeated]} />);
+    expect(screen.getAllByText("Authoritative snapshot summary")).toHaveLength(1);
+    expect(screen.queryByLabelText("Latest activity summary")).toBeNull();
+  });
+
+  it("states the entry skill and snapshot update time with the observation note", () => {
+    render(
+      <CurrentExecutionSummary
+        execution={execution}
+        activities={[activity()]}
+        observedAt="2026-07-25T12:05:00Z"
+      />,
+    );
+    expect(screen.getByText("entry")).toBeInTheDocument();
+    expect(screen.getByText(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
+    expect(screen.queryByText(execution.startedAt)).toBeNull();
+    expect(
+      screen.getByText(/Execution updated at 2026-07-25T12:05:00Z\./),
+    ).toBeInTheDocument();
+  });
+
   it("lets a terminal activity override the retained active snapshot status", () => {
     render(
       <CurrentExecutionSummary

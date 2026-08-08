@@ -58,6 +58,18 @@ test("traces renders items in a table", () => {
   );
 });
 
+test("traces states finalized and expiry times as calendar dates rather than raw ISO", () => {
+  view.current.traces.items = [trace];
+  render(<Traces />);
+  const cells = screen
+    .getAllByRole("cell")
+    .map((cell) => cell.textContent ?? "")
+    .filter((text) => /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(text));
+  expect(cells).toHaveLength(2);
+  expect(screen.queryByText(trace.finalizedAt)).toBeNull();
+  expect(screen.queryByText(trace.applicationTraceExpiresAt)).toBeNull();
+});
+
 test("traces renders empty state", () => {
   render(<Traces />);
   expect(screen.getByText("No traces are cataloged.")).toBeInTheDocument();

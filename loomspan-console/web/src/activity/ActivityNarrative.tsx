@@ -92,7 +92,9 @@ export function ActivityNarrative({ activities, isLive }: ActivityNarrativeProps
                 {formatTimestamp(activity.timestamp)}
               </span>
               <span className="activity-narrative-kind">{p.label}</span>
-              <span className="activity-narrative-summary">{activity.summary}</span>
+              {activity.summary !== p.label && (
+                <span className="activity-narrative-summary">{activity.summary}</span>
+              )}
               {p.outcome && (
                 <span className="activity-narrative-outcome">Outcome: {p.outcome}</span>
               )}

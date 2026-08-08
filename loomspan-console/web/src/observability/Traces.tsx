@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { useObservability } from "./ObservabilityProvider";
 import type { Trace } from "../api/contracts";
 import { scopeBoundPath } from "./scope";
+import { formatDateTime } from "../activity/activityPresentation";
 
 export function Traces() {
   const { traces, loadTraces } = useObservability();
@@ -67,10 +68,10 @@ export function Traces() {
                   </td>
                   <td>{t.sessionId}</td>
                   <td>{t.outcome}</td>
-                  <td>{t.finalizedAt}</td>
+                  <td>{formatDateTime(t.finalizedAt)}</td>
                   <td>{String(t.sizeBytes)}</td>
                   <td>{t.persistencePolicy}</td>
-                  <td>{t.applicationTraceExpiresAt}</td>
+                  <td>{formatDateTime(t.applicationTraceExpiresAt)}</td>
                 </tr>
               );
             })}
